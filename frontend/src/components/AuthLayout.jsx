@@ -9,9 +9,11 @@ export function AuthLayout({ children, title, subtitle }) {
         <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_20%_10%,hsl(15_100%_62%_/0.35),transparent_40%),radial-gradient(circle_at_80%_80%,hsl(15_100%_62%_/0.25),transparent_45%)]" />
         <div className="relative z-10 max-w-lg px-10 py-16">
           <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-2xl font-black text-primary-foreground shadow-xl shadow-primary/40">
-              P
-            </div>
+            <img
+              src="/logo.png"
+              alt="PostMePlex"
+              className="h-12 w-12 rounded-2xl shadow-xl shadow-primary/40"
+            />
             <div>
               <div className="text-2xl font-black tracking-tight">PostMePlex</div>
               <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -43,9 +45,7 @@ export function AuthLayout({ children, title, subtitle }) {
         <div className="w-full max-w-md">
           <div className="mb-8 md:hidden">
             <Link to="/" className="inline-flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-black">
-                P
-              </div>
+              <img src="/logo.png" alt="PostMePlex" className="h-9 w-9 rounded-xl" />
               <span className="text-xl font-black">PostMePlex</span>
             </Link>
           </div>

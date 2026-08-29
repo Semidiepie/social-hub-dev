@@ -31,9 +31,11 @@ const NAV = [
 function Brand() {
   return (
     <div className="flex items-center gap-3 px-3 py-2">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-lg font-black text-primary-foreground shadow-lg shadow-primary/30">
-        P
-      </div>
+      <img
+        src="/logo.png"
+        alt="PostMePlex"
+        className="h-10 w-10 rounded-xl shadow-lg shadow-primary/30"
+      />
       <div className="leading-tight">
         <div className="text-lg font-black tracking-tight">PostMePlex</div>
         <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
