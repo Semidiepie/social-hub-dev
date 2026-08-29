@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only regression of the NEW React web app (/app/frontend) that shares the existing FastAPI backend. All 20 requested flows verified end-to-end on desktop and mobile viewport as founder + a fresh test_ user. No critical or blocking issues found. One minor a11y warning in Radix Dialog.",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "Live 'Start a room' dialog", "issues": ["Radix warning: DialogContent missing `Description` or `aria-describedby` — a11y-only, not a blocker. Reference: /app/frontend/src/pages/Live.jsx (DialogContent has no DialogDescription)."]}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [
+    "(Optional a11y polish) Add a <DialogDescription> or aria-describedby to the 'Start an audio room' DialogContent in /app/frontend/src/pages/Live.jsx to silence the Radix warning. Same warning may appear in any other dialog without a description."
+  ],
+  "critical_code_review_comments": [
+    "AuthContext.refresh clears token on any /auth/me failure — including transient network errors this could log the user out silently. Consider only clearing on 401/403.",
+    "Live.jsx polls /rooms every 8s and Messages.jsx polls /conversations every 8s + /conversations/:id/messages every 4s. Fine short-term but a burnt-in interval with no visibility/tab-hidden gating will keep firing on background tabs. Consider gating on document.visibilityState==='visible' or SSE/WebSocket later.",
+    "Home.jsx PostCard link falls back to `/` when no author — should route to /login or hide the link entirely to avoid dead-clicks.",
+    "Forgot-password code branch: dev_code is intentionally rendered in the UI for sandbox mode (per PRD). Confirm this is stripped from prod builds when Resend goes out of sandbox."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (20/20 flows)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! (PIN 1234). Created ephemeral test_web_<ts>@postmeplex.dev during run — will be auto-purged on backend restart.",
+  "seed_data_creation": "Founder-authored blog 'test_ Web blog from testing agent' (id 53db64e8…), video 'test_ Web video URL' (id 61e80130…), live room 'test_ web live room' created during testing. All prefixed test_ so they will be purged on backend restart.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified against REACT_APP_BACKEND_URL=https://social-hub-dev-4.preview.emergentagent.com. Confirmed passing: /login (founder), /register (test_ user auto-redirect to /), /forgot-password branching (PIN vs 6-digit code; dev_code '905840' surfaced in UI), Home feed rendering 2 posts w/ optimistic like toggle (0→1), Blogs list + Write CTA (perm.granted true for founder), Blog compose→publish redirect to /blogs/:id with prose-postme markdown, Blog read w/ Edit btn (author) + Like btn, Videos list w/ featured+grid+search input, Video upload via URL redirects to /videos/:id, Video watch <video> element + like-btn + comment-input + related, Discover 4 tabs (Top/Accounts/Tags/Live) + debounced /api/search (250ms), Live room dialog create + list refresh, Messages list + open conv + send message (POST /conversations/:id/messages), Notifications loads (mark-all-read button conditional on unread — correctly hidden when 0 unread), Profile w/ Posts/Videos/Blogs tabs (data-testids: profile-tab-posts/videos/blogs), Settings page renders Profile/Change-password/PIN sections, ProtectedRoute for /messages redirects unauthed to /login, Mobile 390x844: sidebar hidden, bottom-nav-* + topbar-profile-link visible, dark theme body bg rgb(19,21,27) ~ #13151b close to spec #12141c. Testids are exhaustive on all interactive elements. Only observation is a Radix a11y warning about missing DialogDescription on the Live 'Start a room' dialog.",
+  "rca of the issue": "N/A — no bugs surfaced."
+}

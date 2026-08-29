@@ -2,114 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-    margin: 0;
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-        sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+/* PostMePlex web — dark #12141c background, orange accents.
+ * Force dark theme everywhere; there is no light-mode toggle. */
+:root, .dark, html {
+  --background: 227 18% 9%;         /* #12141c */
+  --foreground: 0 0% 98%;
+  --card: 226 15% 12%;              /* #1a1d27 */
+  --card-foreground: 0 0% 98%;
+  --popover: 226 15% 12%;
+  --popover-foreground: 0 0% 98%;
+
+  --primary: 15 100% 62%;           /* #FF6B3D */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 226 12% 18%;         /* #262a37 */
+  --secondary-foreground: 0 0% 98%;
+  --muted: 226 12% 15%;
+  --muted-foreground: 226 10% 62%;  /* #9096a8 */
+  --accent: 15 100% 62%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 226 13% 20%;            /* #2b2f3d */
+  --input: 226 13% 15%;
+  --ring: 15 100% 62%;
+
+  --radius: 0.75rem;
+
+  --chart-1: 15 100% 62%;
+  --chart-2: 190 90% 60%;
+  --chart-3: 43 96% 60%;
+  --chart-4: 280 65% 65%;
+  --chart-5: 340 75% 60%;
 }
 
-code {
-    font-family:
-        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@layer base {
-    :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
-        --card: 0 0% 100%;
-        --card-foreground: 0 0% 3.9%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 3.9%;
-        --primary: 0 0% 9%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 96.1%;
-        --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
-        --accent-foreground: 0 0% 9%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
-        --ring: 0 0% 3.9%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.5rem;
-    }
-    .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-    }
+#root { min-height: 100vh; }
+
+* { border-color: hsl(var(--border)); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.6); }
+
+/* Prose (used by blog reader) */
+.prose-postme {
+  color: hsl(var(--foreground));
+  line-height: 1.75;
+  font-size: 1.0625rem;
 }
-
-@layer base {
-    * {
-        @apply border-border;
-    }
-    body {
-        @apply bg-background text-foreground;
-    }
+.prose-postme h1 { font-size: 2rem; font-weight: 800; margin: 1.6em 0 0.5em; letter-spacing: -0.02em; }
+.prose-postme h2 { font-size: 1.5rem; font-weight: 800; margin: 1.4em 0 0.4em; letter-spacing: -0.01em; }
+.prose-postme h3 { font-size: 1.25rem; font-weight: 700; margin: 1.2em 0 0.4em; }
+.prose-postme p  { margin: 0.9em 0; color: hsl(var(--foreground) / 0.92); }
+.prose-postme a  { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 3px; }
+.prose-postme img{ max-width: 100%; border-radius: 12px; margin: 1.2em 0; }
+.prose-postme ul, .prose-postme ol { padding-left: 1.4em; margin: 0.8em 0; }
+.prose-postme li { margin: 0.3em 0; }
+.prose-postme blockquote {
+  border-left: 3px solid hsl(var(--primary));
+  padding: 0.2em 0 0.2em 1em;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+  margin: 1em 0;
 }
+.prose-postme code {
+  background: hsl(var(--secondary));
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 0.92em;
+}
+.prose-postme pre {
+  background: hsl(var(--secondary));
+  padding: 1em;
+  border-radius: 12px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.prose-postme pre code { background: transparent; padding: 0; }
 
-@layer base {
-    [data-debug-wrapper="true"] {
-        display: contents !important;
-    }
-
-    [data-debug-wrapper="true"] > * {
-        margin-left: inherit;
-        margin-right: inherit;
-        margin-top: inherit;
-        margin-bottom: inherit;
-        padding-left: inherit;
-        padding-right: inherit;
-        padding-top: inherit;
-        padding-bottom: inherit;
-        column-gap: inherit;
-        row-gap: inherit;
-        gap: inherit;
-        border-left-width: inherit;
-        border-right-width: inherit;
-        border-top-width: inherit;
-        border-bottom-width: inherit;
-        border-left-style: inherit;
-        border-right-style: inherit;
-        border-top-style: inherit;
-        border-bottom-style: inherit;
-        border-left-color: inherit;
-        border-right-color: inherit;
-        border-top-color: inherit;
-        border-bottom-color: inherit;
-    }
+/* Utility used by uploader drag zones */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }

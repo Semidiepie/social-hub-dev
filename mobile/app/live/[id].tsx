@@ -20,7 +20,19 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, AudioRoom, AudienceUser } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
+import { loadAgora } from "@/src/lib/agora";
 import { colors, radii, spacing } from "@/src/theme";
+
+// Deterministic 31-bit numeric uid derived from a user id string.
+// Agora joinChannel requires a numeric uid; using the user's id keeps
+// the same uid across reconnects on the same device.
+function uidFromUserId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) || 1;
+}
 
 const AVATAR_FALLBACK =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80'><circle cx='40' cy='40' r='40' fill='%23252936'/><text x='50%' y='55%' text-anchor='middle' fill='%23FF6B3D' font-family='sans-serif' font-weight='800' font-size='30'>P</text></svg>";
@@ -37,9 +49,12 @@ export default function AudioRoomScreen() {
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
   const [ending, setEnding] = useState(false);
+  const [agoraJoined, setAgoraJoined] = useState(false);
+  const [hasInitMute, setHasInitMute] = useState(false);
 
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const engineRef = useRef<any>(null);
 
   const isHost = !!(user && room && user.id === room.host.id);
   const isGuest = !!(user && room && room.guests.some((g) => g.id === user.id));
@@ -91,6 +106,141 @@ export default function AudioRoomScreen() {
       if (refreshRef.current) clearInterval(refreshRef.current);
     };
   }, [loadRoom, loadAudience, heartbeat]);
+
+  // Auto-unmute the host as soon as their room loads so "Go live" actually
+  // broadcasts audio immediately. Guests and audience remain muted by default.
+  useEffect(() => {
+    if (hasInitMute || !room || !user) return;
+    setMuted(!(user.id === room.host.id));
+    setHasInitMute(true);
+  }, [room, user, hasInitMute]);
+
+  // Agora RTC engine lifecycle — join the channel with the appropriate role.
+  // Runs on native builds only (agora.web.ts stub returns null on web / Expo Go).
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (!room || !user) return;
+    const agora = loadAgora();
+    if (!agora) return; // Expo Go / SDK unavailable — heartbeat + UI still work.
+    if (!room.app_id || !room.channel_name) return;
+
+    const {
+      default: createAgoraRtcEngine,
+      ChannelProfileType,
+      ClientRoleType,
+    } = agora;
+    let cancelled = false;
+    let engine: any = null;
+
+    (async () => {
+      try {
+        if (Platform.OS === "android") {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { PermissionsAndroid } = require("react-native");
+          await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          );
+        }
+        engine = createAgoraRtcEngine();
+        engine.initialize({
+          appId: room.app_id,
+          channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
+        });
+        try {
+          engine.setChannelProfile(
+            ChannelProfileType.ChannelProfileLiveBroadcasting,
+          );
+        } catch {
+          /* setChannelProfile is optional in v4 when set via initialize */
+        }
+        const role = isSpeaker
+          ? ClientRoleType.ClientRoleBroadcaster
+          : ClientRoleType.ClientRoleAudience;
+        engine.setClientRole(role);
+        engine.enableAudio();
+        try {
+          engine.disableVideo();
+        } catch {
+          /* no-op */
+        }
+        const uid = uidFromUserId(user.id);
+        engine.joinChannel("", room.channel_name, uid, {
+          channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
+          clientRoleType: role,
+          publishMicrophoneTrack: isSpeaker,
+          autoSubscribeAudio: true,
+        });
+        // Sync initial mute state.
+        engine.muteLocalAudioStream(muted || !isSpeaker);
+        if (cancelled) {
+          try {
+            engine.leaveChannel();
+            engine.release();
+          } catch {
+            /* no-op */
+          }
+          return;
+        }
+        engineRef.current = engine;
+        setAgoraJoined(true);
+      } catch (err) {
+        // Silent — UI still functional without mic streaming.
+        // eslint-disable-next-line no-console
+        console.warn("Agora init failed", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      const e = engineRef.current;
+      engineRef.current = null;
+      setAgoraJoined(false);
+      if (e) {
+        try {
+          e.leaveChannel();
+        } catch {
+          /* no-op */
+        }
+        try {
+          e.release();
+        } catch {
+          /* no-op */
+        }
+      }
+    };
+  }, [room?.id, room?.app_id, room?.channel_name, user?.id]);
+  // NOTE: we intentionally do NOT include isSpeaker/muted in deps — role/mute
+  // changes are pushed to the running engine via the effects below without
+  // tearing down the channel.
+
+  // Push mute changes to the engine without rejoining.
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    try {
+      e.muteLocalAudioStream(muted || !isSpeaker);
+    } catch {
+      /* no-op */
+    }
+  }, [muted, isSpeaker]);
+
+  // If the host promotes a listener to guest (or removes them), the client
+  // role must switch between Broadcaster / Audience without leaving the room.
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    const agora = loadAgora();
+    if (!agora) return;
+    try {
+      e.setClientRole(
+        isSpeaker
+          ? agora.ClientRoleType.ClientRoleBroadcaster
+          : agora.ClientRoleType.ClientRoleAudience,
+      );
+    } catch {
+      /* no-op */
+    }
+  }, [isSpeaker]);
 
   const promoteToGuest = useCallback(
     async (userId: string) => {
@@ -352,7 +502,7 @@ export default function AudioRoomScreen() {
         </TouchableOpacity>
       </View>
 
-      {Platform.OS !== "web" && isSpeaker && (
+      {Platform.OS !== "web" && isSpeaker && !agoraJoined && (
         <View style={[styles.buildNoticeWrap, { bottom: 96 + insets.bottom }]}>
           <View style={styles.buildNotice}>
             <Ionicons name="information-circle" size={14} color={colors.primary} />

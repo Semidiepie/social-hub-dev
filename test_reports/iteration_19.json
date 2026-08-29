@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 19 (livestream audio Agora wiring) fully verified on mobile Expo Web preview. Backend: 11/11 pytest tests in /app/backend/tests/test_iteration19_live_rooms.py pass — POST /api/rooms/start returns non-empty app_id (from AGORA_APP_ID env) and non-empty channel_name (pmp-audio-<user>-<ts>); GET /api/rooms/{id} returns identical app_id + channel_name to host and audience (parity confirmed); POST /api/rooms/{id}/heartbeat correctly does NOT increment audience_count for the host but DOES increment it for a listener (verified via a separate scratch user), keeps last_seen_at fresh; /api/rooms/{id}/audience lists the listener; POST /api/rooms/{id}/invite/{user_id} promotes a guest and preserves the same app_id/channel_name in the response; DELETE /api/rooms/{id}/guest/{user_id} removes them; non-host receives 403 on /end; 404 returned for unknown room id on both GET and heartbeat. Mobile UI: end-to-end flow works — Welcome → tap 'I already have an account' → /login (testIDs: login-email-input, login-password-input, submit via 'Log in' text) → founder Semi123! logs in → /home → tap Live tab → tap Go live pill (testID live-go-live) → composer modal opens (live-composer-title, live-composer-topic, live-composer-submit) → room starts, navigates to /live/<uuid> → audio room screen mounts cleanly with HOST label (1), LIVE tag (6 occurrences from tag + list re-renders), End (room-end), Mute (room-mute), Leave (room-leave) and Back (room-back) buttons all visible. Host auto-unmute works: mic button initial state = 'Speaking' (auto-unmuted since user.id === room.host.id). Toggling mic flips 'Speaking' → 'Muted' → 'Speaking' without throwing. End Room confirm dialog fires on web (window.confirm) and successfully ends the room (verified server-side: GET /api/rooms after end returns [] for founder). No PAGEERROR events, no React Native red screen, no console errors related to Agora, agora.web.ts / agora.ts stub correctly returns null on web so no native module import crash. The 'Live mic streaming works in production builds only' banner is correctly hidden on web preview (Platform.OS !== 'web' guard) — will only appear in Expo Go / dev-client where Platform.OS is 'ios'/'android' but the native react-native-agora module is not linked, which matches the review request expectation.",
+  "platforms_tested": ["mobile"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration19_live_rooms.py",
+    "/app/test_reports/pytest/iteration19_live_rooms.xml"
+  ],
+  "action_items": [
+    "No action items — livestream Agora wiring is correct and does not crash in the fallback (Expo Web / Expo Go) path. Backend contract (app_id + channel_name) is intact and consumed correctly by /app/mobile/app/live/[id].tsx.",
+    "(Out of scope for automated preview testing, per agent-to-agent context note) Actual Agora audio transmission can only be validated on a real device dev/production build where react-native-agora native module is linked. The code path (createAgoraRtcEngine → initialize → setChannelProfile(LiveBroadcasting) → setClientRole(Broadcaster/Audience) → enableAudio → joinChannel(uid) → muteLocalAudioStream) is correctly wired per Agora v4 SDK API."
+  ],
+  "critical_code_review_comments": [
+    "/app/mobile/app/live/[id].tsx:120-211 — Agora lifecycle is correctly scoped to Platform.OS !== 'web' AND loadAgora() !== null; cleanup properly leaveChannel + release on unmount; deps intentionally exclude isSpeaker/muted (documented) — role and mute deltas are pushed via separate effects at :217-243 without tearing down the channel. Good.",
+    "/app/mobile/app/live/[id].tsx:29-35 — uidFromUserId is a deterministic 31-bit positive int derived from user id; safe for Agora joinChannel uid arg. Consistent across reconnects on the same device.",
+    "/app/mobile/app/live/[id].tsx:112-116 — Host auto-unmute effect runs exactly once (hasInitMute guard) once room + user are both loaded. Correct.",
+    "/app/mobile/src/lib/agora.ts:14-26 — loadAgora guards both native-module absence (typeof createAgoraRtcEngine !== 'function') and require() throw, returning null so the room UI still renders without audio in Expo Go. Matches the .web.ts stub which unconditionally returns null.",
+    "/app/backend/routes/rooms_blogs.py:132-164 — start_audio_room short-circuits with 503 when AGORA_APP_ID is empty (good failure mode), sets is_live/is_streamer flags on the user, and channel_name is deterministic enough to be reused across guest joins for the same session. app_id is echoed from env in _room_state so all viewers of the same session get the same channel/app pair.",
+    "/app/backend/routes/rooms_blogs.py:194-228 — heartbeat correctly distinguishes speakers vs audience via s['host_id'] + guest_ids; upserts a presence doc keyed by (room_id, user_id); cleans up presence >60s; recomputes audience_count from a count_documents on non-speakers. The 60s presence-timeout combined with ROOM_TIMEOUT_S=90 provides a self-healing count.",
+    "server.py file size (~2481 lines noted in iteration_18) still exceeds the 700-line guideline; splitting into modules is a nice-to-have but not blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration19_live_rooms.py (created — 11 tests)"
+  ],
+  "success_rate": {"backend": "100% (11/11 passed)", "frontend": "100% (all critical flows verified: login, Live tab, composer, room mount, mic toggle, End room)"},
+  "seed_data_creation": "Three scratch users with prefix tpb_live_ created via /api/auth/register — auto-purged on next backend restart per the founder-only policy. All test rooms were properly ended in the teardown fixture. No lingering founder rooms after UI test (verified via GET /api/rooms).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 19 audio-room + Agora contract is green. Regression pack lives at /app/backend/tests/test_iteration19_live_rooms.py — safe to re-run any time (auto-cleans up rooms + scratch users are purged on backend restart). Mobile login testIDs are login-email-input / login-password-input (not login-email/-password) — the login submit does not have a testID but is reachable via text='Log in'. Live room screen testIDs: live-go-live (tab), live-composer-title, live-composer-topic, live-composer-submit (modal), room-back, room-end, room-mute, room-leave (room). AGORA_APP_ID is configured in /app/backend/.env — if it were unset, /api/rooms/start would 503.",
+  "rca_of_issue": "Original bug: /app/mobile/app/live/[id].tsx had a UI-only mute toggle without an Agora RTC engine, so 'Go live' never broadcast any audio. Fix (verified this iteration): the file now correctly imports the safe loader src/lib/agora.ts (web stub at src/lib/agora.web.ts), and inside an effect keyed on room.id/app_id/channel_name/user.id it creates the engine (createAgoraRtcEngine), initializes with room.app_id under ChannelProfileLiveBroadcasting, sets client role to Broadcaster for host+guests and Audience for listeners, enables audio, joins the channel with the deterministic numeric uid, and mirrors the local mute state via muteLocalAudioStream. On cleanup it leaveChannel + release. On web / Expo Go the loader returns null so the effect returns early — the room UI still renders, heartbeat still runs, mute button still toggles UI state. Full audio verification requires a native dev-client build (out of scope for preview testing per the review note)."
+}

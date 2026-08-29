@@ -1,73 +1,114 @@
 # PostMePlex — Product Requirements
 
 ## Overview
-**PostMePlex** is a gaming-focused social media app combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), and TikTok (vertical reels). Built on the deep dark #12141c palette with vivid orange #FF6B3D accents — energetic, streamer-coded, never AI-slop.
+**PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
 ## Tech Stack
-- **Frontend:** Expo SDK 54 + Expo Router (file-based), React Native 0.81, expo-video, expo-image-picker, expo-notifications, react-native-reanimated.
-- **Backend:** FastAPI + Motor (async MongoDB), JWT auth with bcrypt, httpx for Emergent Push relay.
-- **Storage:** MongoDB collections — `users`, `posts` (mixed type=post|reel), `comments`, `likes`, `follows`, `notifications`.
+- **Mobile:** Expo SDK 54 + Expo Router (file-based), React Native 0.81, expo-video, expo-image-picker, expo-notifications, react-native-reanimated, react-native-agora 1.15+ (audio livestream).
+- **Web (NEW iteration 20, June 2026):** React 19 + CRA (react-scripts 5) + Craco, React Router 7, Tailwind + Shadcn UI, sonner toasts, react-markdown for blog reader.
+- **Backend:** FastAPI + Motor (async MongoDB), JWT auth with bcrypt, httpx for Emergent Push relay, Agora App-ID-only mode for audio rooms, Resend for email.
+- **Storage:** MongoDB collections — `users`, `posts` (mixed type=post|reel), `videos`, `blogs`, `blog_likes`, `stories`, `story_views`, `live_sessions`, `room_presence`, `conversations`, `messages`, `notifications`, `follows`, `likes`, `comments`, `blocks`, `reports`, `reset_codes`.
 
-## Implemented Features (v1)
+## Implemented Features
+### Auth (mobile + web)
+- JWT email/password register, login, /me, profile update, delete account.
+- Password recovery: 6-digit email code (Resend) **or** 4-digit reset PIN (offline).
+- Web token stored in `localStorage`; mobile uses SecureStore on native / localStorage on web preview.
 
-### Auth
-- JWT email/password register, login, /me, profile update.
-- Token stored via `@/src/utils/storage` (SecureStore on native, localStorage on web).
-- 7 seeded demo accounts including 3 streamers shown as LIVE.
+### Home Feed / Posts / Reels (mobile + web)
+- Text+image posts with optimistic like, comment threads, game-tag chips, streamer + verified badges.
+- Vertical TikTok-style reels (mobile only).
 
-### Home Feed
-- StoryBar with the user's "Your story" + horizontally scrolling streamers (LIVE badges for live broadcasters with viewer counts).
-- Vertical feed of text+image posts with optimistic like, comment sheet, share/bookmark icons, game-tag chips, streamer badges, verified checkmarks.
-- Pull-to-refresh.
+### Blogs (mobile + web)
+- Publisher permission model: admin grants/revokes; users request via `/blogs/request-permission`.
+- Markdown editor + preview, cover upload, tags (≤10), draft/publish status, reading-time auto-calc.
+- Like counter, view counter (auto-increment on read).
 
-### Discover
-- Sticky chip row: **Top** (3-col masonry grid of trending posts/reels), **Accounts** (followable user list), **Tags** (#valorant, #warzone, etc.), **Live** (active streamer cards with viewer counts).
-- Search input wired (UI only for v1).
+### Videos (mobile + web)
+- YouTube-style long-form uploads (Cloudinary chunked, up to 5GB).
+- Visibility: public / unlisted / private (owner-only).
+- Watch page: player, like, comments, related videos, view fires on play.
+- Auto H.264/mp4 URL transform for older iOS decoders.
 
-### Create (+)
-- Three modes: **Post** (image + caption + game tag), **Reel** (video upload), **Go Live** (Coming Soon card explaining roadmap).
-- Cloudinary unsigned upload integration scaffolded — falls back to local URI when keys aren't set.
+### Discover / Search (mobile + web)
+- Tabs: Top, Accounts, Tags, Live.
+- Global `/api/search` for users, tags, and posts.
 
-### Reels
-- Full-screen TikTok-style vertical pager using `expo-video`.
-- Side action bar (like, comment, share, creator avatar), bottom info overlay with caption + game tag + view count.
-- Auto-plays the visible reel, pauses others.
+### Direct Messages (mobile + web)
+- 1:1 + Squad (group) chats, reactions, typing indicators (mobile).
+- Web polls messages every 4s while a conversation is open.
 
-### Profile
-- Avatar, bio, posts/followers/following stats, streamer + verified badges.
-- Tabs: Posts grid / Reels grid.
-- Own profile shows Edit + Logout; other profiles show Follow/Following toggle and Message button.
+### Notifications (mobile + web)
+- Like / comment / follow feed, mark-all-read.
+- Push notifications via Emergent relay (mobile only, real device build required).
 
-### Notifications
-- Like, comment, follow events with actor info; mark-all-read on open.
-- Push notifications via Emergent relay — fires server-side on signup, like, comment, follow. (`EMERGENT_PUSH_KEY` placeholder in preview; replaced by deployer at build time.)
+### Audio Livestreams (mobile broadcast; web browse only)
+- Backend Agora App-ID-only rooms (`/api/rooms/*`).
+- Mobile: full Agora RTC engine — host/guest broadcaster, listener as audience, host auto-unmute, guest invite/step-down. **Iteration 19 (June 2026): fixed critical bug where audio was never streamed — the room UI never wired to Agora. Now initializes engine, joins channel, mutes/unmutes correctly.**
+- Web (v1.2): list rooms, host can create a room; broadcasting/listening audio deferred to v2.
 
-### Live Streaming (intentionally scoped per user choice)
-- "Coming Soon" screen with hero gradient, perk list, and notify-me CTA. Real multi-viewer broadcast requires Agora/LiveKit and will plug in when user provides keys.
+### Stories (mobile-only in v1 web)
+- 24-hour ephemeral image/video stories with view tracking.
+
+### Settings / Privacy / Moderation (mobile + web)
+- Change password, 4-digit PIN toggle, profile edit, delete account.
+- Block/unblock users, report content, followers/following privacy toggles.
+
+### Admin (mobile only for now)
+- Verified badge toggle, blog-permission approval queue.
 
 ## Endpoints (FastAPI, all under `/api`)
-| Method | Path | Auth | Purpose |
-|---|---|---|---|
-| GET | `/` | – | Health |
-| POST | `/auth/register` | – | Sign up + welcome push |
-| POST | `/auth/login` | – | JWT |
-| GET | `/auth/me` | ✓ | Current user |
-| PUT | `/auth/me` | ✓ | Update profile |
-| GET | `/users/{id}` | optional | Public profile + follows_them |
-| POST/DELETE | `/users/{id}/follow` | ✓ | Toggle follow |
-| GET | `/users/{id}/posts`, `/reels` | optional | User content |
-| GET | `/feed`, `/reels`, `/stories` | optional | Home feed surfaces |
-| GET | `/discover?filter=top\|accounts\|tags\|live` | optional | Discover surfaces |
-| POST | `/posts`, `/reels` | ✓ | Create |
-| GET / DELETE | `/posts/{id}` | optional/✓ | Read / delete (own) |
-| POST/DELETE | `/posts/{id}/like` | ✓ | Toggle like |
-| GET/POST | `/posts/{id}/comments` | optional/✓ | List/Create |
-| GET | `/notifications` | ✓ | Activity feed |
-| POST | `/notifications/read-all` | ✓ | Clear unread |
-| POST | `/register-push` | – | Emergent push registration (skips gracefully on placeholder key) |
+Full surface documented in `/app/backend/server.py` and `/app/backend/routes/rooms_blogs.py`. Highlights:
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/auth/register`, `/auth/login` | JWT auth |
+| POST | `/auth/change-password`, `/auth/reset-pin`, `/auth/forgot-password{,-pin}` | Password mgmt |
+| GET/POST/PUT/DELETE | `/videos*` | Long-form videos CRUD + like/comment/view |
+| GET/POST/PUT/DELETE | `/blogs*` | Blogs CRUD + like + admin approval |
+| GET/POST | `/rooms*` | Audio live rooms + heartbeat + invite/step-down |
+| GET | `/feed`, `/reels`, `/stories`, `/discover`, `/search` | Discovery surfaces |
+| GET/POST | `/conversations*`, `/messages*` | DMs |
+| GET | `/notifications`, POST `/notifications/read-all` | Activity |
+
+## Code Architecture
+```
+/app
+├── backend/                     FastAPI + Mongo
+│   ├── server.py                (~2500 lines — REFACTOR into /routes/* pending)
+│   ├── routes/rooms_blogs.py    Audio rooms + blogs (already extracted)
+│   └── tests/                   pytest regression packs
+├── mobile/                      Expo React Native app
+│   ├── app/                     expo-router file-based routes
+│   ├── src/                     hooks, context, api client, agora loader, components
+│   └── certs/                   APNs .p8 (gitignored)
+└── frontend/                    React web app (NEW iteration 20)
+    └── src/
+        ├── App.js               Router + AuthProvider + Toaster
+        ├── context/AuthContext.jsx
+        ├── components/          AppShell, AuthLayout, Avatar, ProtectedRoute, ui/*
+        ├── lib/                 api.js, cloudinary.js, format.js, utils.js
+        └── pages/               Login, Register, ForgotPassword, Home, Blogs*, Videos*,
+                                 Discover, Messages, Notifications, Profile, Settings, Live
+```
 
 ## Notes
-- All MongoDB documents use UUID `id`; `_id` is stripped from every response.
-- Datetimes stored as UTC `datetime` and serialized as ISO 8601 in API responses.
-- Cloudinary keys (`EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME`, `EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET`) optional — user can drop them in `frontend/.env` to enable real video hosting.
-- Push notifications work after deploy + iOS/Android build (Expo Go doesn't support push).
+- All MongoDB documents use UUID `id`; `_id` stripped from every response.
+- Datetimes stored as UTC `datetime`, serialized as ISO 8601.
+- Cloudinary unsigned preset `ml_default` on cloud `dpnrol54k` — shared by mobile + web via env vars.
+- Push notifications require a native build; Expo Go / web preview cannot validate them.
+- Agora audio only functionally works on real device builds (not Expo Go / web preview).
+- Resend still in sandbox — only delivers to the founder's verified email. Forgot-password endpoint surfaces `dev_code` in the response for other accounts so the UI can autofill.
+
+## Roadmap
+### Verification pending by user
+- Iteration 19 livestream Agora fix — verify by running a real dev/prod build (Publish) and testing audio between two devices.
+- Iteration 20 web app — try each surface at the web preview URL (login: `semidiepie@gmail.com` / `Semi123!`).
+
+### Upcoming / Backlog
+- **P1:** Refactor `server.py` (>2500 lines) into `/routes/auth.py`, `/routes/videos.py`, `/routes/posts.py`, etc.
+- **P1:** Web live audio (v2) — add `agora-rtc-sdk-ng` so web listeners can hear rooms hosted from mobile.
+- **P2:** Admin console on web (verified badges, blog approvals) — currently mobile-only.
+- **P2:** Notification-settings screen (toggle DM / follow / comment push categories).
+- **P2:** Batched / muted-chat push (skip push when user is actively reading the chat).
+- **P3:** Web story creation (currently mobile-only).

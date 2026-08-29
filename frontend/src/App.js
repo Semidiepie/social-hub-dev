@@ -1,54 +1,101 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from "react";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Toaster } from "sonner";
+import { AuthProvider } from "@/context/AuthContext";
+import { AppShell } from "@/components/AppShell";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import LoginPage from "@/pages/Login";
+import RegisterPage from "@/pages/Register";
+import ForgotPasswordPage from "@/pages/ForgotPassword";
+import HomePage from "@/pages/Home";
+import BlogsPage from "@/pages/Blogs";
+import BlogReadPage from "@/pages/BlogRead";
+import BlogComposePage from "@/pages/BlogCompose";
+import BlogRequestPage from "@/pages/BlogRequest";
+import VideosPage from "@/pages/Videos";
+import VideoWatchPage from "@/pages/VideoWatch";
+import VideoUploadPage from "@/pages/VideoUpload";
+import DiscoverPage from "@/pages/Discover";
+import MessagesPage from "@/pages/Messages";
+import NotificationsPage from "@/pages/Notifications";
+import ProfilePage from "@/pages/Profile";
+import SettingsPage from "@/pages/Settings";
+import LivePage from "@/pages/Live";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
-  );
+/**
+ * Shell wrapper that mounts the sidebar/topbar/bottom-nav for authenticated
+ * routes. Public routes (auth flows) render outside the shell.
+ */
+function Shell({ children }) {
+  const location = useLocation();
+  const isAuthRoute = ["/login", "/register", "/forgot-password"].includes(location.pathname);
+  if (isAuthRoute) return children;
+  return <AppShell>{children}</AppShell>;
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Toaster
+          theme="dark"
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: "hsl(226 15% 12%)",
+              border: "1px solid hsl(226 13% 20%)",
+              color: "hsl(0 0% 98%)",
+            },
+          }}
+        />
+        <Shell>
+          <Routes>
+            {/* Public / auth */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+            {/* Home & content — viewable by everyone but interactions need auth */}
+            <Route path="/" element={<HomePage />} />
+            <Route path="/blogs" element={<BlogsPage />} />
+            <Route path="/blogs/new" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
+            <Route path="/blogs/request" element={<ProtectedRoute><BlogRequestPage /></ProtectedRoute>} />
+            <Route path="/blogs/:id" element={<BlogReadPage />} />
+            <Route path="/blogs/:id/edit" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
+
+            <Route path="/videos" element={<VideosPage />} />
+            <Route path="/videos/new" element={<ProtectedRoute><VideoUploadPage /></ProtectedRoute>} />
+            <Route path="/videos/:id" element={<VideoWatchPage />} />
+
+            <Route path="/discover" element={<DiscoverPage />} />
+            <Route path="/live" element={<LivePage />} />
+
+            <Route
+              path="/messages"
+              element={<ProtectedRoute><MessagesPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/messages/:convId"
+              element={<ProtectedRoute><MessagesPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/notifications"
+              element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/profile"
+              element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
+            />
+            <Route path="/user/:userId" element={<ProfilePage />} />
+            <Route
+              path="/settings"
+              element={<ProtectedRoute><SettingsPage /></ProtectedRoute>}
+            />
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Shell>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
