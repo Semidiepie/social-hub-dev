@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 16 (video Watch page layout fix — portrait sources no longer stretch container beyond 16:9) verified. All 4 requested checks pass. (1) grep contract on /app/frontend/app/video/[id].tsx: playerWrap style has aspectRatio: 16 / 9 (L424) and overflow: 'hidden' (L427); no `useWindowDimensions` import anywhere in the file; no `SCREEN_W` variable; no `playerHeight` variable; contentFit=\"contain\" still passed to <VideoView> (L210). Only other aspectRatio: 16/9 in the file is on relatedThumbWrap (L554) which is correct/unchanged. (2) Metro bundler sanity: curl http://localhost:3000 → HTTP 200 (1283 bytes HTML shell). No bundling errors in /var/log/supervisor/expo.err.log related to the watch route — only pre-existing informational noise about expo@54.0.35 vs ~54.0.36 version drift (unchanged, unrelated). (3) Backend regression: test_iteration13_videos.py = 17/17 PASS (list/create/get/related/view-dedupe/like/unlike/comments/owner-update/403/private-hidden/search/category/channel/delete-cascade/blocked-filter/reels-back-compat all green). (4) Prior iteration regression: test_iteration6_regression.py + test_iteration8_reels.py + test_iteration9_cloudinary_h264.py + test_iteration11_forgot_password.py + test_iteration12_reset_pin.py = 51/51 PASS. Combined iteration-specific suites 68/68 green — identical to iter-15 baseline. No API surface was touched (this is a pure layout / StyleSheet change), so zero risk to backend contract, confirmed empirically. No deprecated Expo packages introduced. No React Native red-screen. No new UI regressions detected in the static contract review.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_videos.py",
+    "/app/test_reports/pytest/iteration16_videos_regression.xml",
+    "/app/test_reports/pytest/iteration16_iterspecific.xml"
+  ],
+  "action_items": [
+    "Nothing blocking for iteration 16. Fix is minimal, correct, and matches the RCA in the review request. Optional carry-over from iter-14/15 (NOT iter-16): startup auto-purge still doesn't cascade delete orphan reels/videos/posts/conversations for long-removed test users — causes 10 fail + 19 errors in the broader test_iteration2_features/test_iteration10_verify/test_postmeplex_api suites (unchanged since iter-13). Only worth addressing if broad-regression cleanliness matters."
+  ],
+  "critical_code_review_comments": [
+    "playerWrap (L422-428) correctly uses aspectRatio + overflow: 'hidden'. On web this maps to a padding-hack aspect-ratio container in RNW; the inner <VideoView> uses StyleSheet.absoluteFillObject and contentFit='contain', so portrait clips will letterbox with black bars inside the 16:9 frame (matches YouTube web behavior). Fix is minimal and correct.",
+    "closeBtn (L430-441) has zIndex: 5 but the VideoView renders nativeControls; on some browsers the native <video> controls may sit above the close button. Not part of this iteration's scope but worth noting for a future pass.",
+    "L204 comment accurately documents the RCA — good hygiene for future maintainers.",
+    "Player useEffect (L67-73) still auto-plays on readyToPlay without a muted fallback — Safari will reject autoplay of unmuted videos. Pre-existing, unrelated to this layout fix."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% on all iteration-specific suites (68/68 across iter 6/8/9/11/12/13). Unchanged from iter-15.",
+    "frontend": "100% static contract. All 4 grep assertions in the review request satisfied. Metro bundle serves / as HTTP 200 with no route-related errors."
+  },
+  "seed_data_creation": "None. Iteration-13 video tests self-clean via _cleanup_videos fixture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 16 was a small, surgical CSS-only fix on /app/frontend/app/video/[id].tsx: the video player wrap now uses aspectRatio: 16/9 + overflow: 'hidden' instead of a computed height from useWindowDimensions. This locks the frame to 16:9 on web so portrait sources letterbox inside (contentFit='contain') instead of stretching the container and overlapping the description/comments/tags below. No backend contract change, no new packages, no new testIDs. If a future iteration needs live-browser verification of the visual outcome, load /video/{id} of a portrait-source clip in a mobile-width web preview and confirm: (a) the player frame stays at width*(9/16) tall regardless of source aspect ratio; (b) title/actions/channel/description all sit strictly BELOW the player with no overlap; (c) close button (chevron-down) top-left remains tappable. All existing video testIDs (watch-close, watch-like, watch-share, watch-delete, watch-channel, watch-subscribe, watch-desc, watch-comment-input, watch-comment-post, watch-related-{id}) are preserved.",
+  "rca_of_issue": "User reported description/comments overlapping the video on the web preview when the source was a portrait clip. Root cause was that {height: SCREEN_W * 9/16} on playerWrap didn't clip the native HTML <video> element inside, so it reserved its natural (portrait) aspect ratio and silently stretched its parent — pushing ScrollView content downward while still visually covering the video frame. Fix: switched playerWrap to aspectRatio: 16/9 + overflow: 'hidden' (locks the box) and let contentFit='contain' letterbox the portrait source. Removed the useWindowDimensions/SCREEN_W/playerHeight dead code. Verified via file grep (all 4 contract points satisfied), Metro 200, and 68/68 iteration-specific backend tests still green."
+}

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 18 fully verified. Backend: 30/30 pytest tests passed (test_iteration18_password_ux.py) covering (a) AI Voice Calls removal (GET /api/ai/status, /characters, /voices all return 404), (b) POST /api/auth/has-pin (founder=true, unknown email=false, identical shape → no enumeration), (c) POST /api/auth/change-password (wrong current=403, same as current=400, success returns fresh JWT + user, no-auth=401), (d) POST /api/auth/forgot-password-pin (correct PIN rotates + returns JWT, wrong PIN=403 'Invalid credentials', unknown email=403), (e) email flow POST /api/auth/forgot-password (returns dev_code in sandbox) → verify-reset-code → reset-password (mints JWT + logs in), (f) full regression: register + login + feed + post. Founder password was rotated multiple times during the run and RESTORED to Semi123! at end (verified by a final test). Frontend: /(auth)/login shows the 'Forgot password?' pill (testID login-forgot-password) prominently below the Log-in button. /forgot-password shows the unified entry (forgot-email + forgot-continue) and auto-routes: semidiepie@gmail.com → /forgot-password/pin (because has_pin=true), an unknown email → /forgot-password/verify (email flow with dev_code autofill). /forgot-password/pin exposes pin-code / pin-new-password / pin-confirm-password / pin-submit. /account/change-password has change-pw-current / -new / -confirm / -submit and successfully rotated the founder pw end-to-end (UI → login with new pw → API revert → login with Semi123! all return 200). Settings shows the new 'Change password' row (settings-change-password) — clicked and navigated. The 'AI Voice Calls' row is GONE (no testID='settings-ai-calls', and text 'AI Calls' / 'AI Voice' not present anywhere on Settings). ProfileView on own profile shows only 'Edit profile' — no AI Calls pill (text scan confirms). No dangling AI Voice Calls imports; Metro bundler compiled cleanly, no red-screen errors. Only console warnings observed are pre-existing RN Web deprecation notices (shadow* → boxShadow, props.pointerEvents) which are unrelated to this iteration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration18_password_ux.py",
+    "/app/test_reports/pytest/iteration18_password_ux.xml"
+  ],
+  "action_items": [
+    "No action items — every acceptance criterion in the review request is met.",
+    "(Pre-existing, informational) RN Web console emits 'shadow* is deprecated. Use boxShadow' and 'props.pointerEvents is deprecated' warnings on every screen. Purely cosmetic on web preview; when a native build is made these warnings won't appear. Consider a one-line codemod in a future iteration."
+  ],
+  "critical_code_review_comments": [
+    "server.py:952-958 — /api/auth/has-pin correctly avoids user enumeration: same JSON shape ({has_pin: bool}) regardless of email existence, projection excludes _id, and no timing branch difference.",
+    "server.py:930-949 — /api/auth/change-password: verify_pw before mutate, explicit 400 when new==current, mints fresh JWT, response projection strips _id.",
+    "server.py:867-927 — /api/auth/forgot-password-pin: dummy bcrypt verify on unknown email + missing PIN branches keeps timing constant; lockout counter + 15-min lock after 5 attempts is applied and cleared on success; JWT minted from clean UserPublic (no _id leak).",
+    "server.py at 2481 lines is well over the 700-line guideline — consider splitting auth/messages/media/live routers into modules. Not blocking this iteration.",
+    "Frontend /forgot-password/index.tsx routes via a single has-pin RPC then either replaces to /pin or /verify with the email + dev_code preserved in params — clean UX, no back-button loop."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration18_password_ux.py (created — 30 tests)"
+  ],
+  "success_rate": {"backend": "100% (30/30 passed)", "frontend": "100% (login pill, unified forgot flow, pin route, verify route, change-password rotation, settings row, AI Calls fully removed, own-profile pill removed — all verified)"},
+  "seed_data_creation": "Two scratch users with prefix tpb_ (tpb_reset_*, tpb_reg_*) created via /api/auth/register — auto-purged on next backend restart per policy. Founder password was rotated twice during the run and restored to Semi123! at the end (verified by the trailing test).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 18 is a green build. Reusable regression pack lives at /app/backend/tests/test_iteration18_password_ux.py — it self-restores the founder password so it's safe to re-run any time. If a future iteration adds new auth endpoints, extend the same file. Note: register body uses 'display_name' (not 'full_name'); EmailStr rejects .test TLD, use example.com for scratch data.",
+  "rca_of_issue": "Not applicable — no bugs found. The reported 'forgot password/PIN not working' concern has been resolved by the /forgot-password unified entry + auto-routing based on has-pin, and change-password now provides a super-easy Settings → Change password path with fresh JWT on rotation."
+}

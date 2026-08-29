@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 11 verifies the forgot-password sandbox-mode fallback + UX improvement. All 5 new tests PASS and all 70 prior-iteration regression tests still PASS (75/75 in a single pytest run, 21.14s). Confirmed via live backend logs: POST /api/auth/forgot-password with {email:'semidiepie@gmail.com'} returns 200 with {status:'ok', email_status:'sandbox_mode', dev_code:'<6 digits>'} and emits the exact log line `[resend] SANDBOX MODE: cannot deliver to semidiepie@gmail.com — verify a domain in the Resend dashboard...` (Resend HTTP 403 upstream, confirmed real not mocked). Unknown email returns 200 with email_status='not_attempted' and NO dev_code (no user existence leak). End-to-end reset via dev_code round-trip works: forgot-password → verify-reset-code (200) → reset-password (200 with JWT + user.email==founder) → old pw Semi123! rejected → new pw works → restore back to Semi123! → login final assertion passes. Frontend static contract passes all 4 checks: React.useMemo imported (line 68), emailStatus state + memo dependency (lines 26,69,79), all 4 devMessage branches present (sandbox_mode/no_key/forbidden/default), continueWithDevCode handler navigates to /forgot-password/verify with dev_code param (lines 60-66,123), NO setTimeout 1200ms remnant. Metro bundle 200 OK; /forgot-password route 200.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_forgot_password.py",
+    "/app/test_reports/pytest/iteration11_forgot_password.xml",
+    "/app/test_reports/pytest/iteration11_regression.xml"
+  ],
+  "action_items": [
+    "Operational (out of code scope): the underlying delivery bug is a Resend account-config issue — verify a domain at resend.com/domains so `email_status` becomes 'ok' for arbitrary recipients. Once verified, TestForgotPasswordContract.test_founder_returns_sandbox_mode_with_dev_code will need its expected value flipped from 'sandbox_mode' to 'ok' and it should assert NO dev_code is returned.",
+    "Nit: /app/backend/tests/test_iteration10_verify.py hard-crashes at import when EXPO_PUBLIC_BACKEND_URL isn't in the shell env (os.environ[] without fallback). Iteration-11 tests use conftest fallback URL and are safe. Consider changing to os.environ.get(...) with the same fallback for parity."
+  ],
+  "critical_code_review_comments": [
+    "send_reset_email tuple return is clean and readable: (False, 'sandbox_mode') vs (False, 'no_key'/'forbidden'/'http_XXX'/'exception') gives the client enough context without ever leaking implementation detail (raw Resend body is only logged, never returned).",
+    "forgot_password correctly still returns 200 for unknown-email path (no user enumeration) AND omits dev_code in that branch — verified by test_unknown_email_returns_not_attempted_without_dev_code.",
+    "The `if resp.status_code == 403 and 'verify a domain' in body:` string-match is the pragmatic detector for Resend's sandbox 403 (they don't give a machine-readable code). Fine for now — if Resend ever renames the copy the code falls through to the generic `forbidden` branch, which still surfaces dev_code, so the user is never blocked.",
+    "Frontend devCard is well-scoped: it hides the 'Send code' button while visible (prevents double-send), uses tabular-nums + 8px letter-spacing on the 6-digit code (readable), and gives per-status copy via the useMemo switch. testIDs are present on banner, use-code button, error, and back-to-login — all reachable by playwright when needed.",
+    "No React.StrictMode double-invocation concerns: useMemo has [emailStatus] as its only dep, which is idempotent.",
+    "Reset-flow security: verify-reset-code and reset-password both re-check {used:false} + expires_at, and the code is marked used only after a successful reset. Multiple forgot-password calls invalidate prior codes via update_many({used:false}) — prevents replay of stale codes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11_forgot_password.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% — 75/75 in single pytest run (5 new iteration-11 + 70 regression across iterations 6/7/8/9/10 + push + purge)",
+    "frontend": "Static contract 4/4 (useMemo import, emailStatus + 4 devMessage cases, continueWithDevCode nav to /forgot-password/verify with dev_code, no setTimeout 1200 remnant). Bundle 200; /forgot-password route 200."
+  },
+  "seed_data_creation": "None. The reset round-trip touches only the founder's password_hash and is fully restored to Semi123! before the suite exits (asserted). No test_* / tec_* / tpb_* accounts created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "1) Resend is in SANDBOX mode by design at the account level — /api/auth/forgot-password for anyone other than the account owner's verified email will get a Resend 403 and return email_status='sandbox_mode' + dev_code. When the founder verifies a domain in the Resend dashboard, this contract flips to email_status='ok' + no dev_code, and TestForgotPasswordContract must be updated accordingly. 2) The founder password MUST remain 'Semi123!' between test runs — the reset round-trip test explicitly restores it and the final assertion in TestRegressionAuth locks that in. Do NOT parallelise the reset test with anything else that logs in as the founder. 3) For running any subset containing test_iteration10_verify.py, export EXPO_PUBLIC_BACKEND_URL first (it does not fall back). All other test files use conftest defaults. 4) The `[resend] SANDBOX MODE` log line is the ground-truth signal that the sandbox path was hit — grep supervisor logs, not the API response, if you need to prove it end-to-end.",
+  "rca_of_issue": "Original user report: 'forgot-password won't send the code to my email'. Backend logs (confirmed live during this run) show Resend responding HTTP 403 with body `You can only send testing emails to your own email address (postmeplex@post.com). To send emails to other recipients, please verify a domain at resend.com/domains`. This is 100% a Resend account-config issue (RESEND_API_KEY is in test/sandbox mode until a domain is verified) — no code fix can deliver the email until the domain is added at resend.com/domains. E1 correctly did NOT try to code around the upstream restriction; instead the fix (a) detects the sandbox-mode 403 specifically via string match on 'verify a domain' in body, (b) returns a distinct email_status='sandbox_mode' + dev_code fallback so the user can complete the reset in-app, and (c) surfaces a per-status human-readable card in the UI explaining exactly why. Verified end-to-end: reset-flow completes successfully via the dev_code path, and the founder can log in with the new password then again with Semi123! after restore. The permanent fix is operational: verify the Resend domain."
+}

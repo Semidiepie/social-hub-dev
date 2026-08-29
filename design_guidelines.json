@@ -1,0 +1,179 @@
+{
+  "theme": "dark",
+  "archetype": "Fusion of Archetype 2 (Performance Pro) & Archetype 7 (Electric Gaming). Deep void background with high-visibility vivid orange accents to convey esports energy without falling into the 'purple cyberpunk' cliché.",
+  "colors": {
+    "background_base": "#12141c",
+    "background_surface": "#1A1D27",
+    "background_elevated": "#252936",
+    "primary": "#FF6B3D",
+    "primary_hover": "#FF8C66",
+    "primary_muted": "rgba(255, 107, 61, 0.2)",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A0A5B5",
+    "text_inverse": "#000000",
+    "border": "#2A2D3A",
+    "border_light": "#3B3F54",
+    "live_badge": "#FF3B30",
+    "overlay_dim": "rgba(18, 20, 28, 0.8)",
+    "gradient_overlay": "linear-gradient(to top, rgba(18,20,28,1) 0%, rgba(18,20,28,0) 100%)"
+  },
+  "typography": {
+    "rules": "Avoid generic sans for headers. Use strong, condensed or bold geometric sans-serif for headings (e.g., 'Outfit', 'Clash Display' if custom, otherwise 'System' with '900' weight). Body should be highly readable.",
+    "h1": {
+      "fontSize": 32,
+      "fontWeight": "900",
+      "letterSpacing": -1
+    },
+    "h2": {
+      "fontSize": 24,
+      "fontWeight": "800",
+      "letterSpacing": -0.5
+    },
+    "h3": {
+      "fontSize": 18,
+      "fontWeight": "700"
+    },
+    "body": {
+      "fontSize": 15,
+      "fontWeight": "400",
+      "lineHeight": 22
+    },
+    "label": {
+      "fontSize": 12,
+      "fontWeight": "600",
+      "textTransform": "uppercase",
+      "letterSpacing": 1
+    }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "xxl": 48
+  },
+  "radii": {
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "full": 9999
+  },
+  "layout_strategies": {
+    "navigation": "Bottom tab bar with 5 icons. Create (+) is a prominent central button (orange background). Stick headers for feed with 'PostMePlex' logo and notification/DM icons.",
+    "feed": "Vertical scroll. Posts use cards or full-bleed width with internal padding for content. Instagram-style horizontal scroll for Stories/Live bar at the top.",
+    "reels": "Full-screen vertical swiping (TikTok style). Content takes 100% height/width. Floating action bar on the right side. Gradient overlay at the bottom for text readability.",
+    "profile": "Sticky header with user stats. 3-column photo grid for Instagram-style viewing. Tabs to switch between Posts, Reels, Tagged."
+  },
+  "components": {
+    "buttons": {
+      "primary": "Background #FF6B3D, Text #FFFFFF, borderRadius: 12, paddingVertical: 16, paddingHorizontal: 24. Font weight 700.",
+      "secondary": "Background transparent, Border #2A2D3A (width 1), Text #FFFFFF. borderRadius: 12.",
+      "live_badge": "Background #FF3B30, paddingHorizontal 8, paddingVertical 4, borderRadius 4. Text uppercase, bold, white."
+    },
+    "inputs": {
+      "default": "Background #1A1D27, Border #2A2D3A, BorderRadius 12, Padding 16, Text #FFFFFF, Placeholder #A0A5B5."
+    },
+    "chips": {
+      "active": "Background #FF6B3D, Text #FFFFFF, BorderRadius full, paddingHorizontal 16, paddingVertical 8.",
+      "inactive": "Background #252936, Text #A0A5B5, BorderRadius full, paddingHorizontal 16, paddingVertical 8."
+    },
+    "cards": {
+      "post": "Background transparent or #1A1D27. Avatar row at top. Image full width. Action row (Heart, Comment, Share) at bottom. Spacing 16."
+    }
+  },
+  "icons_spec": {
+    "library": "@expo/vector-icons",
+    "families": ["Ionicons", "Feather"],
+    "home": "Ionicons: home / home-outline",
+    "discover": "Ionicons: search / search-outline",
+    "create": "Ionicons: add-circle",
+    "reels": "Ionicons: play-circle / play-circle-outline",
+    "profile": "Ionicons: person / person-outline",
+    "like": "Ionicons: heart / heart-outline",
+    "comment": "Ionicons: chatbubble / chatbubble-outline",
+    "share": "Ionicons: paper-plane / paper-plane-outline",
+    "live": "Feather: radio"
+  },
+  "screens": {
+    "Onboarding": {
+      "description": "Welcome screen showcasing brand energy. Full background gaming image with dark gradient overlay. Massive 'PostMePlex' logo. Login and Register buttons at the bottom.",
+      "testids": ["onboarding-login-button", "onboarding-register-button"]
+    },
+    "Auth": {
+      "description": "JWT Email/Password forms. Minimalist inputs on deep dark background. Vivid orange primary CTA.",
+      "testids": ["auth-email-input", "auth-password-input", "auth-submit-button"]
+    },
+    "HomeFeed": {
+      "description": "Top section: Scrollable horizontal list of user avatars with 'Live' or 'Story' rings (Orange for story, Red for Live). Feed below: Mix of text and photo posts. Action buttons below each post.",
+      "testids": ["home-feed-list", "story-avatar-button", "post-like-button", "post-comment-button", "post-share-button"]
+    },
+    "Reels": {
+      "description": "Full-screen video player. Right-aligned transparent action column (Like, Comment, Share). Bottom-aligned user info and caption over a dark gradient.",
+      "testids": ["reel-video-player", "reel-like-button", "reel-comment-button", "reel-share-button", "reel-creator-profile"]
+    },
+    "Discover": {
+      "description": "Top: Horizontal filter chips (Top, Accounts, Tags, Live). Below: Instagram-style 3-column masonry/grid of trending images and reels.",
+      "testids": ["discover-search-input", "discover-filter-chip", "discover-grid-item"]
+    },
+    "Profile": {
+      "description": "Avatar centered. Bio, stats (Posts, Followers, Following). 'Edit Profile' button. Tabbed view (Posts, Reels) rendering a 3-column grid.",
+      "testids": ["profile-edit-button", "profile-tab-posts", "profile-tab-reels", "profile-grid-item"]
+    }
+  },
+  "media": {
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1759701547121-d5e4188e3d3b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2Mzl8MHwxfHNlYXJjaHwzfHxlc3BvcnRzJTIwcGxheWVyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzgwNjgwNjcwfDA&ixlib=rb-4.1.0&q=85",
+        "category": "user_avatar",
+        "description": "Male esports player in red jersey"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1759701547089-12599225b4c4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2Mzl8MHwxfHNlYXJjaHwxfHxlc3BvcnRzJTIwcGxheWVyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzgwNjgwNjcwfDA&ixlib=rb-4.1.0&q=85",
+        "category": "user_avatar",
+        "description": "Female esports player in red jersey"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1759701546655-d90ec831aa52?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2Mzl8MHwxfHNlYXJjaHwyfHxlc3BvcnRzJTIwcGxheWVyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzgwNjgwNjcwfDA&ixlib=rb-4.1.0&q=85",
+        "category": "user_avatar",
+        "description": "Young male gamer with serious expression"
+      }
+    ],
+    "feed_posts": [
+      {
+        "url": "https://images.unsplash.com/photo-1600861194942-f883de0dfe96?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwzfHxnYW1lciUyMHBsYXlpbmclMjBjb250cm9sbGVyfGVufDB8fHx8MTc4MDY4MDY3MHww&ixlib=rb-4.1.0&q=85",
+        "category": "post_image",
+        "description": "Person holding black controller"
+      },
+      {
+        "url": "https://images.pexels.com/photos/1563796/pexels-photo-1563796.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "post_image",
+        "description": "Wireless controller indoors"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1603481588273-2f908a9a7a1b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwzfHxnYW1pbmclMjBzZXR1cCUyMGRhcmt8ZW58MHx8fHwxNzgwNjgwNjcwfDA&ixlib=rb-4.1.0&q=85",
+        "category": "post_image",
+        "description": "Gaming setup flat screen"
+      }
+    ],
+    "reels_backgrounds": [
+      {
+        "url": "https://images.pexels.com/photos/6489045/pexels-photo-6489045.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "reel_video_placeholder",
+        "description": "Sleek gaming desk with RGB"
+      },
+      {
+        "url": "https://images.pexels.com/photos/31862217/pexels-photo-31862217.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "reel_video_placeholder",
+        "description": "Gamer at night in RGB setup"
+      }
+    ]
+  },
+  "rules": {
+    "accessibility": "All text must contrast against #12141c. Primary orange buttons need bold white text. Gradient overlays are mandatory behind text on images.",
+    "interactions": "Provide immediate visual feedback via opacity changes on touch (activeOpacity={0.7}). Add subtle haptic feedback on likes and follows if possible.",
+    "testing": "All interactive elements MUST use the specified `data-testid` properties (e.g., testID='post-like-button' in React Native).",
+    "theme_integrity": "Do NOT use purple or teal gradients. Strict adherence to deep dark #12141c and vivid orange #FF6B3D. Use 1px #2A2D3A borders to define surface edges instead of heavy drop shadows."
+  }
+}

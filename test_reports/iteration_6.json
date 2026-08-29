@@ -1,0 +1,58 @@
+{
+  "summary": "PostMePlex iteration 6 — UI/UX redesign verification (BOTH backend + frontend). Backend: 20/20 pytest pass (100%) on /app/backend/tests/test_iteration6_regression.py — /api/auth/login for semidiepie → 200 + user echo; /api/feed, /api/reels, /api/stories → 200 arrays; /api/discover with all 4 filters (top, accounts, tags, live) → 200 with typed items; push endpoints (/api/register-push happy path + missing-token 422, /api/push/debug authed 200 + unauthed 401) unchanged from iteration 5 baseline; no _id leaks on 7 read endpoints. Frontend: Logged in as semidiepie via web preview (390x844). ✓ Floating pill tab bar renders on ALL 5 screens (home, discover, create, reels, profile). Measured tab bar geometry: {top:770, bottom:836, left:16, right:374, width:358, height:66} — floats 8px above viewport bottom, 16px horizontal margin, 66px tall, 24px rounded ✓. ✓ 5 testIDs present: tab-home, tab-discover, tab-create (orange gradient raised FAB with +), tab-reels (flame icon — NOT IG play-circle), tab-profile. ✓ Active tab shows orange-tinted rounded rectangle around icon. ✓ Home header shows gradient orange square with lightning bolt + PostMePlex wordmark + orange underline + THE HOME FOR CREATORS caption + notification & paper-plane in rounded elevated squares. ✓ Reels header shows glowing orange dot + REELS letter-spaced + orange PMP chip + round frosted-glass video icon (top-right). ✓ Reels overlap fix VERIFIED: measured 3 reels, each with height==1080 (SCREEN_H captured at bundle time on web) and snapToInterval==reelHeight — after programmatic scroll by 1080, reel[0].bottom=0 and reel[1].top=0 exactly (no gap, no overlap between snapped items). This is the exact behaviour the fix intends: on-device SCREEN_H==viewport, so each snap covers the full screen with the floating tab bar overlaying the gradient at the bottom (TikTok/IG-Reels pattern). ✓ Home feed scrolls behind the floating bar (paddingBottom: 110+insets ensures last post is fully visible above the bar). Navigation between tabs works via tabPress. Login flow works. NO deprecated expo-av / expo-barcode-scanner / expo-background-fetch imports; expo-video (new) is used correctly in reels.tsx. Minor non-blocking issues detected — see below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "discover.tsx",
+        "issues": [
+          "FILTERS array only exposes top/accounts/tags in the UI, but the backend /api/discover supports 'live' too. If 'Live' was intentionally removed from Discover chips because the redesign hides it, ignore; otherwise add {key:'live', label:'Live'} to the FILTERS array.",
+          "Duplicate StyleSheet keys: searchSection, searchSectionLabel and postsGrid are declared twice in styles (lines 313-315 and 394-396). Later definition silently wins under StyleSheet.create — cosmetic dead code that should be deduped."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "reels.tsx header + gradient",
+        "issue": "props.pointerEvents is deprecated — use style.pointerEvents. Two occurrences: (a) `pointerEvents: 'box-none'` is currently set inside the `style` array on the header View (OK) but also `pointerEvents` prop pattern is used elsewhere via LinearGradient. Not a functional bug, just a React Native deprecation warning at runtime in the web console. Reference: /app/frontend/app/(tabs)/reels.tsx:264, /app/frontend/app/(tabs)/reels.tsx:269, /app/frontend/app/(tabs)/reels.tsx:129, /app/frontend/app/(tabs)/home.tsx:59, /app/frontend/app/(tabs)/discover.tsx (search for pointerEvents=\"none\")."
+      },
+      {
+        "component": "global shadow* props",
+        "issue": "'shadow*' style props are deprecated in the newest RN — should migrate to `boxShadow`. Occurs in tab bar (_layout.tsx:161-164, :196-199), home header (home.tsx:172-175), reels brandDot (reels.tsx:361-364). Non-blocking runtime warning only; visual shadow still renders."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_regression.py",
+    "/app/test_reports/pytest/iteration6_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: In /app/frontend/app/(tabs)/discover.tsx dedupe the three repeated StyleSheet keys (searchSection, searchSectionLabel, postsGrid) and decide whether the 'live' filter chip should be added back — backend supports it.",
+    "OPTIONAL: Migrate `shadow*` style props to `boxShadow` in _layout.tsx tab bar/FAB, home.tsx brandMark and reels.tsx brandDot to silence the React Native deprecation warning.",
+    "OPTIONAL: Move `pointerEvents` from prop to style on the LinearGradient in home.tsx:59, reels.tsx:129 and reels.tsx:269 to silence the props.pointerEvents deprecation warning.",
+    "NO functional/blocking action needed. The reels overlap bug fix is verified and the redesign visibly departs from Instagram's flat white bar."
+  ],
+  "critical_code_review_comments": [
+    "reels.tsx:25 — Dimensions.get('window') is captured at module load; on web preview this can differ from the current viewport (measured height=1080 vs viewport 844). On a real device this is fine, but if we ever need pixel-accurate web-preview parity, switch to `useWindowDimensions()` and derive reelHeight in-component. The current fix (reelHeight = SCREEN_H, snapToInterval == reelHeight) is still correct because both values come from the same source, so no gap/overlap between snapped items regardless of the numeric value.",
+    "reels.tsx:145,172 — actions and bottom info use `bottom: tabBarSpace + 16` and `tabBarSpace + 12`. tabBarSpace = 66 + max(insets.bottom,8) + 16 = ~90 on iOS. That correctly positions the pills above the floating pill bar without hugging the reel edge. Good.",
+    "_layout.tsx:79-130 — custom `tabBar` prop is well-implemented: uses navigation.emit('tabPress') with canPreventDefault (so tab-press interceptors still work) and falls back to navigate() only if not defaultPrevented. This is the correct expo-router / react-navigation contract.",
+    "_layout.tsx:190-203 — CreateFab uses LinearGradient (#FF8C66→#FF6B3D) at 52x44 with 16 radius, elevation 8 and orange shadow. Distinct-from-IG ✓.",
+    "discover.tsx / home.tsx / ProfileView.tsx — paddingBottom set to `110 + insets.bottom` across all FlatLists so the last row/card clears the floating 66px pill bar + 8px bottom offset + 16 gap ≈ 90+16=106 → 110 has a small safety margin. Verified via scroll to end on Home feed on web preview.",
+    "reels.tsx uses `expo-video`'s VideoView + useVideoPlayer (NOT the deprecated `expo-av`). ✓",
+    "Backend push pipeline unchanged, still short-circuits on EMERGENT_PUSH_KEY=placeholder as expected."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6_regression.py (NEW — 20 focused regression tests covering login, feed/reels/stories/discover, push smoke, _id leak scan)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% — all 4 review-request screens verified (home header, tab bar on all 5 tabs, reels overlap, regressions)"},
+  "seed_data_creation": "No new users. Reused semidiepie founder + existing TEST_ec_ / TEST_pb_ throwaway users left from iterations 4-5.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend: `cd /app/backend/tests && EXPO_PUBLIC_BACKEND_URL=<public_url> pytest test_iteration6_regression.py -v` → expect 20 passed. Frontend: web preview reliably renders the floating pill tab bar via testIDs tab-home / tab-discover / tab-create / tab-reels / tab-profile. Reels overlap can be verified by asserting `reel.height === snapToInterval` and that after scrolling by that height the previous reel's bottom exactly equals 0 (no bleed). On web preview, `Dimensions.get('window').height` is read at bundle load and can be larger than the viewport (e.g. 1080 vs 844) — this is a rendering artefact of the web preview only, not an app bug. Do NOT re-run the full iteration 4/5 push pipeline suite unless push logic changes again.",
+  "rca_of_issue": "Original user bug (reels overlap): the previous reels.tsx computed `reelHeight = SCREEN_H - tabBarSpace` while the FlatList still occupied SCREEN_H and used `snapToInterval={reelHeight}`. Because snapToInterval was smaller than the visible viewport, each snap advanced by less than a full screen, so the top of the next reel bled into the tab-bar-sized gap below the current reel → the 'I can still see the video above' strip. Fix: set `reelHeight = SCREEN_H` so snapToInterval equals the viewport height; the floating tab bar now correctly overlays the reel gradient at the bottom (standard Reels/TikTok pattern) and there is exactly zero gap between snapped items. Verified via DOM measurement: reels are 1080px tall each, snapToInterval=1080, and after scrollTop=1080 the second reel's top is 0 exactly (previous reel bottom = 0 exactly). Reproduction step-through and mitigation: any change in the future that reintroduces `SCREEN_H - <something>` for reelHeight while keeping the FlatList at SCREEN_H will bring the bug back — the invariant is `FlatList.height === reelHeight === snapToInterval`."
+}

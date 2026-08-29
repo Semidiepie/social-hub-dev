@@ -1,0 +1,57 @@
+{
+  "summary": "PostMePlex iteration 2 end-to-end testing. Backend: 38/38 pytest cases pass (23 from iter-1 regression + 15 new iter-2). Found and fixed two backend defects: (1) UserPublic Pydantic model was missing the `is_super_admin` field so the login payload silently dropped it — semidiepie was being returned with is_super_admin absent, which would have broken the entire admin-gating flow; added the field. (2) POST /api/conversations/{id}/messages returned a 500 because motor's insert_one mutates the dict with BSON _id and the handler returned that dict — added `msg.pop('_id', None)` (same class of bug as the comments endpoint fix in iter-1). Frontend: all five new flows verified visually on mobile viewport — semidiepie sees the 'Verify accounts' row in Settings and the admin/verify page filters Maria and shows a Verify button; alex does NOT see the row; /messages, /messages/new (search 'maria' finds her), Discover search (returns Gamers section), and /create screen (no 'keys not set' message — Cloudinary env loaded) all work. One UI bug: /messages list renders 'undefined' for last-message preview and 'NaNmo' for timestamp when last_message is null (group with no messages yet). Console warnings from iter-1 persist (shadow*, pointerEvents, expo-notifications on web).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET/POST /api/auth/*", "issue": "FIXED by tester: UserPublic model lacked `is_super_admin: bool = False` field. Pydantic v2 silently dropped the extra arg passed by user_to_public(), so login responses for semidiepie returned no is_super_admin key. Frontend gates 'Verify accounts' on this flag → would have hidden the entire admin UI. server.py:64-75."},
+      {"endpoint": "POST /api/conversations/{id}/messages", "issue": "FIXED by tester: returned 500 due to motor's insert_one mutating msg dict with BSON _id. Added msg.pop('_id', None) after insert. server.py:852."},
+      {"endpoint": "POST /api/register-push", "issue": "Still logs 401 from upstream when EMERGENT_PUSH_KEY=placeholder. Endpoint now returns 'skipped' (good) but every push trigger inside other handlers (follow/like/comment/DM) still calls the upstream and logs 'Push trigger failed: 401'. Recommend short-circuiting send_push() when PUSH_KEY=='placeholder' to silence noise. server.py:194-207."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/messages/index.tsx", "issue": "Group conversations with last_message=null render 'undefined' for the preview text and 'NaNmo' for the relative timestamp. Guard with: text = c.last_message?.text || (c.is_group ? 'New squad' : 'Say hi'); and skip formatRelativeTime when updated_at is missing. Visible on /messages for alex (TEST_Squad rows).", "testID": "messages-list-item", "priority": "MEDIUM"},
+      {"component": "Global", "issue": "Still no testID/data-testid attributes on interactive elements (chat icon, settings icon, send-message button, verify-toggle button, discover-search input, etc.). Selectors are forced to fall back to text content. Reported in iter-1; not addressed.", "testID": "*", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Verify accounts (/admin/verify)", "issues": ["Clean layout, search + list + orange 'Verify' button. Verified badge appears next to display name after toggle. Touch target on Verify button looks ≥44px."]},
+      {"screen": "Messages list", "issues": ["Layout fine but the 'undefined / NaNmo' empty-preview rendering looks broken."]},
+      {"screen": "Settings", "issues": ["Admin section is shown only for super-admin (correct). Verify accounts row is well-styled."]}
+    ],
+    "react_native_issues": [
+      {"component": "Global styles", "issue": "Console warning persists: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Carryover from iter-1, not fixed."},
+      {"component": "expo-notifications", "issue": "Console warning persists on web: '[expo-notifications] Listening to push token changes is not yet fully supported on web.' Guard listener with Platform.OS !== 'web'."},
+      {"component": "Global", "issue": "Console warning persists: 'props.pointerEvents is deprecated. Use style.pointerEvents'."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2_features.py",
+    "/app/backend/tests/test_postmeplex_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Already fixed by tester (no action needed): UserPublic.is_super_admin field; messages 500 from _id leak.",
+    "FIX (MEDIUM): /app/frontend/app/messages/index.tsx — guard against null last_message and missing updated_at so groups don't render 'undefined / NaNmo'.",
+    "FIX (LOW): in server.py send_push() — short-circuit when PUSH_KEY=='placeholder' to stop logging 'Push trigger failed: 401' on every social action.",
+    "Carryover from iter-1: add testID props across the app (chat icon, settings icon, send button, verify button, search inputs, message bubbles, etc.) — testability still fragile.",
+    "Carryover from iter-1: migrate shadow*→boxShadow, pointerEvents prop → style.pointerEvents, guard expo-notifications listener with Platform.OS !== 'web'."
+  ],
+  "critical_code_review_comments": [
+    "server.py:152-166 user_to_public passes is_super_admin to UserPublic — model MUST declare the field, or Pydantic v2 silently drops it. Bug class: 'silent field loss via extra='ignore'.' Consider model_config = ConfigDict(extra='forbid') in dev to catch this earlier.",
+    "server.py:838-881 send_message — same insert_one+return pattern as the iter-1 comments bug. Recommend a shared helper `strip_id(doc)` or always re-fetch from db before returning.",
+    "server.py is now ~1150 lines incl. seed; still exceeds 700-line guideline. Split into routers/ (auth, posts, conversations, admin) + seed.py.",
+    "Conversation 1:1 dedup query uses `name: None` but a 2-member conv with an explicit name is treated as a group via is_group flag — current logic is correct, but worth a comment for clarity."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (added is_super_admin to UserPublic; added msg.pop('_id') in send_message)",
+    "/app/backend/tests/test_iteration2_features.py (new — 15 tests covering super-admin, /api/search, admin verify, conversations & messages)"
+  ],
+  "success_rate": {"backend": "100% (38/38 after 2 tester fixes)", "frontend": "~95% (all five iter-2 flows verified; one minor null-preview rendering bug on /messages list)"},
+  "seed_data_creation": "Reused existing seed (semidiepie + 7 users + posts + reels already populated). Tests create TEST_-prefixed posts/conversations and clean up where feasible; 2 TEST_Squad_* group conversations remain in alex's inbox from regression runs (visible in screenshot).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest: `cd /app/backend/tests && pytest -v` → expect 38 pass (15 in test_iteration2_features.py + 23 in test_postmeplex_api.py). Key fixes already applied to server.py: UserPublic.is_super_admin and msg.pop('_id'). Outstanding minor fixes for main agent: /messages list null-preview rendering, send_push short-circuit on placeholder key, testID coverage, and deprecated style migrations. Cloudinary env vars (EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME=dpnrol54k, EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET=ml_default) are correctly loaded — /create no longer shows the 'keys not set' banner.",
+  "rca_of_issue": "is_super_admin missing RCA: Pydantic v2 defaults extra='ignore', so when user_to_public(u) called UserPublic(... is_super_admin=u['is_super_admin'] ...) without the field being declared on the model, the kwarg was silently dropped. Confirmed via direct curl to /api/auth/login before fix: no is_super_admin key in user payload. Fix: declare `is_super_admin: bool = False` on UserPublic (server.py:73). Verified post-fix: curl returns is_super_admin=true for semidiepie and the Settings 'Verify accounts' row renders correctly. Messages 500 RCA: motor's insert_one mutates the input dict by assigning the new BSON ObjectId to dict['_id']; the send_message handler then did `return {**msg, 'created_at': ...}` which preserved _id; FastAPI's jsonable_encoder cannot encode ObjectId and raised. Same root cause as iter-1's comments bug. Fix: msg.pop('_id', None) immediately after insert."
+}

@@ -1,0 +1,63 @@
+{
+  "summary": "First-pass end-to-end test of PostMePlex MVP. Backend: 23/23 pytest cases pass after fixing one ObjectId leak bug (POST /api/posts/{id}/comments was returning the raw insert dict which contained Mongo _id, causing a 500). Frontend: welcome → login → home → reels all working with great gamer-themed UI; LIVE badges, StoryBar, feed rendering, vertical reels player, like icon toggles. Critical frontend crash discovered on Discover screen when switching filter chips (FlatList numColumns invariant violation). Multiple interactive elements lack testID, making automated UI verification fragile. /api/register-push returns 500 (not 'skipped') when EMERGENT_PUSH_KEY is the placeholder — backend does not 'gracefully skip' as the PRD says.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/posts/{id}/comments", "issue": "BUG FIXED by tester: response dict was the same object returned by motor's insert_one (mutated with ObjectId _id), causing FastAPI 500. Patched to drop _id before serializing."},
+      {"endpoint": "POST /api/register-push", "issue": "Spec says it should gracefully skip with placeholder EMERGENT_PUSH_KEY, but the implementation explicitly raises HTTPException(500) on upstream 401. Returns 500 in dev. Recommend: on 401, log warning and return {status:'skipped'} (only fail-fast in prod). Reference: backend/server.py:646."},
+      {"endpoint": "POST /api/auth/register", "issue": "Returns 200 (FastAPI default). For resource creation, 201 Created is conventional. Minor."},
+      {"endpoint": "Seed", "issue": "Seed is not idempotent — it only runs when users count == 0. If the first run partially fails the DB ends up half-seeded (we observed feed had 6/8 posts and reels was empty). The tester wiped the DB to re-seed. Recommend per-collection guards or a dedicated POST /api/seed admin route."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/(tabs)/discover.tsx", "issue": "CRASH: Switching the filter chip from 'Top' (grid 3-col) to 'Tags' or 'Live' (different column count) raises Uncaught Error: 'Changing numColumns on the fly is not supported. Change the key prop on FlatList when changing the number of columns.' The full-screen red error overlay then blocks all navigation. Fix: pass key={`grid-${numColumns}`} on FlatList (or use a different list per filter).", "testID": "discover-list", "priority": "CRITICAL"},
+      {"component": "notifications entry", "issue": "Top-right bell/heart icon on home header is rendered as a TouchableOpacity without testID or accessible label, and the route is not exposed via a tab; hard to discover/test. Add testID='notifications-button'.", "testID": "notifications-button", "priority": "MEDIUM"},
+      {"component": "Global", "issue": "No interactive element exposes testID (data-testid) to web. Querying `[data-testid]` returns 0 elements across the app. Buttons, inputs, tabs, like/comment/share, story items must have testID for reliable testing. See <Test_coverage> in system prompt.", "testID": "*", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Discover filter switching", "issue": "Tag/Live filters never reachable in UI due to FlatList numColumns crash above; backend endpoints themselves return correct shape.", "affected_testIDs": ["discover-filter-tags", "discover-filter-live"]}
+    ],
+    "design_issues": [
+      {"screen": "Home", "issues": ["Header title 'PostMePlex' uses the brand logo + text well; LIVE NOW badge animation good. Story item ring + LIVE badge readable. Like-button bottom row has 44px touch targets — acceptable."]},
+      {"screen": "Welcome", "issues": ["Beautiful hero, clear CTAs. Buttons meet 44px touch targets. Contrast on #12141c with orange #FF6B3D is strong."]},
+      {"screen": "Discover", "issues": ["Filter chips look great but the grid crash blocks Tags/Live."]}
+    ],
+    "react_native_issues": [
+      {"component": "Global styles", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Multiple occurrences. Reference: any StyleSheet using shadowColor/shadowOffset/shadowOpacity/shadowRadius — migrate to boxShadow for web compatibility."},
+      {"component": "expo-notifications", "issue": "Console warning: '[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.' Expected on web preview; suppress or guard with Platform.OS !== 'web'."},
+      {"component": "Global", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Migrate any pointerEvents prop into style."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_postmeplex_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX (critical): app/(tabs)/discover.tsx — give FlatList a key based on numColumns so switching filter chips doesn't crash. e.g. <FlatList key={`cols-${cols}`} numColumns={cols} ...> ",
+    "FIX: server.py register_push — on push provider 401, log warning and return {status:'skipped'} instead of raising 500, so placeholder EMERGENT_PUSH_KEY 'gracefully skips' per spec (line ~646).",
+    "ADD testID props to all interactive elements (TouchableOpacity, Pressable, TextInput, tab links, like/comment/share/bookmark, story items, filter chips, notifications-button, edit-profile button). The tester could not query a single [data-testid] in the rendered web preview.",
+    "Migrate deprecated style props: shadow* → boxShadow, pointerEvents prop → style.pointerEvents.",
+    "Guard expo-notifications listener with Platform.OS !== 'web' to silence warnings on web preview.",
+    "Make seed idempotent per-collection (or expose a seed endpoint) so a partial-failure run doesn't leave the DB half-populated.",
+    "Consider returning 201 Created from POST /api/auth/register and POST /api/posts."
+  ],
+  "critical_code_review_comments": [
+    "server.py:574-616 create_comment relies on the mutated dict returned by insert_one. After our patch we drop _id, but other endpoints (e.g. create_post) avoid this by re-building via serialize_post — apply the same pattern uniformly.",
+    "server.py:642-657 register_push contradicts the PRD's 'gracefully skips' behavior in dev.",
+    "server.py is 920+ lines including seed data; consider splitting routes / seed / models into modules (>700 line guideline).",
+    "Frontend lacks testID coverage — testing & QA will be brittle until added."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (fixed _id leak in POST /api/posts/{id}/comments)",
+    "/app/backend/tests/conftest.py (new)",
+    "/app/backend/tests/test_postmeplex_api.py (new)"
+  ],
+  "success_rate": {"backend": "100% (23/23 after 1 tester fix)", "frontend": "~70% (welcome, login, home/feed, reels OK; discover filter switching CRASHES; like icon toggles visually; notifications & create not fully verified due to discover-induced overlay)"},
+  "seed_data_creation": "Dropped postmeplex DB and restarted backend so the existing (idempotent-only-when-empty) seed re-ran cleanly: 7 users, 8 posts, 5 reels.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend pytest suite at /app/backend/tests/ runs against EXPO_PUBLIC_BACKEND_URL. Re-run with `cd /app/backend/tests && pytest -v`. Seeded credentials in /app/memory/test_credentials.md. Outstanding bugs to retest after main agent fixes: (1) Discover FlatList numColumns crash, (2) register-push graceful-skip behavior, (3) testID coverage. Note frontend has NO data-testid attributes — selectors must use text/role until added.",
+  "rca_of_issue": "Discover crash RCA: react-native FlatList does not support changing numColumns at runtime; it requires the component to remount via a different `key`. In discover.tsx the FlatList numColumns prop is driven by the active filter (Top=3, Accounts=1, Tags/Live=2 or similar) without a corresponding `key` change → React Native throws 'Invariant Violation: Changing numColumns on the fly is not supported'. Repro: login → tap Discover → tap 'Accounts' → tap 'Tags' (or Top→Tags) → error overlay covers screen. Mitigation: <FlatList key={`grid-${numColumns}`} ...> OR conditionally render two FlatLists. Comment _id leak RCA: motor's `insert_one` mutates the passed dict by injecting BSON ObjectId into the `_id` field; the handler returned that same dict, causing FastAPI's jsonable_encoder to fail. Fixed by stripping _id before returning."
+}

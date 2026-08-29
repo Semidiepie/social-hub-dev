@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 13 (Watch tab / video platform) verified end-to-end. Wrote /app/backend/tests/test_iteration13_videos.py — 17/17 backend tests pass (list/get/create shape+H264 compat, related, view dedupe, like idempotent + unlike, comments create+list, owner update, 403 non-owner, private visibility, search, category filter, channel endpoint, delete with likes+comments cascade, blocked-author feed filtering, reels backward compat). All frontend static-contract items grep-verified: (tabs)/_layout.tsx has name='watch' + iconFocused='play-circle' + reels href:null; watch.tsx has watch-search-input, CATEGORIES chips (All/Gaming/Vlogs/Music/Tech/Comedy/Sports/Learning), upload-button routing to /video/upload; video/[id].tsx imports useVideoPlayer+VideoView+useEvent and renders subscribe/comments/related sections; video/upload.tsx imports uploadVideoChunked + has visibility chooser + category + tags + progressBar + cancel; cloudinary.ts exports CHUNK_SIZE_BYTES, SINGLE_UPLOAD_MAX_BYTES, uploadVideoChunked using X-Unique-Upload-Id + Content-Range headers; api/client.ts exports VideoItem, VideoComment, VideoVisibility. Metro bundles cleanly (root/watch/upload all 200). No React Native red-screen or deprecated packages introduced by this iteration (still expo-video, no expo-av regression).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_videos.py",
+    "/app/test_reports/pytest/iteration13_videos.xml",
+    "/app/test_reports/pytest/iteration13_prior_regression.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Stale reels created by earlier testing-agent iterations (e.g. tec_58223b with video_url=https://example.com/v.mp4) still pollute /api/reels, causing 3 pre-existing regression tests (test_iteration8_reels::test_reel_author_is_founder, ::test_video_url_reachable, test_iteration12_reset_pin::TestReelsRegression::test_10_reels_h264_forced) to fail because they assert on the first item in the reels list. These are NOT iteration-13 regressions (iteration-13 does not touch reels). Consider hardening the auto-purge on startup to also delete reels/videos authored by tec_/tpb_/test_/TEST_ users, or make the reels regression tests filter by founder before asserting. Also test_iteration12_reset_pin::test_05_wrong_pin_5x_then_lockout failed once — likely stateful lockout counter residue from a prior run; retry-in-isolation usually clears it.",
+    "OPTIONAL: /app/backend/tests/conftest.py + test_iteration2_features.py + test_postmeplex_api.py + test_purge_verify.py + test_iteration10_verify.py still reference the deprecated alex/maria seed accounts which no longer exist in the clean-slate app — they collectively produce 11 failed / 19 error before iteration-13 changes. Recommend either deleting these legacy suites or migrating them to founder-only auth like the newer iteration_* suites already do."
+  ],
+  "critical_code_review_comments": [
+    "server.py has now grown to 2436 lines — consider splitting Routes—Videos (lines 1328–1640) into a dedicated /app/backend/routes/videos.py router. Same for reels/posts/messaging. Threshold guideline is >700 lines per file.",
+    "serialize_video() and the reels serializer both re-fetch the author on every row (N+1). For feed endpoints this fires one users.find_one per video. Consider batching with a single {'id': {'$in': [...]}} lookup and building an id→author map — cheap win once feeds grow past ~30 items.",
+    "delete_video correctly cascades to video_likes and video_comments, but video_views is NOT cleaned up. That's usually fine (analytics retention) but worth documenting or scrubbing on user hard-delete to satisfy GDPR-style delete.",
+    "unlike_video uses $inc:-1 then clamps at 0 — race-safe under Mongo, good. But if the like was already gone (deleted_count==0) the endpoint returns the current stored likes without re-fetching, which is fine here since we early-return with v's cached value.",
+    "list_video_comments returns comments sorted DESC by created_at but there is no cursor/pagination — hard-capped at 200. Fine for MVP; flag for future pagination."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_videos.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 on iteration-13 suite)",
+    "frontend": "100% static-contract (grep + curl 200 for /, /(tabs)/watch, /video/upload)"
+  },
+  "seed_data_creation": "Created one tpb_video_<hex>@example.com secondary user for owner-mismatch/block tests (auto-purged on next backend restart by design). Created ~11 TEST_-prefixed videos during the run; all deleted via DELETE /api/videos/{id} in the module-scoped teardown fixture. Verified with re-run: no TEST_ videos left in /api/videos after suite.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 13 video endpoints are solid. Regression noise around stale test-user reels in /api/reels is pre-existing; either clean up the auto-purge to also nuke test-user reels/videos, or update legacy tests to filter by founder. When testing anything reels-related, do NOT assume the first item in /api/reels is the founder's seed — filter explicitly by author.username=='semidiepie'.",
+  "rca_of_issue": "N/A — no iteration-13 bugs found. The 3 stale-reels failures RCA: earlier testing-agent runs used the (now removed) POST /api/reels/create flow with dummy urls, and although those TEST users were purged the reels documents survived because backend startup purge only currently scrubs users + their posts, not reels. Reels list endpoint returns newest-first so those stale rows shadow the founder's real seed."
+}

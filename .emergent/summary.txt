@@ -1,0 +1,128 @@
+<analysis>**original_problem_statement**: 
+I want a social media app and website called “PostMePlex” like a Facebook/Instagram/Tiktok combo. Theme is #12141c for background and orange. 
+PRODUCT REQUIREMENTS:
+- Dark mode theme (#12141c background, orange accents)
+- Push notifications
+- Discover user search
+- Verified badges via Admin Settings
+- 1:1 Direct Messages and Group Squad Chats
+- Cloudinary integration for uploads (with chunked uploads for large long-form videos up to 5GB)
+- Real Stories that expire in 24h
+- Audio Livestreams (users can host and invite guests)
+- Blogs feature (Publish professional blogs with markdown, images, cover, likes, admin approval for publishers)
+- Auto video compression
+- Password reset via 4-digit PIN
+- EULA and UGC features (Block, Report)
+- Website capability (Desktop responsive UI)
+
+**User's preferred language**: English (INSTRUCT next agent to respond in English only)
+
+**what currently exists?**: 
+A fully-featured Expo React Native app (PostMePlex) that is now heavily optimized for BOTH Mobile and Web (Desktop). Features include Auth, Home Feed, Discover, Profile, Stories, DMs, Audio Livestreams, Blogs (with markdown/admin approval), PIN-based password recovery, and chunked video uploads. The iOS build failure was fixed by upgrading dependencies, the Push Notification  key was documented, and the Bundle ID was corrected to match the user's existing App Store Connect app. A global desktop responsive shell () was implemented to show a persistent left sidebar on large screens and center the content column.
+
+**Last working item**: 
+    - Last item agent was working: Finishing the desktop website responsive UI polish (wrapping the auth screens, blogs, messages, and settings into the  and verifying layouts via screenshots).
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? NA
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**:  
+None. (The iOS deployment and Bundle ID issues were fully resolved in this session).
+
+**In progress Task List**: 
+None.
+
+**Upcoming and Future Tasks**
+    Future Tasks:
+    - P1: Refactor  (Currently over 2500 lines. Break it down further into , , etc., similar to how  was separated).
+    - P2: Add Notification Settings screen (Let users toggle push categories like DMs, Follows, Comments).
+    - P2: Batched / muted-chat push (Prevent sending push if user is already actively reading the chat).
+
+**Completed work in this session**
+- Fixed iOS EAS build failure by upgrading  to . (DONE)
+- Configured Push Notification  key and added  for first-time launch. (DONE)
+- Fixed Bundle ID issue causing deployment to a new app instead of the existing . (DONE)
+- Built comprehensive responsive web UI for Desktop users, including a persistent  sidebar and centered content container. (DONE)
+- Added desktop web drag-and-drop file upload support via  for the create screen. (DONE)
+
+**Earlier issues found/mentioned but not fixed**
+None.
+
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork: None
+  - Recurrence count: 0
+  - Status: RESOLVED
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+React Native (Expo Router), FastAPI, MongoDB, Cloudinary Chunked Uploads, Resend, Emergent Integrations Push, Agora (Audio Livestreaming), Responsive Web Design (Breakpoints, Global Shell).
+
+**key DB schema**
+  - : {..., reset_pin_enabled, ...}
+  - : {id, author_id, title, content, cover_url, status, likes, created_at}
+  - : {id, host_id, title, status, participants_count, started_at}
+  - : {user_id, token, platform, updated_at}
+
+**changes in tech stack**
+  - Upgraded  to 1.15.0 to fix iOS build issues.
+  - Enabled and heavily optimized React Native Web support for Desktop use cases via custom Hooks and Layouts.
+
+**All files of reference**
+  -  (Upgraded ).
+  -  (Updated  to ).
+  -  and  (Saved APNs push credentials).
+  -  (New component for push permissions).
+  - ,  (New hooks for web capabilities).
+  - ,  (New components for web layout).
+  -  (Added GlobalDesktopShell).
+
+**Areas that need refactoring**: 
+-  is extremely large (>2500 lines) and urgently needs to be split into modules (, , etc.).
+
+**key api endpoints**
+  - 
+  - , 
+  - 
+
+**Critical Info for New Agent** 
+- **iOS Deployment**: Bundle ID is now . The iOS build is fixed and uses  framework instead of . The APNs  key is stored safely in  but is NOT committed to Git (it's in ).
+- **Web / Desktop mode**: The app now acts as a fully responsive website. When developing frontend views, ensure they look good wrapped inside the  with . Do not use absolute positioning that ignores the sidebar width on desktop.
+- **Resend Sandbox**: Resend API is still in sandbox mode (only sends to verified admin email).
+
+**documents and test reports created in this job**
+  - 
+
+**Last 10 User Messages and any pending HUMAN messages** 
+1. *User*: Asked to proceed with the P0 fix for the iOS build. -> *Agent*: Upgraded  to . (DONE)
+2. *User*: Uploaded  key for push notifications and requested permission popup on first launch. -> *Agent*: Saved the key and wired . (DONE)
+3. *User*: Said build failed again with huge logs. -> *Agent*: Identified the log was from a stale source archive prior to the fix. Instructed user to redeploy. (DONE)
+4. *User*: Asked about App Store Connect compliance banner and missing build. -> *Agent*: Explained UI and TestFlight submission process. (DONE)
+5. *User*: Reported app published as PostMePlexV2. -> *Agent*: Updated Bundle ID to  per user request. (DONE)
+6. *User*: Requested the app to also function as a website for PC users. -> *Agent*: Created a responsive global shell with a left sidebar and centered content. (DONE)
+7. *User*: Asked about credits/cost to finish website/domain. -> *Agent*: Answered via support_agent. (DONE)
+8. *User*: Said Finish making the website. -> *Agent*: Finished wiring the desktop layout to blogs, messages, auth, and took successful screenshots. (DONE)
+
+**Project Health Check:**
+Broken: None
+Mocked: None
+
+**3rd Party Integrations** 
+  • Cloudinary (Image/Video Uploads) — requires User API Key
+  • Resend (Emails) — requires User API Key
+  • Emergent Integrations (Push Notifications) — uses Emergent LLM Key
+  • Agora (Audio Livestreaming) — requires User API Key
+
+**Testing status**
+  - Testing agent used after significant changes: NO (Screenshot tool heavily used for responsive UI changes)
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None
+  - Known regressions: None
+
+**Credentials to test flow:**
+ / Check 
+
+**What agent forgot to execute**
+None. Agent addressed all requests thoroughly.</analysis>

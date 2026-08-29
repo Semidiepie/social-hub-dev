@@ -1,0 +1,42 @@
+{
+  "summary": "Verified both bug fixes for iteration 10. Bug 1 (reels playback race condition): static analysis of /app/frontend/app/(tabs)/reels.tsx confirms the required refactor is in place — `import { useEvent } from \"expo\"` at line 17, NO `.play()` inside the useVideoPlayer initializer (lines 50-56, only sets `loop` and `muted`, with explanatory comment), `useEvent(player, \"statusChange\", ...)` at line 62, the play/pause useEffect is gated by `status === \"readyToPlay\"` at line 73, and all three overlay states render (paused → line 157, loading → 162, error → 167 with warn log at line 70). Metro bundle succeeds (929ms, 1479 modules) — no bundle failures from the useEvent refactor. `curl http://localhost:3000` → 200 HTML with title `PostMePlex`. Bug 2 (test-account purge): `GET /api/admin/users?q=` as founder returns EXACTLY 1 user (`semidiepie`), no `tec_*`/`tpb_*`/`test_*` residue. Backend startup log confirms `Seed cleanup: purging 3 legacy demo account(s) + their content` triggered on restart. H.264 pipeline still intact: `GET /api/reels` returns founder-owned reel with `f_mp4,vc_h264` in `video_url`, and HEAD → `content-type: video/mp4;codecs=avc1`. Full regression: 47/47 PASS in 12.66s (10 new iteration-10 + 11 iteration-9 + 6 purge + 20 iteration-6 base regression). Iteration-8 reels (6/6) also passes when the DB is clean — its 2 failures inside the mixed regression run are the exact pre-existing test-ordering flake documented in iteration_9 report (test_push_edge_cases creates transient tec_* users that become reels[0] before iteration-8 asserts author == semidiepie). Not a regression from this iteration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_verify.py",
+    "/app/test_reports/pytest/iteration10_verify.xml",
+    "/app/test_reports/pytest/iteration10_regression.xml",
+    "/app/test_reports/pytest/iteration10_final.xml"
+  ],
+  "action_items": [
+    "Optional (carried from iteration 9): make test_iteration8_reels.TestReelsList pick reel via `next(r for r in reels if r['author']['username']=='semidiepie')` instead of `reels[0]` to eliminate the tec_* ordering flake when running the full test suite in one shot. Not blocking — restarting the backend before that file makes it deterministic, which is how CI should run it."
+  ],
+  "critical_code_review_comments": [
+    "reels.tsx refactor is textbook expo-video: useEvent hook subscribes to statusChange, useEffect gates player.play() strictly on status === 'readyToPlay'. Removing .play() from the initializer eliminates the iOS race where the source hadn't been decoded yet — this is the recommended pattern.",
+    "Nice defensive touches: try/catch around play/pause with console.warn tagged by reel.id; error status logs raw error payload for on-device debugging. muted=true at init means iOS autoplay works without user-gesture, then unmuted only once the reel is active (line 76) — matches TikTok/Reels UX.",
+    "Three overlay states (paused/loading/error) now give the user visible feedback instead of a black frame, which was the underlying symptom of 'not playing'.",
+    "Backend purge_legacy_seed_data() is idempotent (runs on every startup, no-ops when clean) — safe for production. The 3-account cleanup during this iteration's restart is logged with count for auditability.",
+    "Cloudinary H.264 rewrite from iteration 9 is intact and still validated end-to-end (HEAD → codecs=avc1).",
+    "The 2 iteration-8 failures inside a mixed pytest run are a pre-existing ordering issue documented in iteration 9 — not introduced this iteration. Running iteration-8 in isolation (or after a backend restart) yields 6/6 pass."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10_verify.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (47/47 in clean-slate suite; 58/60 in mixed regression — 2 documented flakes not caused by this iteration)",
+    "frontend": "Static contract 4/4 + bundle serves 200. True native <VideoView> autoplay requires a device build per Expo docs — code changes match the recommended expo-video pattern."
+  },
+  "seed_data_creation": "None. iteration10_verify only reads /api/admin/users and /api/reels; no writes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "1) reels.tsx now uses useEvent(player, 'statusChange') from 'expo' (NOT 'expo-modules-core') — play/pause is gated on status === 'readyToPlay'. Do NOT reintroduce .play() into the useVideoPlayer initializer, that was the exact bug fixed here. 2) DB is clean-slate: only semidiepie exists at rest. Any tec_*/tpb_*/test_* users are auto-purged on backend restart. 3) When running the full test suite in one shot, test_iteration8_reels can flake because test_push_edge_cases creates a transient tec_* reel that becomes reels[0]. Fix is trivial (filter by username) but out-of-scope for iteration 10 verification. 4) Cloudinary URLs are rewritten server-side in serialize_post — expect `f_mp4,vc_h264,q_auto` present in every video_url; HEAD returns codecs=avc1.",
+  "rca_of_issue": "Bug 1 root cause (iteration 10): expo-video's `useVideoPlayer` runs its initializer callback synchronously the first render, but the video source is loaded asynchronously. Calling `player.play()` inside the initializer means the play command hits the player BEFORE it transitions to `readyToPlay` status. On iOS specifically, this is either silently dropped or throws an internal AVPlayer error that expo-video swallows. The user sees a black screen and reports 'videos not playing'. Fix: subscribe to `statusChange` via useEvent, and only call `player.play()` in a useEffect that fires when status === 'readyToPlay' AND the reel is the active viewable item. This is the recommended expo-video pattern and is deterministic across iOS/Android/web. Combined with the iteration-9 backend H.264 rewrite (which was the codec-side of the problem), reels should now play on all supported devices. Bug 2 (iteration 10): purely operational — testing agents from prior iterations left behind 3 tec_*/tpb_* scratch users. The startup purge in `purge_legacy_seed_data()` is idempotent and was triggered by the backend restart; DB now contains exactly one user (`semidiepie`) confirmed via /api/admin/users."
+}

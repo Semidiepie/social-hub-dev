@@ -1,0 +1,34 @@
+{
+  "summary": "Backend verification for the two reported bugs. Bug 1 (Reels HEVC → H.264): _cloudinary_compat_url() correctly rewrites every Cloudinary `/video/upload/...` URL by injecting `f_mp4,vc_h264,q_auto/` right after `/video/upload/`. Verified via API: GET /api/reels, GET /api/feed (auth), GET /api/users/{founder_id}/posts (auth) all return the transformed URL. HEAD on the transformed URL returns 200 with `content-type: video/mp4;codecs=avc1` (H.264), while HEAD on the original returns `codecs=hvc1` (HEVC) — exact codec swap confirmed at Cloudinary edge. Helper is idempotent (no double-injection when already transformed) and a no-op on non-Cloudinary URLs. Bug 2 (Text-only post placeholder): POST /api/posts with `{caption, image_url: null}` returns and persists a doc where image_url/thumbnail_url/video_url are all null; ProfileView.tsx line 255 branches on `!!(item.image_url || item.thumbnail_url)` → falsy → renders the new textTile (Ionicons chatbox-ellipses + caption + optional #game_tag pill) instead of an <Image> with FALLBACK. Full test run: 60/60 PASS (11 new iteration-9 + 6 iteration-8 reels + 43 iteration-6/7 regression) in 16.5s. Note: true native video playback (HEVC vs H.264 decode success on real iOS/Android devices) is out of scope for the web preview — this fix is validated at the HTTP/codec-metadata layer where the actual root cause lives.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9_cloudinary_h264.py",
+    "/app/test_reports/pytest/iteration9_results.xml",
+    "/app/test_reports/pytest/iteration9_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "_cloudinary_compat_url is exactly the right shape: minimal, pure, idempotent, no-op on foreign hosts. Correctly detects both host (`res.cloudinary.com`) and path segment (`/video/upload/`) before rewriting, so it won't misfire on Cloudinary image URLs.",
+    "Applied centrally in serialize_post which is the single choke-point for every post/reel/feed response — clean architectural placement, no risk of missing an endpoint.",
+    "ProfileView textTile branch cleanly checks `!!(image_url || thumbnail_url)` before rendering <Image>, preventing the previously-required FALLBACK placeholder. game_tag pill is optional (null-guarded) which is correct.",
+    "Minor pre-existing note carried from iteration 8: test_iteration8_reels.py::TestReelsList picks reels[0] and asserts author == semidiepie, which is only stable immediately after a backend restart (seed cleanup purges tec_/tpb_ users). Order-of-execution matters; running with unrelated test suites first that create tec_ reels causes flakes. Not a fix-scope item — pytest ordering is deterministic when documented, but consider filtering the fixture to `next(r for r in reels if r['author']['username']=='semidiepie')` in a future pass."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration9_cloudinary_h264.py (new)"
+  ],
+  "success_rate": {"backend": "100% (60/60)", "frontend": "N/A (native video decode requires physical device; JSX branch is a pure frontend render pending device verification)"},
+  "seed_data_creation": "Test creates and then deletes one text-only post owned by the founder (TEST_ prefixed caption) — DELETE step is asserted with 200/204/404 tolerance so no residue remains after the run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The Cloudinary reel HEVC→H.264 rewrite is transparent to any test: expect video_url in EVERY response (feed/reels/user posts/single post) that came from Cloudinary to contain `f_mp4,vc_h264,q_auto/`, and HEAD to return content-type `video/mp4;codecs=avc1`. Helper is idempotent. Iteration-8 reel author assertions require a clean-slate backend (restart if reels[0].author.username != 'semidiepie' because a stale tec_ test user's reel is still first). Founder id can be read via GET /api/auth/me. Text-only post branch on ProfileView requires image_url AND thumbnail_url both falsy — POST /api/posts sends image_url=null (video_url is not on CreatePostBody so it's always null for posts, only reels have it).",
+  "rca_of_issue": "Bug 1 root cause was a media-format incompatibility, not a UI/native-primitive bug. The single seeded reel had been transcoded/uploaded by Cloudinary as HEVC (h.265, codecs=hvc1). Expo Go's <VideoView> on iOS (and older iPhone hardware) cannot decode HEVC in-app, so it silently renders a black frame — no error, no fallback, hence the 'not playing' report. The main-agent fix leverages Cloudinary's on-the-fly transformation URL syntax (`f_mp4,vc_h264,q_auto` inserted after /video/upload/) to force H.264 output at CDN edge. Verified end-to-end: the same asset now serves as `video/mp4;codecs=avc1`, universally decodable. Bug 2 was a rendering short-circuit: ProfileView unconditionally rendered <Image src={image_url || thumbnail_url || FALLBACK}>, so a text-only post showed a stock placeholder even though the data model correctly stored image_url=null. Fix branches on media presence and renders a distinctive text tile — data contract on the backend is already correct (POST /api/posts + serialize_post returns image_url:null verbatim), so it was purely a client rendering fix. Both fixes are backwards-compatible and safe to keep in production."
+}

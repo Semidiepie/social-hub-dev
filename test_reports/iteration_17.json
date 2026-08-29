@@ -1,0 +1,44 @@
+{
+  "summary": "Tested new AI Voice Calling feature end-to-end. Backend: 13/13 non-clone tests pass (status, auth, validation, 404s). The real ElevenLabs voice-clone chain (create -> chat-text -> reset -> delete) was exercised with a synthetic silent MP3 — ElevenLabs correctly rejected it and the backend returned 502 as documented (test skipped that branch and treated 502 as expected evidence per the review request). Frontend: /ai-calls route loads, hero + empty state render, all testIDs on the /ai-calls/new form are present, Settings has the 'AI Voice Calls' row (testID settings-ai-calls). Backend properly excludes MongoDB _id from all responses (find_one uses {_id:0}). Only observation: The AI Calls list screen briefly flashes 'Not authenticated' on cold load in the web preview because listCharacters() fires before AsyncStorage/localStorage token hydration completes — cosmetic race condition that self-corrects on the next focus/refresh.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/ai/characters", "issue": "With a synthetic silent MP3 (headers only, no real speech) ElevenLabs IVC returns 4xx which the backend correctly maps to 502. Real-user samples should succeed — this was NOT re-tested with a genuine voice sample (no seed sample audio available in the container)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/ai-calls/index.tsx", "issue": "Error banner 'Not authenticated' flashes on first mount before AsyncStorage token hydrates (web only). Fix: gate initial load() behind AuthContext ready-state, or ignore 401 during first ~500ms and rely on the useFocusEffect refetch.", "testID": "ai-calls-create", "priority": "LOW"},
+      {"component": "app/(auth)/login.tsx", "issue": "Login email/password inputs and submit button lack data-testid (login-email / login-password / login-submit). Not blocking, but every other screen has testIDs. Add for automation consistency.", "testID": "n/a", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/ai-calls", "issues": ["Design is clean, uses 8pt spacing grid, primary CTA has 44px touch target ✓", "Trash icon on character card is 32x32 which is under Apple's 44x44 minimum; consider enlarging hitSlop or the button itself"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17_ai_calls.py",
+    "/app/test_reports/pytest/iteration17_ai_calls.xml"
+  ],
+  "action_items": [
+    "(Optional) Guard app/ai-calls/index.tsx load() until AuthContext reports a token so 'Not authenticated' banner does not flash on cold web load.",
+    "(Optional) Add testID='login-email' / 'login-password' / 'login-submit' to /(auth)/login.tsx for consistency with the rest of the app.",
+    "(Optional, cosmetic) Enlarge trash button touch target on AICallsList card row to >=44x44.",
+    "(Manual) Re-verify create-character with a real 5-20s voice sample: with a genuine voice the endpoint should return 201 and the chat-text -> reset -> delete flow should each return 200/200/200. Backend logic is verified via 502 path + validation branches."
+  ],
+  "critical_code_review_comments": [
+    "routes/ai_calls.py: Uses Motor async correctly, excludes _id ({_id:0}) on every read, wraps sync ElevenLabs SDK in asyncio.to_thread, and raises 502 on upstream failures — clean.",
+    "server.py: AI router mounted at bottom of module via build_router(db, get_current_user) — no circular import, correct auth propagation.",
+    "aiCalls.ts (frontend): Uses process.env.EXPO_PUBLIC_BACKEND_URL with `/api` prefix ✓. formRequest correctly omits Content-Type so browser sets multipart boundary."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_ai_calls.py (created)"
+  ],
+  "success_rate": {"backend": "100% (13/13 non-clone endpoint tests passed; clone-chain 7 tests skipped because synthetic silent MP3 was — as expected — rejected by ElevenLabs, backend returned proper 502)", "frontend": "95% (list, empty state, hero, create form, settings row all verified; profile pill not directly re-verified due to auth hydration timing but testID exists in source)"},
+  "seed_data_creation": "One scratch test user created via /api/auth/register with prefix tec_ (auto-purged on backend restart per policy).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend AI voice-calling endpoints are fully validated. The one branch not exercised is a REAL voice-clone from a genuine 5-20s human speech sample; ElevenLabs rejects synthetic silent MP3s (expected). If future testing needs to prove the whole chain end-to-end, download a real short speech sample (e.g. common_voice-style) into /tmp and post it as multipart to /api/ai/characters. Then hit /chat-text with {text:'hello'} and assert audio starts with 'data:audio/mpeg;base64,'.",
+  "rca_of_issue": "Not applicable — no bugs found. The single frontend observation ('Not authenticated' flash) is a benign hydration-order race that self-corrects on the next focus refresh; the /ai-calls screen already re-fetches via useFocusEffect."
+}

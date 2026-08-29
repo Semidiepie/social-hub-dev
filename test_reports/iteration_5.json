@@ -1,0 +1,37 @@
+{
+  "summary": "PostMePlex backend regression (iteration 5) — 17/17 pytest cases pass (100%) against http://localhost:8001 with EMERGENT_PUSH_KEY=placeholder. (1) All 9 iteration_4 push-pipeline tests still pass unchanged: /api/register-push happy path returns 201 {status:'skipped', reason:'EMERGENT_PUSH_KEY not set (dev/preview)'}; missing device_token → 422; /api/push/debug authed → 200 {key_configured:false}; unauthed → 401; DM send still emits '[push] skipping trigger — EMERGENT_PUSH_KEY not set (recipients=1)' proving send_push wiring; semidiepie login → 200; /api/feed, /api/reels, /api/stories all return 200 arrays. (2) NEW edge cases all pass: 256-char device_token → 201 skipped (no crash, logger correctly truncates the token in the log line to `token=aaaaaaaaaaaa…`); 5 rapid-fire /api/register-push calls for the same user_id (verified in backend logs) all return 201 skipped, confirming no idempotency lock is in the way; /api/push/debug from a brand-new signup account → 200 with key_configured:false and correct user_id echo. (3) Regression on content/social endpoints with a fresh test account: POST /api/posts → 200 + persistence via GET /api/posts/{id}; POST /api/reels → 200 with correct video_url; POST /api/stories → 200 with media echoed back; POST /api/users/{id}/follow → 200 and follower appears in target's /followers; POST /api/users/{id}/block → 200 and target appears in /api/blocks. No new backend issues introduced by the frontend AuthContext / Settings hardening (which is native-only and unreachable via web preview anyway).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_push_pipeline.py",
+    "/app/backend/tests/test_push_edge_cases.py",
+    "/app/test_reports/pytest/push_pipeline_results.xml",
+    "/app/test_reports/pytest/iteration5_results.xml"
+  ],
+  "action_items": [
+    "No backend action needed — push pipeline behaves exactly as designed for EMERGENT_PUSH_KEY=placeholder in dev/preview. The App Store push-delivery bug remains an environmental / production-only issue: verify (a) EMERGENT_PUSH_KEY is injected as a real key in the deployed backend by curling /api/push/debug in production and confirming key_configured:true & upstream_status:200; (b) the iOS build's new AuthContext (retry-with-backoff + AppState re-registration + AsyncStorage cache) actually reaches /api/register-push with the real APNs device_token and receives {status:'registered'} not {status:'skipped'}. The retry-with-backoff logic in AuthContext and Settings 'Send test push' is native code (getDevicePushTokenAsync) and cannot be exercised via web preview — must be verified on a physical iOS device build."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1341 — device_token truncation in log line (`token=[:12]…`) correctly handles a 256-char token without leaking it. Verified in this run.",
+    "server.py:246 send_push short-circuit on PUSH_KEY=='placeholder' continues to keep logs clean — no 401 noise even after 5 rapid register calls + DM triggers.",
+    "server.py:1337 /api/register-push has no rate limiter / idempotency guard. That's by design (rapid-fire test proves 5 sequential calls all succeed), but consider a per-user debounce or upsert on (user_id, device_token) in a future iteration if the mobile client's AppState re-registration becomes chatty in production.",
+    "server.py:1368 /api/push/debug is still unrestricted for any authed user. In production, gate it behind is_super_admin or a rate limit to prevent abuse as a self-push spammer."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_push_edge_cases.py (NEW — 8 edge-case + regression tests)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "N/A — backend-only review; frontend native retry/AppState logic not exercisable via web preview"},
+  "seed_data_creation": "Two fresh throw-away users registered (TEST_ec_<hex6> / tec_<hex6>) used for edge-case, content-creation and social-action tests. Left in DB (harmless, TEST_-prefixed). Iteration_4's tpb_<hex6> user also remains.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run `cd /app/backend/tests && pytest test_push_pipeline.py test_push_edge_cases.py -v` → expect 17 passed. If the DM log-assertion or any '[push] skipping trigger' assertion fails, check whether EMERGENT_PUSH_KEY was upgraded from 'placeholder' — in that case the log line becomes '[push] trigger OK/FAILED status=...' and both test files need their log strings updated. Push pipeline + core content/social APIs are all wired correctly at the code level. Any remaining iOS push-delivery bug is environmental (real key injection, real APNs token from getDevicePushTokenAsync on a device build, upstream provider status).",
+  "rca_of_issue": "No new bug reproduced this iteration. Backend is confirmed stable across all requested endpoints. The frontend AuthContext hardening (retry-with-backoff on getDevicePushTokenAsync, AppState-based re-registration, AsyncStorage token caching) and Settings 'Send test push' retry logic are native APIs that (a) can only be verified on a real iOS/Android device build, (b) do not require any backend contract change — the existing /api/register-push endpoint gracefully accepts multiple registrations for the same user (rapid-fire test proves it) and long tokens (256-char test proves it), so the frontend can safely retry as aggressively as it wants without breaking the backend."
+}

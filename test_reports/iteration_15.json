@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 15 (web video compression pipeline) verified. All 6 requested checks pass. (1) test_iteration13_videos.py = 17/17 PASS. (2) Iteration-specific regression suites (iter 6/8/9/11/12/13) = 68/68 PASS. Pre-existing broad-regression failures in test_iteration2_features.py / test_iteration10_verify.py / test_postmeplex_api.py (10 fail + 19 errors) are UNCHANGED from iter-14 — they assume seeded 'Alex' / non-founder accounts that the clean-slate startup purge removes; NOT an iter-15 regression. (3) /app/frontend/src/lib/videoCompress.ts grep contract: exports compressVideoIfNeeded (L56) and COMPRESSION_THRESHOLD_BYTES (L18); has compressVideoWeb helper (L110); uses document.createElement('video') + hidden HTMLCanvasElement (L141) + canvas.captureStream(30) (L148) + new MediaRecorder with videoBitsPerSecond: 1_500_000 (L175) and audioBitsPerSecond: 128_000 (L176); mime candidates include VP9/VP8/WebM/MP4 (L163-168); returns { uri: URL.createObjectURL(blob), bytes: blob.size } (L220); web branch of compressVideoIfNeeded wraps compressVideoWeb in try/catch and falls back to original URI on error (L67-80); native branch still calls Video.compress from react-native-compressor with compressionMethod:'auto' (L83-90). (4) /app/frontend/app/video/upload.tsx grep: has 'still too large after compression' branch matching /file size too large|too large|max.*size/i (L203-208) AND 'browser can't compress video locally' branch matching /media\\s*recorder|not supported/i (L209-212). (5) Metro bundler sanity: curl http://localhost:3000 → 200 and curl http://localhost:3000/video/upload → 200 — the new MediaRecorder / canvas.captureStream() usage is safely gated behind typeof window / typeof MediaRecorder checks and only touched inside function bodies, so SSR/bundling is not broken. (6) Backend _cloudinary_compat_url at /app/backend/server.py:404 still injects f_mp4,vc_h264,q_auto into cloudinary /video/upload/ URLs — verified live: test_02_create_video_shape asserts f_mp4 & vc_h264 in the returned video_url and passes. No deprecated packages introduced. No React Native red-screen. On-device / in-browser real compression run is out of scope (requires a real user-selected file + MediaRecorder runtime).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "N/A (test infra)",
+        "issue": "test_iteration10_verify.py L13 uses os.environ['EXPO_PUBLIC_BACKEND_URL'] with subscript — collection errors out if the env var isn't exported. Not iter-15 related. Prefer os.environ.get with an assert-not-none, matching test_iteration13_videos.py."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_videos.py",
+    "/app/test_reports/pytest/iteration15_videos_regression.xml",
+    "/app/test_reports/pytest/iteration15_full_regression.xml"
+  ],
+  "action_items": [
+    "Nothing blocking for iteration 15. The web compression pipeline can only be smoke-tested live in a real browser (needs a user-picked File and MediaRecorder runtime). Main agent may want to manually verify by picking a >90 MB video in Safari and watching the 'Compressing video · N%' phase run to completion before the Cloudinary upload begins.",
+    "Carry-over (unchanged since iter-13/14, NOT iter-15): startup auto-purge doesn't scrub orphan reels/videos/posts/conversations authored by long-deleted test_/TEST_/tec_/tpb_ users. Fix by expanding the startup purge to cascade into: reels, videos, video_comments, video_views, video_likes, posts, comments, conversations, messages, follows, blocks. That will make test_iteration10_verify, test_iteration2_features.TestSearch, and test_postmeplex_api.TestFeeds/TestAuth stop failing on stale data."
+  ],
+  "critical_code_review_comments": [
+    "videoCompress.ts L114: MediaRecorder-unsupported check throws 'MediaRecorder not supported in this browser' — good, matches the /media\\s*recorder|not supported/i regex in upload.tsx so the user gets the actionable browser-fallback message.",
+    "videoCompress.ts L198: srcVideo.play() is awaited but there's no explicit rejection path for autoplay-blocked browsers (Safari can reject unmuted play()). Since we set srcVideo.muted = false (L121), Safari may block playback of the offscreen video. Consider setting srcVideo.muted = true before play() and re-attaching the audio track via srcCapture — the muted attr on the source element does NOT mute the captured audio track. This is a functional concern for Safari (the browser the user reported the bug from).",
+    "videoCompress.ts L131-133: if srcVideo.duration is Infinity (WebM without seek index) or 0, onProgress reports 0 forever — non-blocking but the UI will just show 0% until stopped.",
+    "videoCompress.ts L219: chunks is BlobPart[] and MediaRecorder emits Blob chunks, so type is OK, but the mimeType may be undefined if none of the candidates is supported; the fallback new Blob type defaults to 'video/webm' which is fine.",
+    "videoCompress.ts L60: getSize returns 0 on web for non-blob:/non-data: URIs (e.g. https://). The new logic `originalBytes === 0 => needsCompression=true` means EVERY web upload from a remote URI will go through compressVideoWeb even if it's already small. Acceptable trade-off (the whole point of iter-15) but slightly wasteful for small clips. Consider probing HEAD Content-Length on web when the URI is https.",
+    "upload.tsx L203: The regex /file size too large|too large|max.*size/i also matches Cloudinary's generic 'File size too large. Got X. Maximum is Y' error format — verified.",
+    "upload.tsx L216 finally: setPhase('idle') fires after router.replace — harmless since screen unmounts."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% on all iteration-specific suites (68/68 across iter 6/8/9/11/12/13). Broad regression = 87/106 pass; 10 failures + 19 errors are pre-existing clean-slate/seed-data issues carried over from iter-13/14 and NOT iter-15 regressions.",
+    "frontend": "100% static contract. Metro bundle serves / and /video/upload as 200. All grep assertions in the review request are satisfied."
+  },
+  "seed_data_creation": "None. Iteration-13 video tests self-clean via _cleanup_videos fixture and use tpb_ / TEST_ prefixes that startup auto-purge removes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 15 replaced the web no-op in /app/frontend/src/lib/videoCompress.ts with a real MediaRecorder + canvas.captureStream()-based re-encoder targeting WebM (VP9→VP8→default→MP4). Native pipeline (react-native-compressor) is unchanged. Threshold logic: compress when file > 0.9 * SINGLE_UPLOAD_MAX_BYTES (~90MB) OR when size is 0 (unknown, common for web https URIs). Web errors are try/caught and fall back to original URI. upload.tsx now has two differentiated error branches: 'still too large after compression' vs 'browser can't compress video locally'. Backend contract completely unchanged — /api/videos and _cloudinary_compat_url still work identically to iter-13/14. When a real browser-based upload run is needed, look for the 'Compressing video · N%' UI phase; on any non-Chromium browser (Safari especially), test whether MediaRecorder.isTypeSupported returns true for the VP9/VP8 codecs — Safari 14+ supports MP4 via MediaRecorder but not VP9. The candidates array falls through to 'video/mp4' as a last resort so Safari should still work, but the audio-track capture path (srcAny.captureStream) may fail on Safari — mozCaptureStream is Firefox-only, and Safari's captureStream is prefixed differently in some versions. Watch for the fallback log line '[compress] web compression failed, sending original' in the browser console if compression silently no-ops.",
+  "rca_of_issue": "Original bug (iter-14): compressVideoIfNeeded was a no-op on web, so oversized clips went straight to Cloudinary and hit the 100 MB Free-tier upload cap. Fix (iter-15): implemented compressVideoWeb using in-browser <video>+<canvas>.captureStream(30)+MediaRecorder with 1.5 Mbps video / 128 kbps audio caps and 720p long-edge downscale. Graceful fallback on MediaRecorder-unsupported or exception, plus differentiated error messages for the two failure modes. Contract verified via grep + Metro bundle sanity + iteration-13 video suite regression."
+}

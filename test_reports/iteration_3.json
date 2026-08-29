@@ -1,0 +1,64 @@
+{
+  "summary": "PostMePlex V1.1 re-validation (iteration 3). Backend: 38/38 pytest cases pass. Two blocking issues discovered and fixed by tester: (1) DATA REGRESSION — semidiepie's bcrypt password_hash in MongoDB had drifted (no longer matched 'Semi123!'), so super-admin login returned 400 and all admin-verify tests failed. The seed function short-circuits when any users exist, so the password never gets refreshed. Repaired by rehashing 'Semi123!' directly in the DB. (2) WEB BUNDLE BROKEN — app/live/[id].tsx → src/lib/agora.ts statically required 'react-native-agora', which imports react-native internals and breaks Metro's web bundler. ENTIRE frontend was returning HTTP 500 on /entry.bundle. Fixed by adding /app/frontend/src/lib/agora.web.ts (a no-op stub) — Metro's platform-extension resolution picks it on web and never inlines react-native-agora. After both fixes: all V1.1 frontend flows pass — semidiepie login → /messages, /messages/new (search 'maria' finds her), /admin/verify (search 'maria' returns her), /settings shows 'Verify accounts' row, /discover search 'alex' returns Alex GG; alex login → /settings does NOT show 'Verify accounts', /admin/verify shows 'Admin only' (403 from backend, gracefully rendered). Carryover bug from iter-2 NOT fixed: /messages list still renders 'NaNmo' for the relative timestamp when last_message is null (visible on semidiepie inbox row for 'Maria Updated'). testID coverage still missing across the app.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login (semidiepie@gmail.com)", "issue": "Returned 400 'Incorrect email or password' because the stored bcrypt hash in DB no longer matched 'Semi123!'. Root cause: seed function uses `if await db.users.count_documents({}) > 0: return` (server.py:1436), so any change to seed passwords / drift between dev DBs is never reconciled. Tester rehashed the password directly. Main agent should change seed to be per-user idempotent — e.g., `db.users.update_one({email}, {'$setOnInsert': {...}, '$set': {'password_hash': hash_pw(pw), 'is_admin': ..., 'is_super_admin': ...}}, upsert=True)` so credentials & flags always match SEED_USERS. server.py:1434-1463.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "send_push (POST follow/like/comment/DM triggers)", "issue": "Still calls upstream and logs '401 Push trigger failed' when EMERGENT_PUSH_KEY=placeholder. Carryover from iter-2. Short-circuit send_push when key=='placeholder'. server.py:194-207."},
+      {"endpoint": "POST /api/notifications via Resend", "issue": "Backend logs '[resend] send failed 403: You can only send testing emails to your own email address'. Tester observed once in backend logs during test run. Restricted Resend domain — email notifications will silently fail in production. Should either verify a domain or guard send when domain not configured."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/messages/index.tsx", "issue": "CARRYOVER from iter-2: rows whose last_message is null still render 'NaNmo' for the relative timestamp (visible on semidiepie's inbox 'Maria Updated' row). Guard formatRelativeTime against missing/invalid date.", "testID": "messages-list-item", "priority": "MEDIUM"},
+      {"component": "Global", "issue": "CARRYOVER from iter-1/iter-2: still no testID/data-testid on interactive elements (DM icon, settings icon, send button, verify toggle, search inputs, message bubbles). Selectors keep falling back to text content.", "testID": "*", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Web bundle / Live Streaming", "issue": "FIXED by tester via agora.web.ts stub: app/live/[id].tsx → src/lib/agora.ts statically required 'react-native-agora'. Metro's web bundler tried to inline AgoraRtcSurfaceViewNativeComponent (imports react-native internals) → entry.bundle returned HTTP 500 → ENTIRE web app was unusable. Main agent should: (a) keep src/lib/agora.web.ts as the canonical stub OR (b) rename agora.ts → agora.native.ts so the original is also platform-scoped, and consider lazy-loading react-native-agora behind a runtime require inside the effect.", "affected_testIDs": ["whole-app"]}
+    ],
+    "design_issues": [
+      {"screen": "/admin/verify (alex - non-admin)", "issues": ["Shows 'Admin only' red banner and empty 'No matches.' state. Backend correctly returns 403 (console shows 403 errors); UI handles it cleanly. Per spec 'blocked or redirect', this counts as blocked, but a hard redirect to /(tabs)/home would be cleaner UX."]},
+      {"screen": "/messages (semidiepie)", "issues": ["NaNmo rendering on null-last_message rows still looks broken."]},
+      {"screen": "Settings", "issues": ["Verify accounts row correctly visible only for semidiepie (super admin) — confirmed by side-by-side comparison with alex's Settings."]}
+    ],
+    "react_native_issues": [
+      {"component": "src/lib/agora.ts → react-native-agora", "issue": "Native-only module statically required in code path that the web bundler reaches. Reference: src/lib/agora.ts:18 and app/live/[id].tsx:8. Mitigated with agora.web.ts; recommend also splitting agora.ts → agora.native.ts for symmetry."},
+      {"component": "expo-notifications", "issue": "CARRYOVER: console warning '[expo-notifications] Listening to push token changes is not yet fully supported on web.' Wrap listener registration with Platform.OS !== 'web'."},
+      {"component": "shadow* style props", "issue": "CARRYOVER: deprecation warnings persist — migrate to boxShadow."},
+      {"component": "props.pointerEvents", "issue": "CARRYOVER: deprecation warnings persist — move to style.pointerEvents."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2_features.py",
+    "/app/backend/tests/test_postmeplex_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Make the seed idempotent per-user so credentials & admin flags can never drift. Replace the early-return in seed() with an upsert loop that always `$set`s password_hash, is_admin, is_super_admin, is_verified for the canonical SEED_USERS list. server.py:1434-1463.",
+    "CRITICAL: Keep /app/frontend/src/lib/agora.web.ts (tester added). Optionally rename agora.ts → agora.native.ts for symmetry. Verify Live screen on a real native build before shipping.",
+    "MEDIUM: Fix /messages list null-timestamp rendering — guard formatRelativeTime to return empty string when date is missing/invalid (app/messages/index.tsx).",
+    "MEDIUM: Short-circuit send_push() in server.py when EMERGENT_PUSH_KEY=='placeholder' to stop log noise on every social action.",
+    "MEDIUM: Resend email integration is sandboxed — verify a domain at Resend, or gate send when domain is unverified, otherwise notification emails silently fail with 403.",
+    "LOW: Add testID props to interactive elements (DM icon on home header, settings icon, send-message button, message bubbles, verify toggle, discover search input, messages-new search input).",
+    "LOW: Migrate shadow* → boxShadow, props.pointerEvents → style.pointerEvents, wrap expo-notifications listener with Platform.OS !== 'web'.",
+    "LOW: /admin/verify for non-admins currently renders 'Admin only / No matches.' — fine, but a hard router.replace('/(tabs)/home') in useEffect would be cleaner."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1436 — `if count > 0: return` makes the seed write-once. Any drift to passwords, is_super_admin, or other admin flags becomes a production-only bug that takes ages to spot. Move to per-user upsert with $set on critical fields.",
+    "src/lib/agora.ts:18 — `require('react-native-agora')` is wrapped in Platform.OS !== 'web' but Metro's static analyzer still traverses the import graph for web. Use platform-extension files (.web.ts / .native.ts) for native-only modules.",
+    "server.py is now ~1504 lines including seed. Past the 700-line guideline. Split into routers/* and a separate seed module.",
+    "send_message (server.py:1233) still uses `{**msg, 'created_at': ...}` pattern after a previous fix; verify msg.pop('_id') is still in place (confirmed by test: no _id leak)."
+  ],
+  "updated_files": [
+    "/app/frontend/src/lib/agora.web.ts (NEW — web stub that returns null, unblocks the entire web bundle)",
+    "MongoDB: re-hashed semidiepie@gmail.com password to bcrypt('Semi123!') (data fix, not code)"
+  ],
+  "success_rate": {"backend": "100% (38/38 after seed-data fix)", "frontend": "~95% (all 9 V1.1 flows verified after agora.web.ts fix; one carryover NaNmo rendering bug on /messages)"},
+  "seed_data_creation": "Reused existing seed. Direct DB fix: rehashed semidiepie's password_hash because the seed early-return prevents re-running. Tests create TEST_-prefixed conversations/posts; some TEST_Squad_* groups remain in alex's inbox from prior regression runs (harmless).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run `cd /app/backend/tests && pytest -v` → expect 38 pass. CRITICAL: if semidiepie login starts failing again, the seed early-return is letting passwords drift — rehash via `bcrypt.hashpw(b'Semi123!', bcrypt.gensalt())` into db.users for semidiepie@gmail.com, OR ask main agent to fix the seed (action item #1). Frontend web bundle requires /app/frontend/src/lib/agora.web.ts — do not delete. After `sudo supervisorctl restart expo`, verify `curl /entry.bundle?platform=web` returns 200. Outstanding minor bugs: /messages NaNmo rendering, send_push 401 noise, Resend domain. testID coverage and deprecated-style migrations are still open from iter-1.",
+  "rca_of_issue": "Semidiepie login failure RCA: server.py:1434-1463 seed() returns early when db.users.count_documents({}) > 0. SEED_USERS declares semidiepie with password 'Semi123!', but the existing DB record's bcrypt hash no longer matches 'Semi123!' (likely a prior dev cycle changed the seed password or hash got corrupted across restarts). verify_pw returned False → login 400 → semi_token fixture failed → all admin-verify tests errored. Fix applied: bcrypt.hashpw('Semi123!') and update_one. Long-term fix (main agent): switch seed to per-user upsert so canonical credentials always win. Web bundle 500 RCA: react-native-agora's AgoraRtcSurfaceViewNativeComponent.js calls `import 'react-native/Libraries/Utilities/codegenNativeComponent'`, which Metro's web bundler refuses ('Importing native-only module on web'). Although src/lib/agora.ts gates loadAgora() with `Platform.OS === 'web' return null`, the `require('react-native-agora')` call is still a static import that Metro traverses at bundle time. Fix: ship src/lib/agora.web.ts (web-specific platform extension) returning a null stub — Metro picks it on web and never resolves react-native-agora. Verified post-fix: /entry.bundle returns 200, app boots, login → tabs render correctly."
+}
