@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Rounded-square app-icon background: brand dark #12141c → subtle plum -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#181B25" />
+      <stop offset="100%" stop-color="#0E1017" />
+    </linearGradient>
+    <!-- Orange body gradient: PostMePlex primary #FF6B3D → deeper #E44F1F -->
+    <linearGradient id="orange" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF8A5C" />
+      <stop offset="55%" stop-color="#FF6B3D" />
+      <stop offset="100%" stop-color="#E44F1F" />
+    </linearGradient>
+    <!-- Subtle highlight sweep on top of the controller body -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35" />
+      <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+    <!-- Glow behind controller -->
+    <radialGradient id="glow" cx="0.5" cy="0.55" r="0.55">
+      <stop offset="0%" stop-color="#FF6B3D" stop-opacity="0.55" />
+      <stop offset="60%" stop-color="#FF6B3D" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#FF6B3D" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- App icon rounded-square canvas -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="url(#bg)" />
+
+  <!-- Ambient orange glow -->
+  <circle cx="512" cy="560" r="380" fill="url(#glow)" />
+
+  <!-- Gaming controller silhouette.
+       Two rounded grips joined by a central bar, classic "wing" console pad. -->
+  <g transform="translate(150,300)">
+    <!-- Body: pill/wing shape drawn as a filled path so both grips curve out
+         from a lower belly, mirrored around x=362 (center). -->
+    <path
+      d="M 152 24
+         C 60 24, 0 96, 0 216
+         C 0 316, 40 396, 132 420
+         C 178 432, 220 412, 258 380
+         C 296 348, 336 336, 362 336
+         C 388 336, 428 348, 466 380
+         C 504 412, 546 432, 592 420
+         C 684 396, 724 316, 724 216
+         C 724 96, 664 24, 572 24
+         C 494 24, 434 60, 362 60
+         C 290 60, 230 24, 152 24 Z"
+      fill="url(#orange)"
+      stroke="#7A2A0E"
+      stroke-width="6"
+      stroke-opacity="0.35"
+    />
+    <!-- Top sheen overlay -->
+    <path
+      d="M 152 34
+         C 70 34, 14 100, 14 214
+         C 14 260, 26 300, 46 330
+         C 66 296, 100 274, 152 268
+         C 232 258, 300 296, 362 296
+         C 424 296, 492 258, 572 268
+         C 624 274, 658 296, 678 330
+         C 698 300, 710 260, 710 214
+         C 710 100, 654 34, 572 34
+         C 494 34, 434 70, 362 70
+         C 290 70, 230 34, 152 34 Z"
+      fill="url(#sheen)"
+    />
+
+    <!-- D-pad (left) — orange dark background plate + white cross -->
+    <g transform="translate(120,168)">
+      <rect x="-58" y="-58" width="116" height="116" rx="18" fill="#12141c" opacity="0.85" />
+      <!-- Cross -->
+      <rect x="-14" y="-46" width="28" height="92" rx="6" fill="#FFFFFF" />
+      <rect x="-46" y="-14" width="92" height="28" rx="6" fill="#FFFFFF" />
+    </g>
+
+    <!-- Action buttons (right) — 4 circles in diamond, ABXY-style, all white with slight glow -->
+    <g transform="translate(604,168)">
+      <circle cx="0" cy="-46" r="20" fill="#FFFFFF" />
+      <circle cx="46" cy="0" r="20" fill="#FFFFFF" />
+      <circle cx="0" cy="46" r="20" fill="#FFFFFF" />
+      <circle cx="-46" cy="0" r="20" fill="#FFFFFF" />
+    </g>
+
+    <!-- Two small analog sticks -->
+    <g fill="#12141c" stroke="#0A0B10" stroke-width="4">
+      <circle cx="252" cy="290" r="34" />
+      <circle cx="472" cy="290" r="34" />
+    </g>
+    <g fill="#2A2D3A">
+      <circle cx="252" cy="290" r="20" />
+      <circle cx="472" cy="290" r="20" />
+    </g>
+
+    <!-- Center start/select pill -->
+    <rect x="342" y="196" width="40" height="10" rx="5" fill="#12141c" opacity="0.8" />
+  </g>
+
+  <!-- Subtle bottom vignette to seat the icon on dark backgrounds -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="none"
+        stroke="#000000" stroke-opacity="0.25" stroke-width="2" />
+</svg>
