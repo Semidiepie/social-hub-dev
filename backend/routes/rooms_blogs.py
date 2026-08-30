@@ -5,7 +5,6 @@ Mounted from server.py via build_router(db, get_current_user).
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Literal, Optional
@@ -15,12 +14,6 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("postmeplex.rooms_blogs")
 
-AGORA_APP_ID = os.environ.get("AGORA_APP_ID", "")
-
-# Time (seconds) after which a room with no heartbeat is auto-ended.
-ROOM_TIMEOUT_S = 90
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -28,23 +21,6 @@ def _now() -> datetime:
 # ============================================================
 # Models
 # ============================================================
-class StartAudioRoomBody(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
-    topic: Optional[str] = None
-
-
-class RoomState(BaseModel):
-    id: str
-    channel_name: str
-    app_id: str
-    title: str
-    topic: Optional[str]
-    host: dict
-    guests: list[dict]
-    audience_count: int
-    started_at: str
-
-
 class BlogUpsertBody(BaseModel):
     title: str = Field(min_length=1, max_length=180)
     subtitle: Optional[str] = Field(default=None, max_length=240)
@@ -59,16 +35,6 @@ class BlogPermissionRequestBody(BaseModel):
 
 
 def _author_view(user: dict) -> dict:
-    return {
-        "id": user["id"],
-        "username": user["username"],
-        "display_name": user.get("display_name") or user["username"],
-        "avatar_url": user.get("avatar_url", ""),
-        "is_verified": bool(user.get("is_verified")),
-    }
-
-
-def _guest_view(user: dict) -> dict:
     return {
         "id": user["id"],
         "username": user["username"],
@@ -108,186 +74,6 @@ def _reading_time(text: str) -> int:
 # ============================================================
 def build_router(db, get_current_user: Callable, get_optional_user: Callable) -> APIRouter:
     router = APIRouter(tags=["rooms-blogs"])
-
-    # ---------- Audio Rooms ----------
-    async def _room_state(session: dict) -> RoomState:
-        host = await db.users.find_one({"id": session["host_id"]}, {"_id": 0}) or {}
-        guest_ids = session.get("guest_ids", [])
-        guests: list[dict] = []
-        if guest_ids:
-            async for g in db.users.find({"id": {"$in": guest_ids}}, {"_id": 0}):
-                guests.append(_guest_view(g))
-        return RoomState(
-            id=session["id"],
-            channel_name=session["channel_name"],
-            app_id=AGORA_APP_ID,
-            title=session.get("title", ""),
-            topic=session.get("topic"),
-            host=_author_view(host),
-            guests=guests,
-            audience_count=int(session.get("audience_count") or 0),
-            started_at=session["started_at"].isoformat() if isinstance(session.get("started_at"), datetime) else session.get("started_at", ""),
-        )
-
-    @router.post("/api/rooms/start", response_model=RoomState)
-    async def start_audio_room(body: StartAudioRoomBody, current: dict = Depends(get_current_user)) -> RoomState:
-        if not AGORA_APP_ID:
-            raise HTTPException(503, "Live rooms are not configured yet.")
-        # End any previous session by this user
-        await db.live_sessions.update_many(
-            {"host_id": current["id"], "ended_at": None},
-            {"$set": {"ended_at": _now()}},
-        )
-        channel_name = f"pmp-audio-{current['username']}-{int(_now().timestamp())}"
-        session = {
-            "id": str(uuid.uuid4()),
-            "type": "audio",
-            "host_id": current["id"],
-            "host_username": current["username"],
-            "host_display_name": current.get("display_name") or current["username"],
-            "host_avatar": current.get("avatar_url", ""),
-            "channel_name": channel_name,
-            "title": body.title,
-            "topic": body.topic,
-            "guest_ids": [],
-            "audience_count": 0,
-            "viewers": 0,
-            "started_at": _now(),
-            "last_seen_at": _now(),
-            "ended_at": None,
-        }
-        await db.live_sessions.insert_one(session)
-        await db.users.update_one(
-            {"id": current["id"]},
-            {"$set": {"is_live": True, "is_streamer": True, "stream_title": body.title, "viewers": 0}},
-        )
-        return await _room_state(session)
-
-    @router.get("/api/rooms", response_model=list[RoomState])
-    async def list_audio_rooms(_: dict = Depends(get_current_user)) -> list[RoomState]:
-        cutoff = _now().timestamp() - ROOM_TIMEOUT_S
-        # Auto-end stale sessions with no heartbeat
-        await db.live_sessions.update_many(
-            {
-                "type": "audio",
-                "ended_at": None,
-                "last_seen_at": {"$lt": datetime.fromtimestamp(cutoff, tz=timezone.utc)},
-            },
-            {"$set": {"ended_at": _now()}},
-        )
-        rooms: list[RoomState] = []
-        async for s in db.live_sessions.find(
-            {"type": "audio", "ended_at": None}, {"_id": 0}
-        ).sort("started_at", -1):
-            rooms.append(await _room_state(s))
-        return rooms
-
-    @router.get("/api/rooms/{room_id}", response_model=RoomState)
-    async def get_audio_room(room_id: str, _: dict = Depends(get_current_user)) -> RoomState:
-        s = await db.live_sessions.find_one(
-            {"id": room_id, "type": "audio", "ended_at": None}, {"_id": 0}
-        )
-        if not s:
-            raise HTTPException(404, "Room not found or ended")
-        return await _room_state(s)
-
-    @router.post("/api/rooms/{room_id}/heartbeat")
-    async def audio_heartbeat(room_id: str, current: dict = Depends(get_current_user)) -> dict:
-        s = await db.live_sessions.find_one({"id": room_id, "type": "audio", "ended_at": None})
-        if not s:
-            raise HTTPException(404, "Room not found")
-        # Increment audience if user isn't host/guest
-        is_speaker = current["id"] == s["host_id"] or current["id"] in (s.get("guest_ids") or [])
-        # Simple audience presence tracker keyed by user id + timestamp
-        pres_key = f"audience:{room_id}"
-        await db.room_presence.update_one(
-            {"room_id": room_id, "user_id": current["id"]},
-            {"$set": {
-                "room_id": room_id,
-                "user_id": current["id"],
-                "username": current["username"],
-                "display_name": current.get("display_name") or current["username"],
-                "avatar_url": current.get("avatar_url", ""),
-                "is_speaker": is_speaker,
-                "seen_at": _now(),
-            }},
-            upsert=True,
-        )
-        # Cleanup old presence (>60s)
-        cutoff = _now().timestamp() - 60
-        await db.room_presence.delete_many(
-            {"room_id": room_id, "seen_at": {"$lt": datetime.fromtimestamp(cutoff, tz=timezone.utc)}}
-        )
-        aud = await db.room_presence.count_documents(
-            {"room_id": room_id, "is_speaker": False}
-        )
-        await db.live_sessions.update_one(
-            {"id": room_id},
-            {"$set": {"audience_count": aud, "viewers": aud, "last_seen_at": _now()}},
-        )
-        return {"audience_count": aud}
-
-    @router.get("/api/rooms/{room_id}/audience")
-    async def audio_audience(room_id: str, _: dict = Depends(get_current_user)) -> dict:
-        cutoff = _now().timestamp() - 60
-        rows = []
-        async for p in db.room_presence.find(
-            {
-                "room_id": room_id,
-                "is_speaker": False,
-                "seen_at": {"$gte": datetime.fromtimestamp(cutoff, tz=timezone.utc)},
-            },
-            {"_id": 0, "user_id": 1, "username": 1, "display_name": 1, "avatar_url": 1},
-        ).sort("seen_at", -1).limit(60):
-            rows.append(p)
-        return {"audience": rows}
-
-    @router.post("/api/rooms/{room_id}/invite/{user_id}")
-    async def audio_invite_guest(
-        room_id: str, user_id: str, current: dict = Depends(get_current_user)
-    ) -> RoomState:
-        s = await db.live_sessions.find_one({"id": room_id, "type": "audio", "ended_at": None})
-        if not s:
-            raise HTTPException(404, "Room not found")
-        if s["host_id"] != current["id"]:
-            raise HTTPException(403, "Only the host can add guests")
-        guests = list(s.get("guest_ids") or [])
-        if user_id == s["host_id"]:
-            raise HTTPException(400, "Host is already on stage")
-        if user_id not in guests:
-            if len(guests) >= 6:
-                raise HTTPException(400, "Stage is full (6 guests max)")
-            guests.append(user_id)
-        await db.live_sessions.update_one({"id": room_id}, {"$set": {"guest_ids": guests}})
-        s = await db.live_sessions.find_one({"id": room_id}, {"_id": 0})
-        return await _room_state(s)
-
-    @router.delete("/api/rooms/{room_id}/guest/{user_id}")
-    async def audio_remove_guest(
-        room_id: str, user_id: str, current: dict = Depends(get_current_user)
-    ) -> RoomState:
-        s = await db.live_sessions.find_one({"id": room_id, "type": "audio", "ended_at": None})
-        if not s:
-            raise HTTPException(404, "Room not found")
-        # Host can remove anyone, guests can step down themselves.
-        if current["id"] != s["host_id"] and current["id"] != user_id:
-            raise HTTPException(403, "Not allowed")
-        guests = [g for g in (s.get("guest_ids") or []) if g != user_id]
-        await db.live_sessions.update_one({"id": room_id}, {"$set": {"guest_ids": guests}})
-        s = await db.live_sessions.find_one({"id": room_id}, {"_id": 0})
-        return await _room_state(s)
-
-    @router.post("/api/rooms/{room_id}/end")
-    async def audio_end(room_id: str, current: dict = Depends(get_current_user)) -> dict:
-        s = await db.live_sessions.find_one({"id": room_id, "type": "audio"})
-        if not s:
-            raise HTTPException(404, "Room not found")
-        if s["host_id"] != current["id"]:
-            raise HTTPException(403, "Not your room")
-        await db.live_sessions.update_one({"id": room_id}, {"$set": {"ended_at": _now()}})
-        await db.users.update_one({"id": current["id"]}, {"$set": {"is_live": False, "viewers": 0, "stream_title": ""}})
-        await db.room_presence.delete_many({"room_id": room_id})
-        return {"ok": True}
 
     # ---------- Blogs ----------
     async def _ensure_blog_perm(user: dict) -> None:

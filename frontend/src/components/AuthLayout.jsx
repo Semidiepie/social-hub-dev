@@ -23,15 +23,15 @@ export function AuthLayout({ children, title, subtitle }) {
           </div>
           <h1 className="text-4xl font-black leading-tight tracking-tight sm:text-5xl">
             Post. <span className="text-primary">Publish.</span>
-            <br /> Go live.
+            <br /> Go viral.
           </h1>
           <p className="mt-6 text-lg text-muted-foreground">
             The home for gamers, streamers, and every clutch moment — now on the web.
-            Write long-form blogs, upload long videos, and chat with your squad from
-            any browser.
+            Share reels, write long-form blogs, upload long videos, and chat with your
+            squad from any browser.
           </p>
           <div className="mt-10 grid grid-cols-3 gap-3 text-sm">
-            {["Blogs & long videos", "1:1 & Squad chats", "Audio livestreams"].map((f) => (
+            {["Reels & long videos", "1:1 & Squad chats", "Blogs & Discover"].map((f) => (
               <div key={f} className="rounded-xl border border-border bg-card/70 p-3 text-center">
                 <span className="font-semibold">{f}</span>
               </div>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Loader2, MessageCircle, BadgeCheck, Settings as SettingsIcon } from "lucide-react";
+import { Loader2, MessageCircle, BadgeCheck, Settings as SettingsIcon, Play, Heart } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ export default function ProfilePage() {
   const targetId = userId || me?.id;
   const [target, setTarget] = useState(null);
   const [posts, setPosts] = useState([]);
+  const [reels, setReels] = useState([]);
   const [videos, setVideos] = useState([]);
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,15 +29,17 @@ export default function ProfilePage() {
     if (!targetId) return;
     setLoading(true);
     try {
-      const [u, p, v, b] = await Promise.all([
+      const [u, p, r, v, b] = await Promise.all([
         api.get(`/users/${targetId}`),
         api.get(`/users/${targetId}/posts`).catch(() => []),
+        api.get(`/users/${targetId}/reels`).catch(() => []),
         api.get(`/users/${targetId}/videos`).catch(() => []),
         api.get(`/blogs/user/${targetId}`).catch(() => []),
       ]);
       setTarget(u);
       setFollowing(u.follows_them);
       setPosts(p);
+      setReels(r);
       setVideos(v);
       setBlogs(b);
     } catch (e) {
@@ -76,10 +79,11 @@ export default function ProfilePage() {
   };
 
   const initialTab = useMemo(() => {
+    if (reels.length) return "reels";
     if (blogs.length) return "blogs";
     if (videos.length) return "videos";
     return "posts";
-  }, [blogs.length, videos.length]);
+  }, [reels.length, blogs.length, videos.length]);
 
   if (loading || !target) {
     return (
@@ -139,11 +143,15 @@ export default function ProfilePage() {
       <Tabs defaultValue={initialTab} key={initialTab} className="mt-6">
         <TabsList>
           <TabsTrigger value="posts" data-testid="profile-tab-posts">Posts · {posts.length}</TabsTrigger>
+          <TabsTrigger value="reels" data-testid="profile-tab-reels">Reels · {reels.length}</TabsTrigger>
           <TabsTrigger value="videos" data-testid="profile-tab-videos">Videos · {videos.length}</TabsTrigger>
           <TabsTrigger value="blogs" data-testid="profile-tab-blogs">Blogs · {blogs.length}</TabsTrigger>
         </TabsList>
         <TabsContent value="posts">
           <PostsGrid posts={posts} />
+        </TabsContent>
+        <TabsContent value="reels">
+          <ReelsGrid reels={reels} />
         </TabsContent>
         <TabsContent value="videos">
           <VideosGrid videos={videos} />
@@ -179,6 +187,33 @@ function PostsGrid({ posts }) {
             </div>
           )}
         </div>
+      ))}
+    </div>
+  );
+}
+
+function ReelsGrid({ reels }) {
+  if (reels.length === 0) return <Empty msg="No reels yet." />;
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+      {reels.map((r) => (
+        <Link
+          key={r.id}
+          to={`/reels/${r.id}`}
+          className="group relative aspect-[9/16] overflow-hidden rounded-xl bg-secondary"
+          data-testid={`reel-tile-${r.id}`}
+        >
+          {r.thumbnail_url || r.image_url ? (
+            <img src={r.thumbnail_url || r.image_url} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <video src={r.video_url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+          )}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between text-[11px] font-semibold text-white">
+            <span className="inline-flex items-center gap-1"><Play size={12} className="fill-white" /> {formatNumber(r.views || 0)}</span>
+            <span className="inline-flex items-center gap-1"><Heart size={12} className="fill-white" /> {formatNumber(r.likes || 0)}</span>
+          </div>
+        </Link>
       ))}
     </div>
   );

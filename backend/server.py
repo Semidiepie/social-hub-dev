@@ -30,8 +30,6 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "postmeplex-dev-secret-change-in-prod"
 JWT_ALG = "HS256"
 JWT_TTL_MIN = 60 * 24 * 30  # 30 days
 
-AGORA_APP_ID = os.environ.get("AGORA_APP_ID", "")
-
 PUSH_BASE_URL = "https://integrations.emergentagent.com"
 PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
 
@@ -192,11 +190,6 @@ class ReportBody(BaseModel):
     target_type: Literal["user", "post", "reel", "comment", "message"]
     target_id: str
     reason: str = Field(min_length=1, max_length=400)
-
-
-class LiveStartBody(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
-    game_tag: Optional[str] = None
 
 
 # ============================================================
@@ -641,110 +634,6 @@ async def report_content(body: ReportBody, current: Annotated[dict, Depends(get_
         "created_at": now(),
     })
     return {"status": "received"}
-
-
-# --- Live streaming (Agora App-ID-only) ---
-@app.post("/api/live/start")
-async def live_start(body: LiveStartBody, current: Annotated[dict, Depends(get_current_user)]):
-    if not AGORA_APP_ID:
-        raise HTTPException(503, "Agora not configured")
-    # End any previous live session by this user
-    await db.live_sessions.update_many({"host_id": current["id"], "ended_at": None}, {"$set": {"ended_at": now()}})
-    channel_name = f"pmp-{current['username']}-{int(now().timestamp())}"
-    session = {
-        "id": str(uuid.uuid4()),
-        "host_id": current["id"],
-        "host_username": current["username"],
-        "host_display_name": current["display_name"],
-        "host_avatar": current.get("avatar_url", ""),
-        "channel_name": channel_name,
-        "title": body.title,
-        "game_tag": body.game_tag,
-        "viewers": 0,
-        "started_at": now(),
-        "ended_at": None,
-    }
-    await db.live_sessions.insert_one(session)
-    await db.users.update_one(
-        {"id": current["id"]},
-        {"$set": {"is_live": True, "is_streamer": True, "stream_title": body.title, "viewers": 0}},
-    )
-    return {
-        "id": session["id"],
-        "channel_name": channel_name,
-        "app_id": AGORA_APP_ID,
-        "title": body.title,
-        "host": {
-            "id": current["id"],
-            "username": current["username"],
-            "display_name": current["display_name"],
-            "avatar_url": current.get("avatar_url", ""),
-        },
-    }
-
-
-@app.post("/api/live/{session_id}/end")
-async def live_end(session_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    session = await db.live_sessions.find_one({"id": session_id})
-    if not session:
-        raise HTTPException(404, "Session not found")
-    if session["host_id"] != current["id"]:
-        raise HTTPException(403, "Not your stream")
-    await db.live_sessions.update_one({"id": session_id}, {"$set": {"ended_at": now()}})
-    await db.users.update_one({"id": current["id"]}, {"$set": {"is_live": False, "viewers": 0, "stream_title": ""}})
-    return {"status": "ended"}
-
-
-@app.post("/api/live/{session_id}/heartbeat")
-async def live_heartbeat(session_id: str, viewers: int = 0):
-    """Public endpoint — viewers ping to keep viewer count fresh."""
-    await db.live_sessions.update_one({"id": session_id, "ended_at": None}, {"$set": {"viewers": viewers, "last_seen_at": now()}})
-    s = await db.live_sessions.find_one({"id": session_id})
-    if s:
-        await db.users.update_one({"id": s["host_id"]}, {"$set": {"viewers": viewers}})
-    return {"status": "ok"}
-
-
-@app.get("/api/live")
-async def list_live():
-    rows = await db.live_sessions.find({"ended_at": None}, {"_id": 0}).sort("started_at", -1).to_list(50)
-    out = []
-    for s in rows:
-        out.append({
-            "id": s["id"],
-            "channel_name": s["channel_name"],
-            "title": s.get("title", ""),
-            "game_tag": s.get("game_tag"),
-            "viewers": s.get("viewers", 0),
-            "started_at": s["started_at"].isoformat() if isinstance(s.get("started_at"), datetime) else s.get("started_at"),
-            "host": {
-                "id": s["host_id"],
-                "username": s["host_username"],
-                "display_name": s["host_display_name"],
-                "avatar_url": s.get("host_avatar", ""),
-            },
-        })
-    return out
-
-
-@app.get("/api/live/{session_id}")
-async def get_live(session_id: str):
-    s = await db.live_sessions.find_one({"id": session_id, "ended_at": None}, {"_id": 0})
-    if not s:
-        raise HTTPException(404, "Stream not live")
-    return {
-        "id": s["id"],
-        "channel_name": s["channel_name"],
-        "app_id": AGORA_APP_ID,
-        "title": s.get("title", ""),
-        "viewers": s.get("viewers", 0),
-        "host": {
-            "id": s["host_id"],
-            "username": s["host_username"],
-            "display_name": s["host_display_name"],
-            "avatar_url": s.get("host_avatar", ""),
-        },
-    }
 
 
 @app.post("/api/auth/forgot-password")
@@ -1316,7 +1205,7 @@ async def delete_story(story_id: str, current: Annotated[dict, Depends(get_curre
 
 
 @app.get("/api/discover")
-async def discover(filter: Literal["top", "accounts", "tags", "live"] = "top",
+async def discover(filter: Literal["top", "accounts", "tags"] = "top",
                    viewer: Annotated[Optional[dict], Depends(get_optional_user)] = None):
     viewer_id = viewer["id"] if viewer else None
     blocked = await blocked_ids_for(viewer_id)
@@ -1325,15 +1214,6 @@ async def discover(filter: Literal["top", "accounts", "tags", "live"] = "top",
         user_q: dict = {"id": {"$nin": blocked_list}} if blocked_list else {}
         users = await db.users.find(user_q, {"_id": 0, "password_hash": 0}).sort("followers", -1).limit(30).to_list(30)
         return {"type": "accounts", "items": [user_to_public(u).model_dump() for u in users]}
-    if filter == "live":
-        user_q = {"is_live": True}
-        if blocked_list:
-            user_q["id"] = {"$nin": blocked_list}
-        users = await db.users.find(user_q, {"_id": 0, "password_hash": 0}).to_list(30)
-        return {"type": "live", "items": [
-            {**user_to_public(u).model_dump(), "viewers": u.get("viewers", 0), "stream_title": u.get("stream_title", "")}
-            for u in users
-        ]}
     if filter == "tags":
         match: dict = {"game_tag": {"$ne": None}}
         if blocked_list:
@@ -1364,321 +1244,6 @@ async def reels(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
     rows = await db.posts.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
     return [await serialize_post(p, viewer_id) for p in rows]
 
-
-# ============================================================
-# Routes — Videos (YouTube-style long-form)
-# ============================================================
-# Videos live in a dedicated collection so they can grow independently of the
-# short-form `posts.type=reel` records. Schema:
-#   { id, author_id, title, description, video_url, thumbnail_url, duration,
-#     size_bytes, visibility: public|unlisted|private, tags[], category,
-#     views, likes, comments_count, created_at, updated_at }
-
-VIDEO_VISIBILITIES = ("public", "unlisted", "private")
-
-
-class CreateVideoBody(BaseModel):
-    title: str = Field(min_length=1, max_length=140)
-    description: str = Field(default="", max_length=5000)
-    video_url: str = Field(min_length=1)
-    thumbnail_url: Optional[str] = None
-    duration: Optional[float] = None
-    size_bytes: Optional[int] = None
-    visibility: Literal["public", "unlisted", "private"] = "public"
-    tags: list[str] = Field(default_factory=list)
-    category: Optional[str] = None
-
-
-class UpdateVideoBody(BaseModel):
-    title: Optional[str] = Field(default=None, min_length=1, max_length=140)
-    description: Optional[str] = Field(default=None, max_length=5000)
-    thumbnail_url: Optional[str] = None
-    visibility: Optional[Literal["public", "unlisted", "private"]] = None
-    tags: Optional[list[str]] = None
-    category: Optional[str] = None
-
-
-async def serialize_video(v: dict, viewer_id: Optional[str] = None) -> dict:
-    author = await db.users.find_one({"id": v["author_id"]}, {"_id": 0})
-    liked_by_me = False
-    if viewer_id:
-        liked_by_me = await db.video_likes.find_one({"video_id": v["id"], "user_id": viewer_id}) is not None
-    return {
-        "id": v["id"],
-        "title": v.get("title", ""),
-        "description": v.get("description", ""),
-        "video_url": _cloudinary_compat_url(v.get("video_url")),
-        "thumbnail_url": v.get("thumbnail_url"),
-        "duration": v.get("duration"),
-        "size_bytes": v.get("size_bytes"),
-        "visibility": v.get("visibility", "public"),
-        "tags": v.get("tags", []),
-        "category": v.get("category"),
-        "views": v.get("views", 0),
-        "likes": v.get("likes", 0),
-        "comments_count": v.get("comments_count", 0),
-        "created_at": v["created_at"].isoformat() if isinstance(v["created_at"], datetime) else v["created_at"],
-        "liked_by_me": liked_by_me,
-        "author": {
-            "id": author["id"],
-            "username": author["username"],
-            "display_name": author["display_name"],
-            "avatar_url": author.get("avatar_url", ""),
-            "is_verified": author.get("is_verified", False),
-            "is_streamer": author.get("is_streamer", False),
-        } if author else None,
-    }
-
-
-@app.get("/api/videos")
-async def list_videos(
-    viewer: Annotated[Optional[dict], Depends(get_optional_user)],
-    q: Optional[str] = None,
-    category: Optional[str] = None,
-    limit: int = 30,
-):
-    """Home feed of public videos. Supports search (title/description/tags) and
-    category filter. Blocked authors filtered."""
-    viewer_id = viewer["id"] if viewer else None
-    blocked = await blocked_ids_for(viewer_id)
-    query: dict = {"visibility": "public"}
-    if blocked:
-        query["author_id"] = {"$nin": list(blocked)}
-    if q:
-        query["$or"] = [
-            {"title": {"$regex": q, "$options": "i"}},
-            {"description": {"$regex": q, "$options": "i"}},
-            {"tags": {"$in": [q.lower()]}},
-        ]
-    if category:
-        query["category"] = category
-    rows = await db.videos.find(query, {"_id": 0}).sort("created_at", -1).limit(min(limit, 100)).to_list(limit)
-    return [await serialize_video(v, viewer_id) for v in rows]
-
-
-@app.get("/api/videos/{video_id}")
-async def get_video(
-    video_id: str,
-    viewer: Annotated[Optional[dict], Depends(get_optional_user)],
-):
-    v = await db.videos.find_one({"id": video_id}, {"_id": 0})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    # Private videos: only owner can see.
-    if v.get("visibility") == "private":
-        if not viewer or viewer["id"] != v["author_id"]:
-            raise HTTPException(404, "Video not found")
-    return await serialize_video(v, viewer["id"] if viewer else None)
-
-
-@app.get("/api/videos/{video_id}/related")
-async def related_videos(
-    video_id: str,
-    viewer: Annotated[Optional[dict], Depends(get_optional_user)],
-):
-    """Simple up-next: same category first, then latest publics. Excludes the
-    current video and blocked authors."""
-    v = await db.videos.find_one({"id": video_id}, {"_id": 0})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    viewer_id = viewer["id"] if viewer else None
-    blocked = await blocked_ids_for(viewer_id)
-    base_query: dict = {"id": {"$ne": video_id}, "visibility": "public"}
-    if blocked:
-        base_query["author_id"] = {"$nin": list(blocked)}
-    same_cat: list[dict] = []
-    if v.get("category"):
-        same_cat = await db.videos.find(
-            {**base_query, "category": v["category"]}, {"_id": 0}
-        ).sort("created_at", -1).limit(10).to_list(10)
-    seen_ids = {row["id"] for row in same_cat}
-    extra_query = {**base_query, "id": {"$nin": [video_id, *seen_ids]}}
-    extras = await db.videos.find(extra_query, {"_id": 0}).sort("created_at", -1).limit(15).to_list(15)
-    rows = [*same_cat, *extras][:15]
-    return [await serialize_video(row, viewer_id) for row in rows]
-
-
-@app.post("/api/videos", status_code=201)
-async def create_video(body: CreateVideoBody, current: Annotated[dict, Depends(get_current_user)]):
-    video_id = str(uuid.uuid4())
-    doc = {
-        "id": video_id,
-        "author_id": current["id"],
-        "title": body.title.strip(),
-        "description": body.description.strip(),
-        "video_url": body.video_url,
-        "thumbnail_url": body.thumbnail_url,
-        "duration": body.duration,
-        "size_bytes": body.size_bytes,
-        "visibility": body.visibility,
-        "tags": [t.strip().lower() for t in body.tags if t.strip()][:20],
-        "category": (body.category or "").strip() or None,
-        "views": 0,
-        "likes": 0,
-        "comments_count": 0,
-        "created_at": now(),
-        "updated_at": now(),
-    }
-    await db.videos.insert_one(doc)
-    return await serialize_video(doc, current["id"])
-
-
-@app.put("/api/videos/{video_id}")
-async def update_video(
-    video_id: str,
-    body: UpdateVideoBody,
-    current: Annotated[dict, Depends(get_current_user)],
-):
-    v = await db.videos.find_one({"id": video_id})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    if v["author_id"] != current["id"]:
-        raise HTTPException(403, "Not the video owner")
-    updates: dict = {"updated_at": now()}
-    for k in ("title", "description", "thumbnail_url", "visibility", "category"):
-        val = getattr(body, k)
-        if val is not None:
-            updates[k] = val.strip() if isinstance(val, str) else val
-    if body.tags is not None:
-        updates["tags"] = [t.strip().lower() for t in body.tags if t.strip()][:20]
-    await db.videos.update_one({"id": video_id}, {"$set": updates})
-    fresh = await db.videos.find_one({"id": video_id}, {"_id": 0})
-    return await serialize_video(fresh, current["id"])
-
-
-@app.delete("/api/videos/{video_id}")
-async def delete_video(video_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    v = await db.videos.find_one({"id": video_id})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    if v["author_id"] != current["id"] and not current.get("is_super_admin"):
-        raise HTTPException(403, "Not the video owner")
-    await db.videos.delete_one({"id": video_id})
-    await db.video_likes.delete_many({"video_id": video_id})
-    await db.video_comments.delete_many({"video_id": video_id})
-    return {"status": "deleted"}
-
-
-@app.post("/api/videos/{video_id}/like")
-async def like_video(video_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    v = await db.videos.find_one({"id": video_id})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    existing = await db.video_likes.find_one({"video_id": video_id, "user_id": current["id"]})
-    if existing:
-        # already liked — return current count
-        return {"likes": v.get("likes", 0), "liked_by_me": True}
-    await db.video_likes.insert_one(
-        {"id": str(uuid.uuid4()), "video_id": video_id, "user_id": current["id"], "created_at": now()}
-    )
-    result = await db.videos.find_one_and_update(
-        {"id": video_id}, {"$inc": {"likes": 1}}, return_document=True
-    )
-    return {"likes": result.get("likes", 0), "liked_by_me": True}
-
-
-@app.delete("/api/videos/{video_id}/like")
-async def unlike_video(video_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    v = await db.videos.find_one({"id": video_id})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    deleted = await db.video_likes.delete_one({"video_id": video_id, "user_id": current["id"]})
-    if deleted.deleted_count == 0:
-        return {"likes": v.get("likes", 0), "liked_by_me": False}
-    result = await db.videos.find_one_and_update(
-        {"id": video_id}, {"$inc": {"likes": -1}}, return_document=True
-    )
-    likes = max(0, result.get("likes", 0))
-    if result.get("likes", 0) < 0:
-        await db.videos.update_one({"id": video_id}, {"$set": {"likes": 0}})
-    return {"likes": likes, "liked_by_me": False}
-
-
-@app.post("/api/videos/{video_id}/view")
-async def register_view(video_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
-    v = await db.videos.find_one({"id": video_id})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    # Guard against double-counting for the same viewer within 30 minutes.
-    if viewer:
-        recent = await db.video_views.find_one({
-            "video_id": video_id,
-            "viewer_id": viewer["id"],
-            "created_at": {"$gt": now() - timedelta(minutes=30)},
-        })
-        if recent:
-            return {"views": v.get("views", 0)}
-    await db.video_views.insert_one({
-        "id": str(uuid.uuid4()),
-        "video_id": video_id,
-        "viewer_id": viewer["id"] if viewer else None,
-        "created_at": now(),
-    })
-    result = await db.videos.find_one_and_update(
-        {"id": video_id}, {"$inc": {"views": 1}}, return_document=True
-    )
-    return {"views": result.get("views", 0)}
-
-
-@app.get("/api/videos/{video_id}/comments")
-async def list_video_comments(video_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
-    rows = await db.video_comments.find({"video_id": video_id}, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
-    out = []
-    for c in rows:
-        author = await db.users.find_one({"id": c["user_id"]}, {"_id": 0})
-        out.append({
-            "id": c["id"],
-            "text": c["text"],
-            "created_at": c["created_at"].isoformat() if isinstance(c["created_at"], datetime) else c["created_at"],
-            "author": {
-                "id": author["id"],
-                "username": author["username"],
-                "display_name": author["display_name"],
-                "avatar_url": author.get("avatar_url", ""),
-                "is_verified": author.get("is_verified", False),
-            } if author else None,
-        })
-    return out
-
-
-class VideoCommentBody(BaseModel):
-    text: str = Field(min_length=1, max_length=1000)
-
-
-@app.post("/api/videos/{video_id}/comments", status_code=201)
-async def add_video_comment(
-    video_id: str,
-    body: VideoCommentBody,
-    current: Annotated[dict, Depends(get_current_user)],
-):
-    v = await db.videos.find_one({"id": video_id})
-    if not v:
-        raise HTTPException(404, "Video not found")
-    comment_id = str(uuid.uuid4())
-    await db.video_comments.insert_one({
-        "id": comment_id,
-        "video_id": video_id,
-        "user_id": current["id"],
-        "text": body.text.strip(),
-        "created_at": now(),
-    })
-    await db.videos.update_one({"id": video_id}, {"$inc": {"comments_count": 1}})
-    return {"id": comment_id, "text": body.text.strip()}
-
-
-@app.get("/api/users/{user_id}/videos")
-async def channel_videos(
-    user_id: str,
-    viewer: Annotated[Optional[dict], Depends(get_optional_user)],
-):
-    """A user's channel — all their public + (own only) private videos."""
-    is_owner = bool(viewer and viewer["id"] == user_id)
-    query: dict = {"author_id": user_id}
-    if not is_owner:
-        query["visibility"] = {"$in": ["public", "unlisted"]}
-    rows = await db.videos.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
-    viewer_id = viewer["id"] if viewer else None
-    return [await serialize_video(v, viewer_id) for v in rows]
 
 
 # ============================================================
@@ -2019,256 +1584,6 @@ async def admin_search_users(q: str = "", current: Annotated[dict, Depends(get_c
     return [user_to_public(u).model_dump() for u in rows]
 
 
-# --- Conversations / Messages ---
-class CreateConversationBody(BaseModel):
-    member_ids: list[str]
-    name: Optional[str] = None  # group name; if None → 1:1
-
-
-class SendMessageBody(BaseModel):
-    text: str = Field(default="", max_length=2000)
-    image_url: Optional[str] = None
-
-
-class ReactionBody(BaseModel):
-    emoji: str = Field(min_length=1, max_length=8)
-
-
-def conv_preview(c: dict, my_id: str, members_by_id: dict) -> dict:
-    other_ids = [m for m in c["member_ids"] if m != my_id]
-    is_group = len(c["member_ids"]) > 2 or bool(c.get("name"))
-    if is_group:
-        title = c.get("name") or "Squad chat"
-        avatar = next((members_by_id[i]["avatar_url"] for i in other_ids if i in members_by_id and members_by_id[i].get("avatar_url")), "")
-    else:
-        other = members_by_id.get(other_ids[0]) if other_ids else None
-        title = other["display_name"] if other else "Unknown"
-        avatar = other.get("avatar_url", "") if other else ""
-    last = c.get("last_message") or {}
-    unread = c.get("unread", {}).get(my_id, 0) if isinstance(c.get("unread"), dict) else 0
-    return {
-        "id": c["id"],
-        "is_group": is_group,
-        "title": title,
-        "avatar_url": avatar,
-        "member_ids": c["member_ids"],
-        "members": [
-            {
-                "id": m["id"],
-                "username": m["username"],
-                "display_name": m["display_name"],
-                "avatar_url": m.get("avatar_url", ""),
-            }
-            for m in (members_by_id[i] for i in c["member_ids"] if i in members_by_id)
-        ],
-        "last_message": last,
-        "unread": unread,
-        "updated_at": c["updated_at"].isoformat() if isinstance(c.get("updated_at"), datetime) else c.get("updated_at"),
-    }
-
-
-@app.get("/api/conversations")
-async def list_conversations(current: Annotated[dict, Depends(get_current_user)]):
-    rows = await db.conversations.find(
-        {"member_ids": current["id"]}, {"_id": 0}
-    ).sort("updated_at", -1).to_list(100)
-    member_ids = {m for c in rows for m in c["member_ids"]}
-    members_raw = await db.users.find(
-        {"id": {"$in": list(member_ids)}}, {"_id": 0, "password_hash": 0}
-    ).to_list(500)
-    members_by_id = {m["id"]: m for m in members_raw}
-    return [conv_preview(c, current["id"], members_by_id) for c in rows]
-
-
-@app.post("/api/conversations")
-async def create_conversation(body: CreateConversationBody, current: Annotated[dict, Depends(get_current_user)]):
-    members = sorted(set([current["id"], *body.member_ids]))
-    if len(members) < 2:
-        raise HTTPException(400, "Need at least 2 members")
-    valid = await db.users.count_documents({"id": {"$in": members}})
-    if valid != len(members):
-        raise HTTPException(400, "Invalid member ids")
-    is_group = len(members) > 2 or bool(body.name)
-    # For 1:1, reuse existing conversation if one exists with no name
-    if not is_group:
-        existing = await db.conversations.find_one(
-            {"member_ids": members, "name": None}, {"_id": 0}
-        )
-        if existing:
-            members_raw = await db.users.find(
-                {"id": {"$in": members}}, {"_id": 0, "password_hash": 0}
-            ).to_list(10)
-            return conv_preview(existing, current["id"], {m["id"]: m for m in members_raw})
-    doc = {
-        "id": str(uuid.uuid4()),
-        "member_ids": members,
-        "name": body.name,
-        "created_by": current["id"],
-        "created_at": now(),
-        "updated_at": now(),
-        "last_message": None,
-        "unread": {m: 0 for m in members},
-    }
-    await db.conversations.insert_one(doc)
-    members_raw = await db.users.find(
-        {"id": {"$in": members}}, {"_id": 0, "password_hash": 0}
-    ).to_list(10)
-    return conv_preview(doc, current["id"], {m["id"]: m for m in members_raw})
-
-
-@app.get("/api/conversations/{conv_id}/messages")
-async def list_messages(conv_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    c = await db.conversations.find_one({"id": conv_id})
-    if not c or current["id"] not in c["member_ids"]:
-        raise HTTPException(404, "Conversation not found")
-    rows = await db.messages.find(
-        {"conversation_id": conv_id}, {"_id": 0}
-    ).sort("created_at", 1).to_list(500)
-    for m in rows:
-        if isinstance(m.get("created_at"), datetime):
-            m["created_at"] = m["created_at"].isoformat()
-        m.setdefault("image_url", None)
-        m.setdefault("reactions", [])
-        m.setdefault("read_by", [])
-    # Mark as read by this user (set last_read_message_id + clear unread counter).
-    last_id = rows[-1]["id"] if rows else None
-    set_doc: dict = {f"unread.{current['id']}": 0}
-    if last_id:
-        set_doc[f"read_by.{current['id']}"] = {"message_id": last_id, "at": now().isoformat()}
-    await db.conversations.update_one({"id": conv_id}, {"$set": set_doc})
-    # Also persist read receipts on the individual messages (the last N
-    # consecutive ones whose sender != me until we hit a message already
-    # marked read).
-    if rows and last_id:
-        msg_ids_to_mark = [m["id"] for m in rows if m["sender_id"] != current["id"]]
-        if msg_ids_to_mark:
-            await db.messages.update_many(
-                {"id": {"$in": msg_ids_to_mark}},
-                {"$addToSet": {"read_by": current["id"]}},
-            )
-    return rows
-
-
-@app.post("/api/conversations/{conv_id}/messages")
-async def send_message(conv_id: str, body: SendMessageBody, current: Annotated[dict, Depends(get_current_user)]):
-    c = await db.conversations.find_one({"id": conv_id})
-    if not c or current["id"] not in c["member_ids"]:
-        raise HTTPException(404, "Conversation not found")
-    if not body.text.strip() and not body.image_url:
-        raise HTTPException(400, "Message must have text or image")
-    msg = {
-        "id": str(uuid.uuid4()),
-        "conversation_id": conv_id,
-        "sender_id": current["id"],
-        "sender_username": current["username"],
-        "sender_avatar": current.get("avatar_url", ""),
-        "text": body.text,
-        "image_url": body.image_url,
-        "reactions": [],
-        "read_by": [current["id"]],  # sender has implicitly read it
-        "created_at": now(),
-    }
-    await db.messages.insert_one(msg)
-    msg.pop("_id", None)
-    incs = {f"unread.{m}": 1 for m in c["member_ids"] if m != current["id"]}
-    preview = body.text[:200] if body.text.strip() else "📷 Photo"
-    update_doc: dict = {
-        "$set": {
-            "updated_at": now(),
-            "last_message": {
-                "text": preview,
-                "sender_id": current["id"],
-                "sender_username": current["username"],
-                "created_at": now().isoformat(),
-            },
-            f"typing.{current['id']}": None,  # stop typing once sent
-        },
-    }
-    if incs:
-        update_doc["$inc"] = incs
-    await db.conversations.update_one({"id": conv_id}, update_doc)
-    try:
-        recipients = [m for m in c["member_ids"] if m != current["id"]]
-        await send_push(
-            recipients=recipients,
-            data={
-                "title": f"New message from {current['display_name']}",
-                "message": preview[:140],
-                "action_url": f"/messages/{conv_id}",
-            },
-        )
-    except Exception as e:
-        logger.warning(f"DM push failed: {e}")
-    return {**msg, "created_at": msg["created_at"].isoformat()}
-
-
-@app.post("/api/conversations/{conv_id}/typing")
-async def set_typing(conv_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    """Heartbeat: client posts every ~3s while user is typing. We just store
-    a timestamp; the GET endpoint considers anyone typed-within-5s as 'typing'."""
-    c = await db.conversations.find_one({"id": conv_id}, {"_id": 0, "member_ids": 1})
-    if not c or current["id"] not in c["member_ids"]:
-        raise HTTPException(404, "Conversation not found")
-    await db.conversations.update_one(
-        {"id": conv_id},
-        {"$set": {f"typing.{current['id']}": now()}},
-    )
-    return {"status": "ok"}
-
-
-@app.get("/api/conversations/{conv_id}/typing")
-async def get_typing(conv_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    """Returns the list of users currently typing (excluding the caller)."""
-    c = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
-    if not c or current["id"] not in c["member_ids"]:
-        raise HTTPException(404, "Conversation not found")
-    cutoff = now() - timedelta(seconds=5)
-    typing_map = c.get("typing") or {}
-    typing_ids = [
-        uid for uid, t in typing_map.items()
-        if uid != current["id"] and isinstance(t, datetime) and t > cutoff
-    ]
-    if not typing_ids:
-        return {"users": []}
-    users = await db.users.find(
-        {"id": {"$in": typing_ids}}, {"_id": 0, "id": 1, "username": 1, "display_name": 1}
-    ).to_list(20)
-    return {"users": users}
-
-
-@app.post("/api/messages/{message_id}/reactions")
-async def react_to_message(message_id: str, body: ReactionBody, current: Annotated[dict, Depends(get_current_user)]):
-    msg = await db.messages.find_one({"id": message_id})
-    if not msg:
-        raise HTTPException(404, "Message not found")
-    c = await db.conversations.find_one({"id": msg["conversation_id"]}, {"_id": 0, "member_ids": 1})
-    if not c or current["id"] not in c["member_ids"]:
-        raise HTTPException(404, "Conversation not found")
-    # Remove any prior reaction by this user (one reaction per user), then add new.
-    await db.messages.update_one(
-        {"id": message_id},
-        {"$pull": {"reactions": {"user_id": current["id"]}}},
-    )
-    await db.messages.update_one(
-        {"id": message_id},
-        {"$push": {"reactions": {"user_id": current["id"], "username": current["username"], "emoji": body.emoji, "at": now().isoformat()}}},
-    )
-    updated = await db.messages.find_one({"id": message_id}, {"_id": 0, "reactions": 1})
-    return {"reactions": (updated or {}).get("reactions", [])}
-
-
-@app.delete("/api/messages/{message_id}/reactions")
-async def unreact_message(message_id: str, current: Annotated[dict, Depends(get_current_user)]):
-    msg = await db.messages.find_one({"id": message_id})
-    if not msg:
-        raise HTTPException(404, "Message not found")
-    await db.messages.update_one(
-        {"id": message_id},
-        {"$pull": {"reactions": {"user_id": current["id"]}}},
-    )
-    updated = await db.messages.find_one({"id": message_id}, {"_id": 0, "reactions": 1})
-    return {"reactions": (updated or {}).get("reactions", [])}
-
 
 # ============================================================
 # Seed Demo Data
@@ -2482,7 +1797,29 @@ async def shutdown():
 
 
 # ============================================================
-# Audio Rooms + Blogs routes
+# Modular routers
 # ============================================================
+# Shared context passed to extracted route modules so they can reuse the same
+# db handle, auth deps and serialization helpers defined above.
+from types import SimpleNamespace  # noqa: E402
+
+route_ctx = SimpleNamespace(
+    db=db,
+    now=now,
+    logger=logger,
+    get_current_user=get_current_user,
+    get_optional_user=get_optional_user,
+    blocked_ids_for=blocked_ids_for,
+    cloudinary_compat_url=_cloudinary_compat_url,
+    user_to_public=user_to_public,
+    send_push=send_push,
+)
+
 from routes.rooms_blogs import build_router as _build_rooms_blogs  # noqa: E402
 app.include_router(_build_rooms_blogs(db, get_current_user, get_optional_user))
+
+from routes.videos import build_router as _build_videos  # noqa: E402
+app.include_router(_build_videos(route_ctx))
+
+from routes.messages import build_router as _build_messages  # noqa: E402
+app.include_router(_build_messages(route_ctx))

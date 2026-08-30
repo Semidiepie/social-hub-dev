@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 22 post-refactor regression on WEB + shared BACKEND. Extracted routes/videos.py and routes/messages.py behave identically to the pre-refactor code — all Videos endpoints (list/detail/related/create/update/delete/like/view/comments/user-videos) and Messages endpoints (conversation list/create, message list/send, reactions) return correct responses. Removed /api/live and /api/rooms/* correctly 404. Web Profile has the new Reels tab, /reels/:id opens a fullscreen viewer with Back/Like/Mute controls, Back returns to /profile, Videos+Blogs+Posts tabs still work, /live and /rooms redirect to /, Discover shows only 3 tabs. 34/36 pytest checks pass. Two issues surfaced: (1) BUG: GET /api/conversations/{id}/typing returns 500 due to naive-vs-aware datetime compare in routes/messages.py:219 (offset-naive from Mongo vs offset-aware `now()` — same code lived in server.py before but is now surfaced through the refactor); (2) stale 'Go live'/'Audio livestreams' copy on the /login marketing panel (AuthLayout.jsx) — Live has been removed everywhere else.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/conversations/{conv_id}/typing", "issue": "Returns 500 TypeError: can't compare offset-naive and offset-aware datetimes at /app/backend/routes/messages.py:219. Mongo returns stored typing timestamps as naive UTC while `cutoff = now() - timedelta(...)` is offset-aware. Fix: normalize with `.replace(tzinfo=timezone.utc)` on `t` before comparing, or make `now()` return naive UTC consistently. This is exercised whenever the Messages screen polls typing indicators — silent 500s in prod.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/auth/login (bad password)", "issue": "Returns 400 instead of the more conventional 401 Unauthorized for wrong credentials. Not a refactor regression (server.py behavior)."}
+    ]
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "/login (AuthLayout)", "issues": ["Stale post-Live-removal copy: hero headline still reads 'Post. Publish. Go live.' (AuthLayout.jsx:26) and feature pill 'Audio livestreams' (AuthLayout.jsx:34) — Live is no longer a product surface. Update to e.g. 'Post. Publish. Play.' and replace 'Audio livestreams' with 'Reels & videos' or similar."]}
+      ]
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration22_refactor_regression.py",
+    "/app/test_reports/pytest/iteration22_regression.xml"
+  ],
+  "action_items": [
+    "HIGH — Fix the 500 in routes/messages.py::get_typing (line 217-220). Recommended fix: `t_aware = t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t; if t_aware > cutoff: ...` (import timezone from datetime). Alternative: reuse the same normalization for message read timestamps too if they exhibit the same issue.",
+    "LOW — Update /app/frontend/src/components/AuthLayout.jsx lines 25-26 ('Go live.') and line 34 ('Audio livestreams') to remove Live references now that Live is removed sitewide.",
+    "OPTIONAL — Consider harmonizing `now()` in server.py to always return a naive-UTC (or always aware-UTC) datetime; mixing the two is the root cause here and can recur wherever a raw Mongo datetime is compared to `now()`."
+  ],
+  "critical_code_review_comments": [
+    "routes/videos.py and routes/messages.py correctly avoid `from __future__ import annotations` — build_router closure over dependency names in Annotated[...] would break Depends resolution if stringified. This is documented in messages/videos file headers implicitly via the request note; verified by test pass.",
+    "routes/messages.py:219 comparison `t > cutoff` is fragile: Mongo motor returns naive datetimes by default while `now()` in server.py appears to return offset-aware UTC. This is the reason for the 500 today.",
+    "routes/videos.py::serialize_video reads `v['created_at']` unguarded — safe because create_video always sets it, but consider a `.get('created_at', now())` fallback for future proofing.",
+    "server.py:1818-1825 modular include order is fine, but each `from routes.X import build_router as _build_X` is imported inside a comment section — consider moving these to top-level imports once the load-order concerns are audited.",
+    "ReelWatch.jsx: `goBack` uses `if (window.history.length > 1) navigate(-1) else navigate('/discover')` — matches VideoWatch pattern and works. Verified: Back from /reels/:id returns to /profile when opened from Profile.",
+    "Profile.jsx `initialTab` memo prefers reels > blogs > videos > posts. Confirmed working — reels tab auto-selected when reels exist. Good UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration22_refactor_regression.py (new)"
+  ],
+  "success_rate": {"backend": "94% (34/36)", "frontend": "100% (all web flows verified)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123!. One throwaway test_r22_<ts>@example.com user created via /auth/register (auto-purge on restart).",
+  "seed_data_creation": "During test run: 1 video ('test_ r22 video') created+deleted, 1 reel ('test_ ui r22 reel') created via UI test then deleted, 1 conversation + 1 message created with second user, 1 comment 'test_ comment r22'. All test_ prefixed and safe.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend refactor moved Videos/Messages verbatim into routes/*.py. Login token field is 'access_token'. Founder is semidiepie@gmail.com / Semi123!. Removed /api/live and /api/rooms/* return 404 (correct). The one real regression-exposed bug: GET /api/conversations/{id}/typing 500s due to naive-vs-aware datetime compare in routes/messages.py:219 — file this at HIGH before public launch since it fires on every Messages screen open. Also stale Live copy in /app/frontend/src/components/AuthLayout.jsx lines 25-34 ('Go live.' hero + 'Audio livestreams' pill). Web preview root: https://social-hub-dev-4.preview.emergentagent.com. Profile > Reels tab lists reels with data-testid=reel-tile-<id>; clicking opens /reels/:id which renders OUTSIDE AppShell (data-testid=reel-fullscreen) with reel-back-btn / reel-like-btn / reel-mute-btn. Regex in App.js line 33 `/^\\/(videos|reels)\\/(?!new$)[^/]+$/` correctly excludes /videos/new (upload) from fullscreen mode.",
+  "rca of the issue": "GET /api/conversations/{conv_id}/typing 500: routes/messages.py stores typing timestamp via `$set: { typing.<uid>: now() }`. MongoDB motor stores/reads BSON dates as naive UTC datetimes. When the GET handler builds `cutoff = now() - timedelta(seconds=5)` (offset-aware) and compares `t > cutoff` with t from Mongo (offset-naive), Python raises `TypeError: can't compare offset-naive and offset-aware datetimes`. Fix by normalizing t to UTC-aware before compare or by ensuring `now()` returns naive UTC. Reproduction: login as founder, POST /api/conversations/{cid}/typing (200), then GET /api/conversations/{cid}/typing (500). Confirmed in test_iteration22_refactor_regression.py::TestMessages::test_typing_post_and_get and backend.err.log stack trace."
+}

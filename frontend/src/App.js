@@ -13,6 +13,7 @@ import BlogReadPage from "@/pages/BlogRead";
 import BlogComposePage from "@/pages/BlogCompose";
 import BlogRequestPage from "@/pages/BlogRequest";
 import VideoWatchPage from "@/pages/VideoWatch";
+import ReelWatchPage from "@/pages/ReelWatch";
 import VideoUploadPage from "@/pages/VideoUpload";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
@@ -29,7 +30,7 @@ function Shell({ children }) {
   const isAuthRoute = ["/login", "/register", "/forgot-password"].includes(location.pathname);
   // The video watch screen renders fullscreen (no sidebar/topbar) so a tapped
   // video opens edge-to-edge; Back returns you to where you were.
-  const isFullscreenRoute = /^\/videos\/(?!new$)[^/]+$/.test(location.pathname);
+  const isFullscreenRoute = /^\/(videos|reels)\/(?!new$)[^/]+$/.test(location.pathname);
   if (isAuthRoute || isFullscreenRoute) return children;
   return <AppShell>{children}</AppShell>;
 }
@@ -66,6 +67,7 @@ export default function App() {
 
             <Route path="/videos/new" element={<ProtectedRoute><VideoUploadPage /></ProtectedRoute>} />
             <Route path="/videos/:id" element={<VideoWatchPage />} />
+            <Route path="/reels/:id" element={<ReelWatchPage />} />
 
             <Route path="/discover" element={<DiscoverPage />} />
 

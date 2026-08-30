@@ -26,20 +26,20 @@ export default function PrivacyPolicy() {
 
         <Text style={styles.h2}>1. Information we collect</Text>
         <Text style={styles.p}><Text style={styles.b}>Account data:</Text> email, username, display name, password (stored as a bcrypt hash), and optional bio/avatar.</Text>
-        <Text style={styles.p}><Text style={styles.b}>Content you create:</Text> posts, reels, comments, likes, follows, direct messages and live streams.</Text>
+        <Text style={styles.p}><Text style={styles.b}>Content you create:</Text> posts, reels, comments, likes, follows and direct messages.</Text>
         <Text style={styles.p}><Text style={styles.b}>Device data:</Text> approximate device type and OS, push notification token, and crash diagnostics needed to keep the app stable.</Text>
-        <Text style={styles.p}><Text style={styles.b}>Camera, microphone, photo library:</Text> only when you tap a feature that needs them (e.g., uploading media, going Live). We never access them in the background.</Text>
+        <Text style={styles.p}><Text style={styles.b}>Camera, microphone, photo library:</Text> only when you tap a feature that needs them (e.g., uploading media, recording a reel). We never access them in the background.</Text>
 
         <Text style={styles.h2}>2. How we use your information</Text>
-        <Text style={styles.p}>To operate PostMePlex (deliver your content to followers, route DMs, run live streams), authenticate you, send transactional emails like password resets, deliver push notifications you opted into, prevent abuse, and improve the product.</Text>
+        <Text style={styles.p}>To operate PostMePlex (deliver your content to followers, route DMs), authenticate you, send transactional emails like password resets, deliver push notifications you opted into, prevent abuse, and improve the product.</Text>
 
         <Text style={styles.h2}>3. Who we share with</Text>
         <Text style={styles.p}>We do not sell your personal data. We share limited data with service providers that help us run PostMePlex:</Text>
-        <Text style={styles.p}>• Resend (transactional email){"\n"}• Cloudinary (image and video hosting){"\n"}• Agora.io (live streaming infrastructure){"\n"}• MongoDB Atlas (database hosting){"\n"}• Expo / Firebase (push notification delivery)</Text>
+        <Text style={styles.p}>• Resend (transactional email){"\n"}• Cloudinary (image and video hosting){"\n"}• MongoDB Atlas (database hosting){"\n"}• Expo / Firebase (push notification delivery)</Text>
         <Text style={styles.p}>These providers process data only as needed to deliver their service and are bound by their own privacy commitments.</Text>
 
         <Text style={styles.h2}>4. Public content</Text>
-        <Text style={styles.p}>Posts, reels, comments, live streams and profile information are public to other PostMePlex users by default. Direct messages and live-stream private chats are visible only to the participants.</Text>
+        <Text style={styles.p}>Posts, reels, comments and profile information are public to other PostMePlex users by default. Direct messages are visible only to the participants.</Text>
 
         <Text style={styles.h2}>5. Children</Text>
         <Text style={styles.p}>PostMePlex is not intended for users under 13. If we learn a child under 13 created an account, we will delete it. Some jurisdictions require a higher minimum age — please follow your local laws.</Text>
