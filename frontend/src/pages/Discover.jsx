@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Loader2, Search, Radio, BadgeCheck } from "lucide-react";
+import { Loader2, Search, BadgeCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -77,7 +77,6 @@ export default function DiscoverPage() {
               <TabsTrigger value="top" data-testid="discover-tab-top">Top</TabsTrigger>
               <TabsTrigger value="accounts" data-testid="discover-tab-accounts">Accounts</TabsTrigger>
               <TabsTrigger value="tags" data-testid="discover-tab-tags">Tags</TabsTrigger>
-              <TabsTrigger value="live" data-testid="discover-tab-live">Live</TabsTrigger>
             </TabsList>
           </Tabs>
 
@@ -89,29 +88,6 @@ export default function DiscoverPage() {
             <div className="grid gap-3 md:grid-cols-2">
               {data.items.map((u) => (
                 <UserCard key={u.id} user={u} onOpen={() => navigate(`/user/${u.id}`)} />
-              ))}
-            </div>
-          ) : data.type === "live" ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {data.items.length === 0 && (
-                <EmptyRow message="Nobody's live right now." />
-              )}
-              {data.items.map((u) => (
-                <div key={u.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
-                  <Avatar src={u.avatar_url} size={44} ring />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1 font-semibold">
-                      {u.display_name}
-                      {u.is_verified && <BadgeCheck size={14} className="fill-primary text-background" />}
-                    </div>
-                    <div className="line-clamp-1 text-xs text-muted-foreground">
-                      Streaming: {u.stream_title || "—"} · {formatNumber(u.viewers || 0)} viewers
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/20 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-primary">
-                    <Radio size={11} /> Live
-                  </span>
-                </div>
               ))}
             </div>
           ) : data.type === "tags" ? (
@@ -129,7 +105,7 @@ export default function DiscoverPage() {
               {data.items.map((p) => (
                 <Link
                   key={p.id}
-                  to={p.type === "reel" ? `/videos` : `/`}
+                  to={p.author?.id ? `/user/${p.author.id}` : "/"}
                   className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card"
                 >
                   <div className="aspect-square bg-secondary">

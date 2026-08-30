@@ -81,8 +81,8 @@ export default function VideoUploadPage() {
         tags,
         category: form.category.trim() || null,
       });
-      toast.success("Video published!");
-      navigate(`/videos/${created.id}`);
+      toast.success("Video published to your profile!");
+      navigate("/profile");
     } catch (err) {
       toast.error(err.message || "Failed to publish");
     } finally {

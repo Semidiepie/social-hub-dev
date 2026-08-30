@@ -195,7 +195,8 @@ export default function UploadVideoScreen() {
         category,
       };
       const created = await api.post<VideoItem>("/videos", body, true);
-      router.replace(`/video/${created.id}`);
+      void created;
+      router.replace(`/(tabs)/profile`);
     } catch (e: any) {
       const msg = String(e?.message || "Upload failed");
       // Cloudinary sends a 400 with "File size too large" when the account

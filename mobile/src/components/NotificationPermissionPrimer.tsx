@@ -131,13 +131,13 @@ export const NotificationPermissionPrimer: React.FC = () => {
 
           <Text style={styles.body}>
             Turn on notifications to hear about new messages, squad activity,
-            live streams from creators you follow, and reactions on your posts.
+            and reactions on your posts.
           </Text>
 
           <View style={styles.bullets}>
             <Bullet icon="chatbubble" text="Direct messages & squad chats" />
             <Bullet icon="heart" text="Likes, comments, and mentions" />
-            <Bullet icon="radio" text="Live streams from people you follow" />
+            <Bullet icon="people" text="New followers & squad activity" />
           </View>
 
           <Pressable

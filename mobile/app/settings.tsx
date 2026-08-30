@@ -169,13 +169,6 @@ export default function Settings() {
         <Text style={styles.sectionLabel}>Discover</Text>
         <View style={styles.group}>
           <Row
-            icon="radio-outline"
-            label="Live rooms"
-            hint="Audio livestreams — go live or listen in"
-            onPress={() => router.push("/(tabs)/live")}
-            testID="settings-live"
-          />
-          <Row
             icon="library-outline"
             label="Blogs"
             hint="Read & publish long-form articles"
@@ -230,7 +223,7 @@ export default function Settings() {
 
         <Text style={styles.sectionLabel}>Legal</Text>
         <View style={styles.group}>
-          <Row icon="shield-outline" label="Privacy Policy" onPress={() => router.push("/legal/privacy")} testID="settings-privacy" />
+          <Row icon="shield-outline" label="Privacy Policy" onPress={() => router.push("/legal/privacy")} testID="settings-legal-privacy" />
           <Row icon="document-text-outline" label="Terms of Service" onPress={() => router.push("/legal/terms")} testID="settings-terms" />
         </View>
 

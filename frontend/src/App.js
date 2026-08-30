@@ -12,7 +12,6 @@ import BlogsPage from "@/pages/Blogs";
 import BlogReadPage from "@/pages/BlogRead";
 import BlogComposePage from "@/pages/BlogCompose";
 import BlogRequestPage from "@/pages/BlogRequest";
-import VideosPage from "@/pages/Videos";
 import VideoWatchPage from "@/pages/VideoWatch";
 import VideoUploadPage from "@/pages/VideoUpload";
 import DiscoverPage from "@/pages/Discover";
@@ -20,7 +19,6 @@ import MessagesPage from "@/pages/Messages";
 import NotificationsPage from "@/pages/Notifications";
 import ProfilePage from "@/pages/Profile";
 import SettingsPage from "@/pages/Settings";
-import LivePage from "@/pages/Live";
 
 /**
  * Shell wrapper that mounts the sidebar/topbar/bottom-nav for authenticated
@@ -29,7 +27,10 @@ import LivePage from "@/pages/Live";
 function Shell({ children }) {
   const location = useLocation();
   const isAuthRoute = ["/login", "/register", "/forgot-password"].includes(location.pathname);
-  if (isAuthRoute) return children;
+  // The video watch screen renders fullscreen (no sidebar/topbar) so a tapped
+  // video opens edge-to-edge; Back returns you to where you were.
+  const isFullscreenRoute = /^\/videos\/(?!new$)[^/]+$/.test(location.pathname);
+  if (isAuthRoute || isFullscreenRoute) return children;
   return <AppShell>{children}</AppShell>;
 }
 
@@ -63,12 +64,10 @@ export default function App() {
             <Route path="/blogs/:id" element={<BlogReadPage />} />
             <Route path="/blogs/:id/edit" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
 
-            <Route path="/videos" element={<VideosPage />} />
             <Route path="/videos/new" element={<ProtectedRoute><VideoUploadPage /></ProtectedRoute>} />
             <Route path="/videos/:id" element={<VideoWatchPage />} />
 
             <Route path="/discover" element={<DiscoverPage />} />
-            <Route path="/live" element={<LivePage />} />
 
             <Route
               path="/messages"

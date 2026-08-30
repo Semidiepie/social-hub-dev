@@ -92,12 +92,23 @@ Full surface documented in `/app/backend/server.py` and `/app/backend/routes/roo
                                  Discover, Messages, Notifications, Profile, Settings, Live
 ```
 
+## Changelog
+### 2026-06 — Removed Live feature; videos via Profile/Discover only
+- **Live feature removed** on both web and mobile (per user request):
+  - Web: deleted `pages/Live.jsx`, `pages/LiveRoom.jsx`, `lib/agoraRoom.js`; removed `/live`+`/live/:id` routes and the Live nav item; removed Discover "Live" tab.
+  - Mobile: deleted `app/(tabs)/live.tsx`, `app/live/[id].tsx`, `src/lib/agora.ts`, `src/lib/agora.web.ts`; removed the Live tab (`(tabs)/_layout.tsx`), the DesktopSidebar Live item, and the Settings "Live rooms" row.
+  - Backend `/rooms` endpoints (in `routes/rooms_blogs.py`) left intact but now unused by any UI — candidate for server-side removal before launch.
+- **Videos accessible only via Profile + Discover:** removed the dedicated Videos browse feed/tab from web nav (deleted `pages/Videos.jsx`, removed `/videos` list route). Long-form videos still viewable at `/videos/:id`.
+- **Upload → Profile:** web `VideoUpload` and mobile `video/upload.tsx` now redirect to the uploader's Profile after publishing (visibility chooser kept, defaults Public).
+- **Fullscreen watch + Back:** web `/videos/:id` renders fullscreen outside the app shell with a Back control (`navigate(-1)`); mobile watch already fullscreen with back.
+- Verified via testing agent (iteration_21): 18/18 checks passed on web + mobile.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.
 - Cloudinary unsigned preset `ml_default` on cloud `dpnrol54k` — shared by mobile + web via env vars.
 - Push notifications require a native build; Expo Go / web preview cannot validate them.
-- Agora audio only functionally works on real device builds (not Expo Go / web preview).
+- Agora audio only functionally works on real device builds (not Expo Go / web preview). NOTE: Live feature was removed (2026-06); Agora is no longer used.
 - Resend still in sandbox — only delivers to the founder's verified email. Forgot-password endpoint surfaces `dev_code` in the response for other accounts so the UI can autofill.
 
 ## Roadmap
@@ -107,7 +118,7 @@ Full surface documented in `/app/backend/server.py` and `/app/backend/routes/roo
 
 ### Upcoming / Backlog
 - **P1:** Refactor `server.py` (>2500 lines) into `/routes/auth.py`, `/routes/videos.py`, `/routes/posts.py`, etc.
-- **P1:** Web live audio (v2) — add `agora-rtc-sdk-ng` so web listeners can hear rooms hosted from mobile.
+- **P2:** Remove now-unused backend `/rooms` (live) endpoints from `routes/rooms_blogs.py`.
 - **P2:** Admin console on web (verified badges, blog approvals) — currently mobile-only.
 - **P2:** Notification-settings screen (toggle DM / follow / comment push categories).
 - **P2:** Batched / muted-chat push (skip push when user is actively reading the chat).

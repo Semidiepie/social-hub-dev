@@ -1,0 +1,41 @@
+{
+  "summary": "Frontend-only regression of the 'Remove Live + Videos-only-via-Profile/Discover + Fullscreen watch' iteration on WEB (React /app/frontend) and MOBILE (Expo /app/mobile) against shared FastAPI backend. All 12 web checks and all 6 mobile checks PASSED. No blocking or design bugs found. Two very minor code hygiene issues (duplicate testID + brace formatting) reported below.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [
+    "(Minor) /app/mobile/app/settings.tsx — duplicate testID 'settings-privacy' on TWO rows: line 152 (Account > Privacy) and line 226 (Legal > Privacy Policy). Playwright/RTL will only match the first. Rename the Legal one to e.g. 'settings-legal-privacy'.",
+    "(Cosmetic) /app/mobile/app/video/upload.tsx:199 — closing brace `router.replace(\"/(tabs)/profile\");    } catch (e: any) {` is on the same line as the catch. Not a bug, but a formatter run would fix it.",
+    "(Optional) /app/mobile/src/components/NotificationPermissionPrimer.tsx:140 still advertises 'Live streams from people you follow'. Now that Live is removed on both surfaces, this bullet is stale and should be removed or replaced.",
+    "(Optional) Legal copy in /app/mobile/app/legal/terms.tsx (section 6 'Live streaming') and /app/mobile/app/legal/privacy.tsx (mentions 'going Live') is now inaccurate. Consider updating to keep legal text truthful."
+  ],
+  "critical_code_review_comments": [
+    "Web Shell (/app/frontend/src/App.js:32) uses regex `/^\\/videos\\/(?!new$)[^/]+$/` for the fullscreen route. Verified working with real video id, and /videos/new still renders inside AppShell. Good.",
+    "Web VideoWatch.jsx uses `if (window.history.length > 1) navigate(-1); else navigate('/discover')` for Back. Works well and matches the spec; on a cold direct load it correctly falls back to Discover.",
+    "Mobile app/video/upload.tsx post-publish navigates via `router.replace('/(tabs)/profile')` which is correct — replaces the upload screen in history so a system Back doesn't return the user into a stale upload form.",
+    "Backend rooms endpoints are intentionally still present (per request) but no UI surface reaches them. Recommend a follow-up task to gate/remove them server-side before public launch to shrink attack surface.",
+    "Rooms polling (Live.jsx) is no longer referenced — no dead polling on production build. Confirmed by absence of /app/frontend/src/pages/Live.jsx and no imports."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% web (12/12), 100% mobile (6/6)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! (from /app/memory/test_credentials.md). No test_ scratch accounts created this run.",
+  "seed_data_creation": "Published one video 'test_ web upload test_video_<ts>' via /videos/new (id 93ff3821-dad4-4528-8fb8-d7d49157b082). Prefixed test_ so it will be auto-purged on next backend restart.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified against REACT_APP_BACKEND_URL=https://social-hub-dev-4.preview.emergentagent.com and Expo web preview https://social-hub-dev-4.expo.preview.emergentagent.com. WEB: sidebar renders exactly 5 items (nav-home, nav-blogs, nav-discover, nav-messages, nav-notifications) with no nav-videos / nav-live. /live and /videos both catch the '*' route in App.js and Navigate to '/'. Discover shows only 3 tabs (Top/Accounts/Tags), no discover-tab-live. /videos/new default visibility = Public (verified via SelectValue text). Publishing (title + hosted URL) redirects to /profile; the new video appears under Profile > Videos tab. Clicking a video from Profile opens /videos/:id which renders VideoWatch OUTSIDE AppShell (data-testid=video-fullscreen, no sidebar) and the back-btn (data-testid=video-back-btn) returns to /profile via navigate(-1). All main routes (/, /blogs, /discover, /messages, /notifications, /profile) load with no error boundaries. MOBILE: Expo bundles cleanly with NO import errors (verified: no red-screen, no PAGEERROR events, deleted files app/(tabs)/live.tsx, app/live/[id].tsx, src/lib/agora.ts, src/lib/agora.web.ts don't produce module-not-found). After founder login the app lands on /home and the floating pill bar shows exactly tab-home / tab-discover / tab-create / tab-profile — tab-live absent. Settings screen (data-testid queried) has NO settings-live row; settings-blogs row is present and functional in the Discover section. On desktop viewport (1440x900) DesktopSidebar HTML contains no '>Live<' text — Home/Discover/Messages/Blogs/Notifications/Profile items are the only nav destinations. Minor issue: duplicate testID 'settings-privacy' in settings.tsx (Account privacy row + Legal Privacy Policy row) — rename Legal one for testability.",
+  "rca of the issue": "N/A — this was a feature/removal regression pass, no bugs surfaced."
+}

@@ -51,14 +51,6 @@ const NAV_ITEMS: NavItem[] = [
     match: (p) => p.includes("discover"),
   },
   {
-    key: "live",
-    label: "Live",
-    icon: "radio-outline",
-    iconActive: "radio",
-    route: "/(tabs)/live",
-    match: (p) => p.includes("live") || p.startsWith("/live/"),
-  },
-  {
     key: "messages",
     label: "Messages",
     icon: "paper-plane-outline",

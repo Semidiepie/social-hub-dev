@@ -7,9 +7,7 @@ import {
   Compass,
   MessageSquare,
   Bell,
-  User,
   Settings,
-  Radio,
   Plus,
   LogOut,
 } from "lucide-react";
@@ -21,9 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const NAV = [
   { to: "/", label: "Home", icon: Home, testId: "nav-home" },
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },
-  { to: "/videos", label: "Videos", icon: Video, testId: "nav-videos" },
   { to: "/discover", label: "Discover", icon: Compass, testId: "nav-discover" },
-  { to: "/live", label: "Live", icon: Radio, testId: "nav-live" },
   { to: "/messages", label: "Messages", icon: MessageSquare, testId: "nav-messages" },
   { to: "/notifications", label: "Notifications", icon: Bell, testId: "nav-notifications" },
 ];
