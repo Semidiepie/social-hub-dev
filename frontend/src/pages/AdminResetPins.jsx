@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { AdminTabs } from "@/components/AdminTabs";
 import { toast } from "sonner";
 
 // Admin → Reset PINs: super-admin sets/updates/clears a 4-digit password-reset
@@ -83,12 +84,14 @@ export default function AdminResetPinsPage() {
     <div className="mx-auto max-w-2xl space-y-6" data-testid="admin-reset-pins-page">
       <header>
         <h1 className="flex items-center gap-2 text-3xl font-black tracking-tight">
-          <KeyRound size={24} className="text-primary" /> Reset PINs
+          <KeyRound size={24} className="text-primary" /> Admin
         </h1>
         <p className="mt-1 text-muted-foreground">
           Assign a 4-digit PIN a user enters (with their email) to reset their password.
         </p>
       </header>
+
+      <AdminTabs />
 
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />

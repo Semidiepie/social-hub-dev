@@ -23,6 +23,8 @@ import NotificationsPage from "@/pages/Notifications";
 import ProfilePage from "@/pages/Profile";
 import SettingsPage from "@/pages/Settings";
 import AdminResetPinsPage from "@/pages/AdminResetPins";
+import AdminVerifyPage from "@/pages/AdminVerify";
+import AdminBlogsPage from "@/pages/AdminBlogs";
 
 /**
  * Shell wrapper that mounts the sidebar/topbar/bottom-nav for authenticated
@@ -100,6 +102,14 @@ export default function App() {
             <Route
               path="/admin/reset-pins"
               element={<ProtectedRoute><AdminResetPinsPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/admin/verify"
+              element={<ProtectedRoute><AdminVerifyPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/admin/blogs"
+              element={<ProtectedRoute><AdminBlogsPage /></ProtectedRoute>}
             />
 
             <Route path="*" element={<Navigate to="/" replace />} />

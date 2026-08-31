@@ -1,0 +1,33 @@
+import React from "react";
+import { NavLink } from "react-router-dom";
+import { BadgeCheck, BookText, KeyRound } from "lucide-react";
+
+const TABS = [
+  { to: "/admin/verify", label: "Verify accounts", icon: BadgeCheck, testId: "admin-tab-verify" },
+  { to: "/admin/blogs", label: "Blog approvals", icon: BookText, testId: "admin-tab-blogs" },
+  { to: "/admin/reset-pins", label: "Reset PINs", icon: KeyRound, testId: "admin-tab-reset-pins" },
+];
+
+export function AdminTabs() {
+  return (
+    <div className="flex flex-wrap gap-2 border-b border-border pb-3" data-testid="admin-tabs">
+      {TABS.map((t) => (
+        <NavLink
+          key={t.to}
+          to={t.to}
+          data-testid={t.testId}
+          className={({ isActive }) =>
+            `flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+              isActive
+                ? "bg-primary/15 text-primary"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+            }`
+          }
+        >
+          <t.icon size={16} />
+          {t.label}
+        </NavLink>
+      ))}
+    </div>
+  );
+}

@@ -207,20 +207,25 @@ export default function SettingsPage() {
       {user.is_super_admin && (
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound size={18} /> Admin</CardTitle></CardHeader>
-          <CardContent>
-            <button
-              onClick={() => navigate("/admin/reset-pins")}
-              data-testid="settings-admin-reset-pins"
-              className="flex w-full items-center justify-between rounded-lg border border-border p-3 text-left transition-colors hover:bg-secondary"
-            >
-              <div>
-                <div className="font-semibold">Reset PINs</div>
-                <p className="text-xs text-muted-foreground">
-                  Set a 4-digit password-reset PIN for any user.
-                </p>
-              </div>
-              <ChevronRight size={18} className="text-muted-foreground" />
-            </button>
+          <CardContent className="space-y-2">
+            {[
+              { to: "/admin/verify", title: "Verify accounts", desc: "Grant or remove the verified badge.", testId: "settings-admin-verify" },
+              { to: "/admin/blogs", title: "Blog approvals", desc: "Approve or deny blog-publisher requests.", testId: "settings-admin-blogs" },
+              { to: "/admin/reset-pins", title: "Reset PINs", desc: "Set a 4-digit password-reset PIN for any user.", testId: "settings-admin-reset-pins" },
+            ].map((item) => (
+              <button
+                key={item.to}
+                onClick={() => navigate(item.to)}
+                data-testid={item.testId}
+                className="flex w-full items-center justify-between rounded-lg border border-border p-3 text-left transition-colors hover:bg-secondary"
+              >
+                <div>
+                  <div className="font-semibold">{item.title}</div>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </div>
+                <ChevronRight size={18} className="text-muted-foreground" />
+              </button>
+            ))}
           </CardContent>
         </Card>
       )}
