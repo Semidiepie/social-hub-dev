@@ -165,6 +165,11 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Reels are `posts` with `type=reel`; comments/likes use `/api/posts/{id}/comments` and `/api/posts/{id}/like` (backend already correct).
 - Verified: testing agent iteration_27 — backend 4/4 + web & mobile reel comment + open-fullscreen + Discover nav, all pass. Founder password preserved.
 
+### 2026-06 (part 8) — Verified badge in reel/video comments
+- **Bug:** the blue verified badge wasn't showing beside verified users' names in reel comments. Backend returns comments with a FLAT `is_verified` field; the web `ReelWatch` comment drawer rendered no badge at all (mobile `CommentSheet` already did).
+- **Fix:** web `ReelWatch` + `VideoWatch` comment rows now render `BadgeCheck` when `is_verified` (or `author.is_verified`) is true. Also fixed `POST /api/videos/{id}/comments` to return the full serialized comment (author + is_verified + created_at) so a freshly-posted video comment shows the badge without reload (previously returned only `{id,text}`).
+- Verified: testing agent iteration_28 — backend 5/5 + web reel/video + mobile reel badges, non-verified users show no badge.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.

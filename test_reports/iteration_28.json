@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 28 (bug fix verification): verified badge in comments on WEB reels, WEB videos, and MOBILE reels. 5/5 backend pytest cases pass. WEB ReelWatch drawer renders 19 verified badges for existing rows; a fresh founder comment appears immediately with the badge (badge count 19 -> 20 without reload). WEB VideoWatch shows the badge next to founder comments (data-testid=video-comment-verified-<id>). MOBILE CommentSheet still shows the checkmark-circle next to every semidiepie row. Regression confirmed: a fresh test_iter28_* non-verified user's comment renders WITHOUT any badge on both web and mobile, and the backend GET /api/posts/{id}/comments returns is_verified=false for that row. Founder password preserved (Semi123!).",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration28_verified_badge.py",
+    "/app/test_reports/pytest/iteration28_verified_badge.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "WEB /app/frontend/src/pages/VideoWatch.jsx line ~83: POST /api/videos/{id}/comments returns ONLY {id, text} (see /app/backend/routes/videos.py line 304). The web code does setComments((rows) => [c, ...rows]) with that stub object, so the just-posted video comment renders WITHOUT a display_name, avatar or verified badge until a page reload. Reels don't have this bug because /api/posts/{id}/comments POST returns the full flat comment. Recommend the backend return the full serialized comment (with author.is_verified) OR the frontend refetch /api/videos/{id}/comments after a successful POST.",
+    "SCHEMA INCONSISTENCY: /api/posts/{id}/comments returns FLAT fields (is_verified, username, display_name, avatar_url) while /api/videos/{id}/comments returns NESTED author.is_verified. Both surfaces currently handle both shapes with `c.is_verified || c.author?.is_verified`, but this dual-shape contract is easy to break. Consider unifying comment serialization across the two collections (db.comments vs db.video_comments).",
+    "MOBILE /app/mobile/src/components/CommentSheet.tsx line 112: the verified badge has NO testID (unlike its web sibling data-testid=reel-comment-verified-<id>). Adding testID={`comment-verified-${item.id}`} would allow automated regression to assert badge presence per-row instead of relying on visual diff.",
+    "NOTE: /app/frontend/src/pages/ReelWatch.jsx line 230 still has the dead nested fallback c.author?.avatar_url / c.author?.display_name / c.author?.is_verified — the API only returns flat fields. Cleaning up avoids future confusion. Same nit as flagged in iteration 27."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration28_verified_badge.py",
+    "/app/test_reports/iteration_28.json"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (web reel + web video + mobile reel)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! — verified working; password NOT changed.",
+  "seed_data_creation": "Founder reel 1c1892c5-4844-4fa2-be9a-18764c238ebf now has extra rows: 'TEST_iter28 verified badge check ddc15f' (pytest, founder is_verified=true), 'TEST_iter28 web reel verified badge check' (web e2e, founder is_verified=true), 'TEST_iter28 non-verified 228a847d' (pytest, fresh test_iter28_228a847d user, is_verified=false). The non-verified user (test_iter28_228a847d@example.com) will auto-purge on next backend restart. Founder rows persist. One video comment 'TEST_iter28 web video verified' also seeded on the target video's comments if none existed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The verified-badge fix is stable across web and mobile. New selectors introduced this iteration: WEB data-testid=reel-comment-verified-<id> (ReelWatch) and data-testid=video-comment-verified-<id> (VideoWatch). MOBILE badge is still un-tagged (Ionicons name=checkmark-circle inside CommentSheet). Reel comments use the FLAT is_verified shape from /api/posts/{id}/comments (with backfill for old rows). Video comments use NESTED author.is_verified from /api/videos/{id}/comments and the POST endpoint returns only {id,text}—so newly-posted video comments do NOT render a badge/avatar until reload. Not fixed in this iteration since only reel-side badge was in scope, but flagged in action items/critical_code_review_comments.",
+  "rca of the issue": "Original bug: web reel comment drawer rendered display_name only, with no BadgeCheck icon, so verified users (including founder) appeared indistinguishable from anyone else. Backend already returned is_verified as a flat field on each comment (with a backfill query for legacy rows), but the ReelWatch (and VideoWatch) comment rows never read it. Fix: both pages now render <BadgeCheck /> when (c.is_verified || c.author?.is_verified) is truthy, with a stable data-testid per row. Verified in-flight: posting a new founder comment increments the badge count client-side without a reload (the POST response echoes the flat is_verified=true for reels). Regression on the non-verified path confirmed by registering a throwaway test_iter28_* user and posting on the same reel — the row renders without a badge on both surfaces and the API returns is_verified=false for that row."
+}

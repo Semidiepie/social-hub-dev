@@ -204,8 +204,11 @@ export default function VideoWatchPage() {
                 <div key={c.id} className="flex gap-3" data-testid={`video-comment-${c.id}`}>
                   <Avatar src={c.author?.avatar_url || c.avatar_url} size={36} />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm">
-                      <span className="font-semibold">{c.author?.display_name || c.display_name}</span>{" "}
+                    <div className="flex items-center gap-1 text-sm">
+                      <span className="font-semibold">{c.author?.display_name || c.display_name}</span>
+                      {(c.is_verified || c.author?.is_verified) && (
+                        <BadgeCheck size={13} className="shrink-0 fill-primary text-background" data-testid={`video-comment-verified-${c.id}`} />
+                      )}
                       <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
                     </div>
                     <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/95">{c.text}</p>

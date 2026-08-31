@@ -301,7 +301,19 @@ def build_router(ctx) -> APIRouter:
             "created_at": now(),
         })
         await db.videos.update_one({"id": video_id}, {"$inc": {"comments_count": 1}})
-        return {"id": comment_id, "text": body.text.strip()}
+        author = await db.users.find_one({"id": current["id"]}, {"_id": 0})
+        return {
+            "id": comment_id,
+            "text": body.text.strip(),
+            "created_at": now().isoformat(),
+            "author": {
+                "id": author["id"],
+                "username": author["username"],
+                "display_name": author["display_name"],
+                "avatar_url": author.get("avatar_url", ""),
+                "is_verified": author.get("is_verified", False),
+            } if author else None,
+        }
 
     @router.get("/api/users/{user_id}/videos")
     async def channel_videos(
