@@ -22,6 +22,7 @@ import MessagesPage from "@/pages/Messages";
 import NotificationsPage from "@/pages/Notifications";
 import ProfilePage from "@/pages/Profile";
 import SettingsPage from "@/pages/Settings";
+import AdminResetPinsPage from "@/pages/AdminResetPins";
 
 /**
  * Shell wrapper that mounts the sidebar/topbar/bottom-nav for authenticated
@@ -95,6 +96,10 @@ export default function App() {
             <Route
               path="/settings"
               element={<ProtectedRoute><SettingsPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/admin/reset-pins"
+              element={<ProtectedRoute><AdminResetPinsPage /></ProtectedRoute>}
             />
 
             <Route path="*" element={<Navigate to="/" replace />} />

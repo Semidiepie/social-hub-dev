@@ -10,6 +10,7 @@ import {
   Settings,
   Plus,
   LogOut,
+  KeyRound,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -133,6 +134,19 @@ export function AppShell({ children }) {
           >
             <Settings size={14} /> Settings
           </NavLink>
+          {user?.is_super_admin && (
+            <NavLink
+              to="/admin/reset-pins"
+              data-testid="sidebar-admin-reset-pins"
+              className={({ isActive }) =>
+                `mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                }`
+              }
+            >
+              <KeyRound size={14} /> Reset PINs
+            </NavLink>
+          )}
         </div>
       </aside>
 

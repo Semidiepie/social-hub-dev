@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -203,6 +203,27 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      {user.is_super_admin && (
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound size={18} /> Admin</CardTitle></CardHeader>
+          <CardContent>
+            <button
+              onClick={() => navigate("/admin/reset-pins")}
+              data-testid="settings-admin-reset-pins"
+              className="flex w-full items-center justify-between rounded-lg border border-border p-3 text-left transition-colors hover:bg-secondary"
+            >
+              <div>
+                <div className="font-semibold">Reset PINs</div>
+                <p className="text-xs text-muted-foreground">
+                  Set a 4-digit password-reset PIN for any user.
+                </p>
+              </div>
+              <ChevronRight size={18} className="text-muted-foreground" />
+            </button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-destructive/40">
         <CardHeader><CardTitle className="text-destructive">Danger zone</CardTitle></CardHeader>
