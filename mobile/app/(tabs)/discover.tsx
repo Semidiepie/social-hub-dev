@@ -198,7 +198,11 @@ export default function Discover() {
                   <TouchableOpacity
                     key={p.id}
                     style={[styles.tile, { width: tileSize, height: tileSize }]}
-                    onPress={() => router.push(`/post/${p.id}`)}
+                    onPress={() =>
+                      p.type === "reel"
+                        ? router.push(`/(tabs)/reels?startId=${p.id}`)
+                        : router.push(`/post/${p.id}`)
+                    }
                     testID={`search-post-${p.id}`}
                   >
                     <Image source={{ uri: p.image_url || p.thumbnail_url || FALLBACK }} style={styles.tileImg} />
@@ -235,7 +239,11 @@ export default function Discover() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.tile, { width: tileSize, height: tileSize }]}
-              onPress={() => router.push(`/post/${item.id}`)}
+              onPress={() =>
+                item.type === "reel"
+                  ? router.push(`/(tabs)/reels?startId=${item.id}`)
+                  : router.push(`/post/${item.id}`)
+              }
               activeOpacity={0.85}
               testID={`discover-grid-${item.id}`}
             >

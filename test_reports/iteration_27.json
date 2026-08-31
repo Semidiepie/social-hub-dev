@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 27: verified reel comment drawer + Discover 'Top' reel-tile navigation fix on BOTH web and mobile against the shared backend. 4/4 backend pytest cases pass. Web ReelWatch drawer posts + increments count. Mobile Discover reel tile now correctly routes to /(tabs)/reels?startId=<id> and CommentSheet posts persist. All 6 requested flows pass. Founder password preserved (still Semi123!).",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration27_reels_comments.py",
+    "/app/test_reports/pytest/iteration27_reels_comments.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MOBILE /app/mobile/app/(tabs)/discover.tsx (SearchResults posts grid, line ~197-206): posts inside search results always route to '/post/${p.id}' regardless of type. If a reel matches a search query, tapping the search-post tile will open the plain post viewer (which cannot play the reel), replicating the same bug this iteration just fixed for the Top tab. Suggest mirroring the same discriminator (item.type === 'reel' → /(tabs)/reels?startId=...).",
+    "WEB /app/frontend/src/pages/Discover.jsx SearchResultsView (line ~181-186): search 'Posts' cards render but have no onClick handler — they look tappable but do nothing. Either wire them to the correct /reels|/videos|/user route or remove the affordance.",
+    "MOBILE /app/mobile/app/(tabs)/discover.tsx: duplicate StyleSheet keys (`searchSection`, `searchSectionLabel`, `postsGrid`) at lines ~328-330 and ~409-411 — pre-existing, flagged by main agent. Latter definitions win silently; harmless but should be de-duplicated to avoid future divergence.",
+    "MOBILE reels viewer VideoView on Expo web preview: some reel URLs render 'Video failed to load' inside expo-video's web player. Native builds are unaffected; comment / navigation flows still work over the thumbnail. Not caused by this fix but worth noting for demo/preview screenshots.",
+    "NIT web/frontend/src/pages/ReelWatch.jsx line ~230-231: comment row uses `c.author?.avatar_url || c.avatar_url` but the /api/posts/{id}/comments payload returns flat `avatar_url` / `display_name` / `username` (per mobile CommentSheet). Nested `c.author.*` is never populated — the fallback path is what actually runs. Not a bug, but the nested lookups are dead code."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration27_reels_comments.py",
+    "/app/test_reports/iteration_27.json"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (web + mobile)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! — verified working, password not changed.",
+  "seed_data_creation": "Posted 3 test comments on the founder's first reel (id 1c1892c5-4844-4fa2-be9a-18764c238ebf): 'TEST_iter27 reel comment' (pytest), 'TEST_iter27 reel comment via web' (web e2e), 'TEST_iter27 mobile reel via CommentSheet' (mobile e2e). Comments live under a founder-owned reel and persist — main agent may prune if desired via /api/posts/{id}/comments/{cid} (if deletion endpoint exists) or leave as regression evidence.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The reel-comment fix uses: WEB - Discover.jsx routes p.type==='reel' → /reels/:id, ReelWatch.jsx has a comments drawer (data-testid=reel-comments-drawer) toggled by reel-comment-btn; input reel-comment-input, submit reel-comment-submit, close reel-comments-close; count on the button increments client-side after post. MOBILE - Discover.tsx routes item.type==='reel' → /(tabs)/reels?startId=<id>; reels.tsx uses useLocalSearchParams startId + scrollToIndex; CommentSheet.tsx handles the drawer with testIDs comment-input / comment-send / comments-close. Founder has 1 reel in Discover Top (id 1c1892c5-...) with existing 16-19 comments. Backend /api/posts/{id}/comments returns flat rows {id, text, username, display_name, avatar_url, is_verified, created_at}. Regression: Profile Reels tab and Reels tab still show the same list; the /api/reels endpoint powers both.",
+  "rca of the issue": "Original bugs (from user report): (a) tapping a reel in Discover 'Top' opened the author's profile on web or a text-only /post/:id card on mobile (missing type discriminator in the tile Link). (b) reel comment button had no drawer on web (only mobile had CommentSheet). Fix verified — Discover tiles now branch on p.type, and ReelWatch.jsx got a drawer mirroring the mobile CommentSheet UX and calling the same /api/posts/{id}/comments endpoint that already worked."
+}

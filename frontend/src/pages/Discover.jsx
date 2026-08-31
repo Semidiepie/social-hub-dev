@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Loader2, Search, BadgeCheck } from "lucide-react";
+import { Loader2, Search, BadgeCheck, Play } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -102,31 +102,47 @@ export default function DiscoverPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
               {data.items.length === 0 && <EmptyRow message="Nothing trending yet." />}
-              {data.items.map((p) => (
-                <Link
-                  key={p.id}
-                  to={p.author?.id ? `/user/${p.author.id}` : "/"}
-                  className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card"
-                >
-                  <div className="aspect-square bg-secondary">
-                    {p.image_url ? (
-                      <img src={p.image_url} alt="" className="h-full w-full object-cover" />
-                    ) : p.thumbnail_url ? (
-                      <img src={p.thumbnail_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                        Text post
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <p className="line-clamp-2 text-xs">{p.caption || "—"}</p>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      {p.author?.display_name} · {timeAgo(p.created_at)}
+              {data.items.map((p) => {
+                const to =
+                  p.type === "reel"
+                    ? `/reels/${p.id}`
+                    : p.type === "video"
+                      ? `/videos/${p.id}`
+                      : p.author?.id
+                        ? `/user/${p.author.id}`
+                        : "/";
+                return (
+                  <Link
+                    key={p.id}
+                    to={to}
+                    className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card"
+                    data-testid={`discover-grid-${p.id}`}
+                  >
+                    <div className="relative aspect-square bg-secondary">
+                      {p.image_url ? (
+                        <img src={p.image_url} alt="" className="h-full w-full object-cover" />
+                      ) : p.thumbnail_url ? (
+                        <img src={p.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                          Text post
+                        </div>
+                      )}
+                      {p.type === "reel" && (
+                        <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[11px] font-bold text-white">
+                          <Play size={10} className="fill-white" /> Reel
+                        </span>
+                      )}
                     </div>
-                  </div>
-                </Link>
-              ))}
+                    <div className="p-3">
+                      <p className="line-clamp-2 text-xs">{p.caption || "—"}</p>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {p.author?.display_name} · {timeAgo(p.created_at)}
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </>

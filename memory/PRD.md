@@ -158,6 +158,14 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Verified: testing agent iteration_26 — backend 4/4 (merge, sort, visibility, block) + web + mobile card rendering & watch navigation, parity confirmed, zero stray /posts like calls.
 
 ## Notes
+### 2026-06 (part 7) — Reel bug fixes: comments + open-fullscreen (web + mobile)
+- **Web `ReelWatch` (/reels/:id):** the comment button was a static, non-clickable display. Now it opens a working comments drawer (list + post via `/api/posts/{id}/comments`); count increments; close works.
+- **Web `Discover` Top grid:** reel tiles were linking to the author profile (`/user/:id`). Now reels → `/reels/:id`, long videos → `/videos/:id`, plain posts → profile (no post-detail page on web). Added a "Reel" badge on reel tiles.
+- **Mobile `Discover` Top grid + search results:** reel tiles opened the broken `/post/:id` card (no video). Now reels open the fullscreen reel viewer `/(tabs)/reels?startId=<id>` (which already has a working CommentSheet).
+- Reels are `posts` with `type=reel`; comments/likes use `/api/posts/{id}/comments` and `/api/posts/{id}/like` (backend already correct).
+- Verified: testing agent iteration_27 — backend 4/4 + web & mobile reel comment + open-fullscreen + Discover nav, all pass. Founder password preserved.
+
+## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.
 - Cloudinary unsigned preset `ml_default` on cloud `dpnrol54k` — shared by mobile + web via env vars.
