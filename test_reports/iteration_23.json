@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 23 WEB + BACKEND regression on the new email-LINK password-reset flow. Backend: 14/14 pytest checks pass — /api/auth/forgot-password always returns 200 (no enumeration), surfaces dev_link in sandbox mode, invalidates the previous unused token on re-request; /api/auth/reset-password with a valid token updates the password and returns access_token+user (auto sign-in), token is single-use (reuse -> 400), invalid/garbage token -> 400, new_password < 6 -> 422; UserPublic no longer contains reset_pin_enabled; login + change-password + auth/me regress cleanly. Removed endpoints all return 404: /api/auth/verify-reset-code, /api/auth/forgot-password-pin, GET+POST /api/auth/reset-pin, /api/auth/has-pin. WEB UI: /login shows the Forgot? pill (points to /forgot-password); /forgot-password renders the form, submits, shows the 'Check your inbox' state with a dev-link button pointing at /reset-password?token=...; /reset-password without a token renders the invalid-link state (reset-no-token); mismatched passwords show an error and block submit; happy path resets the password, shows a 'Password updated' toast, auto-signs the user in, and redirects to / (home feed rendered). /settings no longer contains any Reset PIN card or 4-digit references; Change password card still present. Founder password was restored to Semi123! at the end so /app/memory/test_credentials.md stays valid.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration23_reset_link.py",
+    "/app/test_reports/pytest/iteration23_reset_link.xml"
+  ],
+  "action_items": [
+    "None for iteration 23. All required flows verified end-to-end.",
+    "PRIOR ITERATION 22 (still open, HIGH) — GET /api/conversations/{id}/typing 500s due to naive-vs-aware datetime compare in routes/messages.py:219. Not exercised in this iteration but still pending fix per prior report."
+  ],
+  "critical_code_review_comments": [
+    "server.py:628 uses `rec['expires_at'].replace(tzinfo=timezone.utc) < now()` to check expiry — this correctly handles Mongo's naive-UTC storage. Same fix pattern should be applied at routes/messages.py:219 for the still-open typing 500 bug.",
+    "ResetPassword.jsx redirects to `/` 900ms after success (setTimeout). That is fine, but on a slow browser the toast may still be visible when navigation fires — acceptable UX. Consider using navigate immediately and letting the toast persist.",
+    "ForgotPassword.jsx always shows 'Check your inbox' regardless of whether the email exists — correct behavior (no enumeration). dev_link button is only shown when sandbox surfaces one — correct.",
+    "APP_PUBLIC_URL is read once from env at process start (server.py). If APP_PUBLIC_URL is empty, dev_link becomes `/reset-password?token=...` (no host). Not a blocker in preview since APP_PUBLIC_URL is set, but consider raising at startup if unset in production.",
+    "test_credentials.md updated to reflect iteration 23: removed the stale 'Reset PIN: 1234' line and the old code/PIN endpoint list; documented dev_link fallback and the four removed endpoints."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration23_reset_link.py (new)",
+    "/app/memory/test_credentials.md (updated: removed PIN & 6-digit-code references; documented iteration-23 link flow)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (all 7 web flows verified)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! (verified restored at end of run). Login token field is access_token.",
+  "seed_data_creation": "Multiple password_reset_tokens rows created during test (all consumed or invalidated). No user/post/reel data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 23 password-reset LINK flow is GREEN on web + backend. Founder password is back to Semi123!. Email delivery in preview is MOCKED via Resend sandbox mode — the API returns dev_link in the /auth/forgot-password response body when the email doesn't actually go out, and this is how you obtain the reset token in tests. APP_PUBLIC_URL in preview = https://social-hub-dev-4.preview.emergentagent.com (backend/.env). Mobile deep-link auto-login (postmeplex://reset-complete?token=...) is intentionally not testable in Expo preview and needs a native build. Prior iteration 22 HIGH bug (GET /api/conversations/{id}/typing 500 — naive-vs-aware datetime at routes/messages.py:219) is still open and was NOT re-tested here.",
+  "rca of the issue": "N/A — no bugs found in iteration 23 scope."
+}

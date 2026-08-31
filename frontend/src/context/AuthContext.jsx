@@ -40,6 +40,14 @@ export function AuthProvider({ children }) {
     return resp.user;
   }, []);
 
+  // Set an authenticated session directly (used by the password-reset flow,
+  // which returns a fresh token + user so the user is signed in immediately).
+  const setSession = useCallback((accessToken, u) => {
+    setToken(accessToken);
+    setUser(u);
+    setLoading(false);
+  }, []);
+
   const register = useCallback(async (payload) => {
     const resp = await api.post("/auth/register", payload, false);
     setToken(resp.access_token);
@@ -57,7 +65,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, patchUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, patchUser, setSession }}>
       {children}
     </AuthContext.Provider>
   );

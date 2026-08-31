@@ -157,13 +157,6 @@ export default function Settings() {
             onPress={() => router.push("/account/change-password")}
             testID="settings-change-password"
           />
-          <Row
-            icon="keypad-outline"
-            label={user?.reset_pin_enabled ? "Reset PIN · Set" : "Reset PIN"}
-            hint="4-digit PIN to reset your password without email"
-            onPress={() => router.push("/account/reset-pin")}
-            testID="settings-reset-pin"
-          />
         </View>
 
         <Text style={styles.sectionLabel}>Discover</Text>

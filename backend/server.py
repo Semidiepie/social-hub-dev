@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import uuid
@@ -36,7 +37,10 @@ PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_FROM = os.environ.get("RESEND_FROM", "PostMePlex <onboarding@resend.dev>")
 
-RESET_CODE_TTL_MIN = 15
+RESET_LINK_TTL_MIN = 60
+# Public origin of the WEB app, used to build password-reset links in emails.
+# Preview: the preview URL. Production: set APP_PUBLIC_URL=https://postmeplex.com
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
@@ -89,7 +93,6 @@ class UserPublic(BaseModel):
     followers: int = 0
     following: int = 0
     posts_count: int = 0
-    reset_pin_enabled: bool = False
 
 
 class RegisterBody(BaseModel):
@@ -151,28 +154,8 @@ class ForgotPasswordBody(BaseModel):
     email: EmailStr
 
 
-class VerifyResetCodeBody(BaseModel):
-    email: EmailStr
-    code: str = Field(min_length=6, max_length=6)
-
-
 class ResetPasswordBody(BaseModel):
-    email: EmailStr
-    code: str = Field(min_length=6, max_length=6)
-    new_password: str = Field(min_length=6)
-
-
-class SetResetPinBody(BaseModel):
-    """Set / update / clear the account's 4-digit password-reset PIN.
-    Pass `pin=null` to REMOVE the PIN. Must supply the current password."""
-    current_password: str = Field(min_length=1)
-    pin: Optional[str] = Field(default=None, pattern=r"^\d{4}$")
-
-
-class ForgotPasswordPinBody(BaseModel):
-    """Reset a forgotten password using email + 4-digit PIN. Fully offline."""
-    email: EmailStr
-    pin: str = Field(pattern=r"^\d{4}$")
+    token: str = Field(min_length=10)
     new_password: str = Field(min_length=6)
 
 
@@ -180,10 +163,6 @@ class ChangePasswordBody(BaseModel):
     """Change password while logged in. Requires the current password."""
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=6)
-
-
-class HasPinBody(BaseModel):
-    email: EmailStr
 
 
 class ReportBody(BaseModel):
@@ -210,37 +189,9 @@ def verify_pw(plain: str, hashed: str) -> bool:
         return False
 
 
-# ---- Reset PIN helpers ----------------------------------------------------
-# 4-digit PINs have very low entropy (10,000 combinations). Combine with a
-# server-side pepper (never stored in Mongo) + bcrypt salt + heavy rate-limit
-# on the verify endpoint. See integration_playbook_expert_v2 iteration 12.
-PIN_PEPPER = os.environ.get("PIN_PEPPER", "postmeplex-pin-pepper-v1-change-me")
-MAX_PIN_ATTEMPTS = 5
-PIN_LOCKOUT_MINUTES = 15
-
-
-def _norm_pin(pin: str) -> str:
-    return (pin or "").strip().zfill(4)
-
-
-def hash_pin(pin: str) -> str:
-    """Bcrypt-hash a normalized 4-digit PIN combined with the server pepper."""
-    to_hash = (_norm_pin(pin) + PIN_PEPPER).encode("utf-8")
-    return bcrypt.hashpw(to_hash, bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_pin_hash(pin: str, hashed_pin: str) -> bool:
-    try:
-        to_verify = (_norm_pin(pin) + PIN_PEPPER).encode("utf-8")
-        return bcrypt.checkpw(to_verify, hashed_pin.encode("utf-8"))
-    except Exception:
-        return False
-
-
-# Constant dummy hash — verified when the target account doesn't exist so
-# we take similar wall-clock time whether or not the email is registered.
-# Regenerated at import once so the timing is stable.
-_DUMMY_PIN_HASH = hash_pin("0000")
+def hash_reset_token(raw: str) -> str:
+    """SHA-256 of a reset token — we store only the hash, never the raw token."""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def make_token(user_id: str) -> str:
@@ -266,7 +217,6 @@ def user_to_public(u: dict) -> UserPublic:
         followers=u.get("followers", 0),
         following=u.get("following", 0),
         posts_count=u.get("posts_count", 0),
-        reset_pin_enabled=bool(u.get("reset_pin_hash")),
     )
 
 
@@ -323,21 +273,14 @@ async def send_push(recipients: list[str], data: dict, idempotency_key: Optional
         logger.warning(f"[push] trigger exception (non-blocking): {e}")
 
 
-async def send_reset_email(email: str, display_name: str, code: str) -> tuple[bool, Optional[str]]:
-    """Send a password-reset email via Resend.
+async def send_reset_email(email: str, display_name: str, link: str) -> tuple[bool, Optional[str]]:
+    """Send a password-reset LINK email via Resend.
     Returns (sent, reason). `sent=True` means the email was accepted for delivery.
     When `sent=False`, `reason` is a short human-readable string so the caller
-    can decide whether to surface the dev code as a fallback.
-
-    Common failure modes:
-      - RESEND_API_KEY missing/placeholder → dev/preview, log and skip.
-      - Resend key in TEST MODE → the API only allows sending to the account
-        owner's verified email until a domain is verified in the Resend
-        dashboard. All other recipients get HTTP 403 with a validation_error.
-        We detect this specifically so the frontend can show a clear message.
+    can decide whether to surface the dev link as a fallback.
     """
     if not RESEND_API_KEY or RESEND_API_KEY.startswith("placeholder"):
-        logger.warning(f"[reset] RESEND_API_KEY not set — dev code for {email}: {code}")
+        logger.warning(f"[reset] RESEND_API_KEY not set — dev link for {email}: {link}")
         return False, "no_key"
     html = f"""\
 <!DOCTYPE html>
@@ -354,16 +297,17 @@ async def send_reset_email(email: str, display_name: str, code: str) -> tuple[bo
         <tr><td style="padding:8px 32px;">
           <h1 style="margin:0;font-size:28px;font-weight:900;letter-spacing:-0.5px;color:#FFFFFF;">Reset your password</h1>
           <p style="margin:16px 0 0;color:#A0A5B5;font-size:15px;line-height:22px;">
-            Hey {display_name or 'there'} 👋 — use the code below to reset your PostMePlex password. It expires in {RESET_CODE_TTL_MIN} minutes.
+            Hey {display_name or 'there'} 👋 — tap the button below to set a new PostMePlex password. This link expires in {RESET_LINK_TTL_MIN} minutes and can only be used once.
           </p>
         </td></tr>
-        <tr><td style="padding:24px 32px;">
-          <div style="background:#252936;border:1px solid #3B3F54;border-radius:12px;padding:24px;text-align:center;">
-            <div style="color:#A0A5B5;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Your code</div>
-            <div style="margin-top:8px;font-size:40px;font-weight:900;letter-spacing:10px;color:#FF6B3D;font-family:'SF Mono',Menlo,Consolas,monospace;">{code}</div>
-          </div>
+        <tr><td style="padding:24px 32px;" align="center">
+          <a href="{link}" style="display:inline-block;background:#FF6B3D;color:#12141c;font-weight:900;font-size:16px;text-decoration:none;padding:14px 32px;border-radius:12px;">Reset my password</a>
         </td></tr>
-        <tr><td style="padding:0 32px 32px;color:#6B7080;font-size:12px;line-height:18px;">
+        <tr><td style="padding:0 32px 8px;color:#6B7080;font-size:12px;line-height:18px;">
+          Or paste this link into your browser:<br>
+          <a href="{link}" style="color:#FF6B3D;word-break:break-all;">{link}</a>
+        </td></tr>
+        <tr><td style="padding:8px 32px 32px;color:#6B7080;font-size:12px;line-height:18px;">
           Didn't request this? You can safely ignore this email — your password stays the same.
         </td></tr>
       </table>
@@ -377,20 +321,17 @@ async def send_reset_email(email: str, display_name: str, code: str) -> tuple[bo
             json={
                 "from": RESEND_FROM,
                 "to": [email],
-                "subject": f"Your PostMePlex reset code: {code}",
+                "subject": "Reset your PostMePlex password",
                 "html": html,
             },
         )
         if resp.status_code >= 400:
             body = resp.text[:500]
-            # Detect Resend's sandbox-mode 403 explicitly so the frontend can
-            # tell the user "email couldn't be sent, here's your code" with a
-            # useful pointer instead of a generic failure.
             if resp.status_code == 403 and "verify a domain" in body:
                 logger.warning(
                     "[resend] SANDBOX MODE: cannot deliver to %s — verify a domain in the "
                     "Resend dashboard to enable production email delivery. Falling back to "
-                    "in-app code.", email,
+                    "in-app link.", email,
                 )
                 return False, "sandbox_mode"
             if resp.status_code == 403:
@@ -528,7 +469,7 @@ async def delete_account(current: Annotated[dict, Depends(get_current_user)]):
     await db.notifications.delete_many({"$or": [{"user_id": uid}, {"actor_id": uid}]})
     await db.messages.delete_many({"sender_id": uid})
     await db.conversations.update_many({"member_ids": uid}, {"$pull": {"member_ids": uid}})
-    await db.reset_codes.delete_many({"user_id": uid})
+    await db.password_reset_tokens.delete_many({"user_id": uid})
     await db.blocks.delete_many({"$or": [{"blocker_id": uid}, {"blocked_id": uid}]})
     await db.reports.delete_many({"reporter_id": uid})
     await db.users.delete_one({"id": uid})
@@ -638,182 +579,61 @@ async def report_content(body: ReportBody, current: Annotated[dict, Depends(get_
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(body: ForgotPasswordBody):
-    """Send a 6-digit code to the user's email. Always returns 200 to avoid leaking
-    whether an email exists in our DB."""
+    """Email a one-time password-reset LINK. Always returns 200 to avoid leaking
+    whether an email exists in our DB. The link points to the web app's
+    /reset-password page and carries a single-use, time-limited token."""
     email = body.email.lower()
     user = await db.users.find_one({"email": email})
-    debug_code: Optional[str] = None
+    debug_link: Optional[str] = None
     email_status: str = "not_attempted"  # ok | sandbox_mode | no_key | forbidden | http_XXX | exception | not_attempted
     if user:
-        # Invalidate previous unused codes for this user
-        await db.reset_codes.update_many(
+        # Invalidate previous unused tokens for this user.
+        await db.password_reset_tokens.update_many(
             {"user_id": user["id"], "used": False},
             {"$set": {"used": True, "invalidated_at": now()}},
         )
-        code = f"{secrets.randbelow(1_000_000):06d}"
-        await db.reset_codes.insert_one({
+        raw_token = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
             "id": str(uuid.uuid4()),
             "user_id": user["id"],
             "email": email,
-            "code": code,
-            "expires_at": now() + timedelta(minutes=RESET_CODE_TTL_MIN),
+            "token_hash": hash_reset_token(raw_token),
+            "expires_at": now() + timedelta(minutes=RESET_LINK_TTL_MIN),
             "used": False,
             "created_at": now(),
         })
-        sent, reason = await send_reset_email(email, user.get("display_name", ""), code)
+        base = APP_PUBLIC_URL or ""
+        link = f"{base}/reset-password?token={raw_token}"
+        sent, reason = await send_reset_email(email, user.get("display_name", ""), link)
         email_status = "ok" if sent else (reason or "unknown")
-        # Dev / sandbox fallback: surface the code when Resend isn't configured
-        # OR is in test mode. This keeps the flow testable and lets the user
-        # complete password reset even before the domain is verified on Resend.
+        # Dev / sandbox fallback: surface the link when Resend isn't configured
+        # OR is in sandbox mode so the flow stays testable before domain verify.
         if not sent:
-            debug_code = code
+            debug_link = link
     resp: dict = {"status": "ok", "email_status": email_status}
-    if debug_code:
-        resp["dev_code"] = debug_code
+    if debug_link:
+        resp["dev_link"] = debug_link
     return resp
-
-
-@app.post("/api/auth/verify-reset-code")
-async def verify_reset_code(body: VerifyResetCodeBody):
-    email = body.email.lower()
-    rec = await db.reset_codes.find_one({
-        "email": email,
-        "code": body.code,
-        "used": False,
-    })
-    if not rec:
-        raise HTTPException(400, "Invalid or expired code")
-    if rec["expires_at"].replace(tzinfo=timezone.utc) < now():
-        raise HTTPException(400, "Invalid or expired code")
-    return {"status": "ok"}
 
 
 @app.post("/api/auth/reset-password", response_model=TokenResponse)
 async def reset_password(body: ResetPasswordBody):
-    email = body.email.lower()
-    rec = await db.reset_codes.find_one({
-        "email": email,
-        "code": body.code,
+    """Consume a reset-link token: validate (hash match + not used + not expired),
+    set the new password, mark the token used, and return a fresh JWT so the
+    user is signed in immediately."""
+    rec = await db.password_reset_tokens.find_one({
+        "token_hash": hash_reset_token(body.token),
         "used": False,
     })
     if not rec or rec["expires_at"].replace(tzinfo=timezone.utc) < now():
-        raise HTTPException(400, "Invalid or expired code")
+        raise HTTPException(400, "This reset link is invalid or has expired. Please request a new one.")
     user = await db.users.find_one({"id": rec["user_id"]})
     if not user:
         raise HTTPException(400, "Account not found")
     await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_pw(body.new_password)}})
-    await db.reset_codes.update_one({"id": rec["id"]}, {"$set": {"used": True, "used_at": now()}})
+    await db.password_reset_tokens.update_one({"id": rec["id"]}, {"$set": {"used": True, "used_at": now()}})
+    logger.info(f"[pw] password reset via link for user={user['id']}")
     return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(user))
-
-
-# ---- Reset PIN endpoints ---------------------------------------------------
-@app.post("/api/auth/reset-pin")
-async def set_reset_pin(
-    body: SetResetPinBody,
-    current: Annotated[dict, Depends(get_current_user)],
-):
-    """Set / update / remove the 4-digit password-reset PIN. Requires the
-    account's current password so a stolen JWT alone can't add a PIN and
-    hijack the recovery path."""
-    if not verify_pw(body.current_password, current["password_hash"]):
-        # Generic error to avoid leaking whether the password guess was close.
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-    if body.pin is None:
-        await db.users.update_one(
-            {"id": current["id"]},
-            {"$unset": {
-                "reset_pin_hash": "",
-                "reset_pin_set_at": "",
-                "reset_pin_failed_attempts": "",
-                "reset_pin_locked_until": "",
-            }},
-        )
-        logger.info(f"[pin] cleared for user={current['id']}")
-        return {"status": "cleared", "enabled": False}
-    await db.users.update_one(
-        {"id": current["id"]},
-        {"$set": {
-            "reset_pin_hash": hash_pin(body.pin),
-            "reset_pin_set_at": now(),
-            "reset_pin_failed_attempts": 0,
-            "reset_pin_locked_until": None,
-        }},
-    )
-    logger.info(f"[pin] set for user={current['id']}")
-    return {"status": "ok", "enabled": True}
-
-
-@app.get("/api/auth/reset-pin")
-async def get_reset_pin_status(current: Annotated[dict, Depends(get_current_user)]):
-    """Return whether the current user has a PIN set (never returns the hash)."""
-    return {
-        "enabled": bool(current.get("reset_pin_hash")),
-        "set_at": current.get("reset_pin_set_at").isoformat()
-        if current.get("reset_pin_set_at") else None,
-    }
-
-
-@app.post("/api/auth/forgot-password-pin", response_model=TokenResponse)
-async def forgot_password_pin(body: ForgotPasswordPinBody):
-    """Reset a forgotten password using email + PIN (no email dispatched).
-
-    Rate-limit strategy: per-account counter + lockout for 15 minutes after
-    5 consecutive wrong PINs. To defend against user enumeration & timing,
-    when the email doesn't exist we still perform a bcrypt verify against a
-    dummy hash and return the same generic 403.
-    """
-    email = body.email.lower().strip()
-    user = await db.users.find_one({"email": email})
-
-    if not user:
-        # Dummy verify — same wall-clock cost as a real one.
-        verify_pin_hash(body.pin, _DUMMY_PIN_HASH)
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-
-    # Check lockout window first.
-    locked_until = user.get("reset_pin_locked_until")
-    if locked_until:
-        # Mongo returns naive UTC datetimes.
-        if locked_until.replace(tzinfo=timezone.utc) > now():
-            retry_after = int(
-                (locked_until.replace(tzinfo=timezone.utc) - now()).total_seconds()
-            )
-            raise HTTPException(
-                status_code=429,
-                detail=f"Too many attempts. Try again in {retry_after // 60 + 1} min.",
-                headers={"Retry-After": str(retry_after)},
-            )
-
-    stored_hash = user.get("reset_pin_hash")
-    if not stored_hash:
-        # Account has no PIN set — dummy verify + generic error.
-        verify_pin_hash(body.pin, _DUMMY_PIN_HASH)
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-
-    if not verify_pin_hash(body.pin, stored_hash):
-        new_attempts = int(user.get("reset_pin_failed_attempts") or 0) + 1
-        update: dict = {"reset_pin_failed_attempts": new_attempts}
-        if new_attempts >= MAX_PIN_ATTEMPTS:
-            update["reset_pin_locked_until"] = now() + timedelta(minutes=PIN_LOCKOUT_MINUTES)
-            update["reset_pin_failed_attempts"] = 0
-            logger.warning(
-                f"[pin] LOCKED user={user['id']} after {MAX_PIN_ATTEMPTS} failed attempts"
-            )
-        await db.users.update_one({"id": user["id"]}, {"$set": update})
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-
-    # PIN valid → rotate password, clear counters, mint fresh JWT.
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {
-            "password_hash": hash_pw(body.new_password),
-            "reset_pin_failed_attempts": 0,
-            "reset_pin_locked_until": None,
-        }},
-    )
-    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
-    logger.info(f"[pin] password reset via PIN succeeded for user={user['id']}")
-    return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(fresh))
 
 
 @app.post("/api/auth/change-password", response_model=TokenResponse)
@@ -836,15 +656,6 @@ async def change_password(
     fresh = await db.users.find_one({"id": current["id"]}, {"_id": 0})
     logger.info(f"[pw] password changed for user={current['id']}")
     return TokenResponse(access_token=make_token(current["id"]), user=user_to_public(fresh))
-
-
-@app.post("/api/auth/has-pin")
-async def check_has_pin(body: HasPinBody):
-    """Public check whether an email has a reset PIN configured. Returns the
-    same shape regardless of email existence to avoid user enumeration."""
-    email = body.email.lower().strip()
-    user = await db.users.find_one({"email": email}, {"_id": 0, "reset_pin_hash": 1})
-    return {"has_pin": bool(user and user.get("reset_pin_hash"))}
 
 
 # ============================================================
@@ -1670,7 +1481,7 @@ async def purge_legacy_seed_data() -> None:
         await db.reports.delete_many({"reporter_id": {"$in": legacy_ids}})
         await db.stories.delete_many({"user_id": {"$in": legacy_ids}})
         await db.story_views.delete_many({"viewer_id": {"$in": legacy_ids}})
-        await db.reset_codes.delete_many({"user_id": {"$in": legacy_ids}})
+        await db.password_reset_tokens.delete_many({"user_id": {"$in": legacy_ids}})
         await db.push_tokens.delete_many({"user_id": {"$in": legacy_ids}})
         await db.moderation_events.delete_many(
             {"$or": [{"blocker_id": {"$in": legacy_ids}}, {"blocked_id": {"$in": legacy_ids}}]}

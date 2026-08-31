@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound, Shield } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -24,11 +23,6 @@ export default function SettingsPage() {
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
   const [savingPw, setSavingPw] = useState(false);
 
-  const [pinEnabled, setPinEnabled] = useState(false);
-  const [pin, setPin] = useState("");
-  const [pinCurPw, setPinCurPw] = useState("");
-  const [savingPin, setSavingPin] = useState(false);
-
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -38,7 +32,6 @@ export default function SettingsPage() {
         bio: user.bio || "",
         avatar_url: user.avatar_url || "",
       });
-      setPinEnabled(!!user.reset_pin_enabled);
     }
   }, [user]);
 
@@ -84,42 +77,6 @@ export default function SettingsPage() {
       toast.error(e.message || "Failed");
     } finally {
       setSavingPw(false);
-    }
-  };
-
-  const togglePin = async () => {
-    // When enabling: prompt for pin + current password
-    if (pinEnabled) {
-      // Disable — send null pin
-      setSavingPin(true);
-      try {
-        await api.post("/auth/reset-pin", { current_password: pinCurPw || prompt("Confirm your password") || "", pin: null });
-        toast.success("PIN removed");
-        setPinEnabled(false);
-        setPin("");
-        setPinCurPw("");
-        patchUser({ reset_pin_enabled: false });
-      } catch (e) {
-        toast.error(e.message || "Failed");
-      } finally {
-        setSavingPin(false);
-      }
-    } else {
-      if (!/^\d{4}$/.test(pin)) return toast.error("Enter a 4-digit PIN");
-      if (!pinCurPw) return toast.error("Enter your current password");
-      setSavingPin(true);
-      try {
-        await api.post("/auth/reset-pin", { current_password: pinCurPw, pin });
-        toast.success("PIN set — remember it!");
-        setPinEnabled(true);
-        setPin("");
-        setPinCurPw("");
-        patchUser({ reset_pin_enabled: true });
-      } catch (e) {
-        toast.error(e.message || "Failed");
-      } finally {
-        setSavingPin(false);
-      }
     }
   };
 
@@ -244,67 +201,6 @@ export default function SettingsPage() {
               {savingPw && <Loader2 size={14} className="animate-spin" />} Change password
             </Button>
           </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Shield size={18} /> 4-digit reset PIN</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-semibold">Password reset via PIN</div>
-              <p className="text-xs text-muted-foreground">
-                Recover your password offline using a 4-digit PIN.
-              </p>
-            </div>
-            <Switch checked={pinEnabled} disabled={savingPin} onCheckedChange={() => {}} data-testid="settings-pin-switch" />
-          </div>
-          {!pinEnabled && (
-            <div className="mt-4 space-y-3">
-              <div>
-                <Label>New 4-digit PIN</Label>
-                <Input
-                  inputMode="numeric"
-                  maxLength={4}
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  data-testid="settings-pin-input"
-                  className="mt-1.5 h-11 text-center text-2xl tracking-[0.75em] font-mono"
-                />
-              </div>
-              <div>
-                <Label>Confirm with current password</Label>
-                <Input
-                  type="password"
-                  value={pinCurPw}
-                  onChange={(e) => setPinCurPw(e.target.value)}
-                  data-testid="settings-pin-current-pw"
-                  className="mt-1.5 h-11"
-                />
-              </div>
-              <Button
-                onClick={togglePin}
-                disabled={savingPin}
-                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                data-testid="settings-pin-save"
-              >
-                {savingPin && <Loader2 size={14} className="animate-spin" />} Set PIN
-              </Button>
-            </div>
-          )}
-          {pinEnabled && (
-            <Button
-              onClick={togglePin}
-              variant="outline"
-              className="mt-4 gap-2"
-              disabled={savingPin}
-              data-testid="settings-pin-remove"
-            >
-              {savingPin && <Loader2 size={14} className="animate-spin" />} Remove PIN
-            </Button>
-          )}
         </CardContent>
       </Card>
 

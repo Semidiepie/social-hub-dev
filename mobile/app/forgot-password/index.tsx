@@ -1,6 +1,6 @@
-// Forgot password — single unified flow. Users only need to enter their
-// email; we automatically detect whether they have a PIN set and route them
-// to the right recovery method (PIN or emailed code).
+// Forgot password — email-only. We email a one-time reset LINK that opens the
+// web reset page; after the user sets a new password there, they're deep-linked
+// back into the app and auto-signed-in.
 import React, { useCallback, useState } from "react";
 import {
   View,
@@ -12,6 +12,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -25,8 +26,10 @@ export default function ForgotPasswordEntry() {
   const [email, setEmail] = useState(params.email ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  const [devLink, setDevLink] = useState<string | null>(null);
 
-  const next = useCallback(async () => {
+  const submit = useCallback(async () => {
     setError(null);
     const em = email.trim().toLowerCase();
     if (!em || !/.+@.+\..+/.test(em)) {
@@ -35,35 +38,68 @@ export default function ForgotPasswordEntry() {
     }
     setBusy(true);
     try {
-      // Ask the backend whether this account has a PIN configured. If yes,
-      // route straight to the PIN flow (fully offline). Otherwise, fire the
-      // email code flow.
-      const check = await api.post<{ has_pin: boolean }>(
-        "/auth/has-pin",
+      const resp = await api.post<{ status: string; email_status?: string; dev_link?: string }>(
+        "/auth/forgot-password",
         { email: em },
         false,
       );
-      if (check.has_pin) {
-        router.push({ pathname: "/forgot-password/pin", params: { email: em } });
-      } else {
-        // Fire the email code send, then push to verify. Backend surfaces
-        // `dev_code` in dev/sandbox so the UI can autofill it.
-        const resp = await api.post<{ ok: boolean; dev_code?: string }>(
-          "/auth/forgot-password",
-          { email: em },
-          false,
-        );
-        router.push({
-          pathname: "/forgot-password/verify",
-          params: { email: em, dev_code: resp.dev_code ?? "" },
-        });
-      }
+      setDevLink(resp.dev_link ?? null);
+      setSent(true);
     } catch (e: any) {
       setError(e?.message || "Something went wrong. Please try again.");
     } finally {
       setBusy(false);
     }
-  }, [email, router]);
+  }, [email]);
+
+  if (sent) {
+    return (
+      <SafeAreaView style={styles.root} edges={["top"]}>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <TouchableOpacity
+            onPress={() => router.replace("/(auth)/login")}
+            style={styles.backBtn}
+            testID="forgot-back"
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
+          </TouchableOpacity>
+
+          <View style={styles.lockIcon}>
+            <Ionicons name="mail-unread-outline" size={30} color={colors.primary} />
+          </View>
+
+          <Text style={styles.title}>Check your inbox</Text>
+          <Text style={styles.subtitle}>
+            If an account exists for{" "}
+            <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{email.trim().toLowerCase()}</Text>
+            , we&apos;ve sent a secure link to reset your password. Tap it, set a new
+            password, and you&apos;ll be signed right back into the app.
+          </Text>
+          <Text style={styles.hint}>The link expires in 60 minutes and can only be used once.</Text>
+
+          {devLink ? (
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => Linking.openURL(devLink)}
+              testID="forgot-dev-link"
+            >
+              <Text style={styles.primaryBtnText}>Open reset link</Text>
+              <Ionicons name="open-outline" size={18} color="#fff" />
+            </TouchableOpacity>
+          ) : null}
+
+          <TouchableOpacity
+            onPress={() => router.replace("/(auth)/login")}
+            style={styles.linkBtn}
+            testID="forgot-back-to-login"
+          >
+            <Text style={styles.linkText}>Back to sign in</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -71,10 +107,7 @@ export default function ForgotPasswordEntry() {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.backBtn}
@@ -90,8 +123,8 @@ export default function ForgotPasswordEntry() {
 
           <Text style={styles.title}>Forgot password?</Text>
           <Text style={styles.subtitle}>
-            No worries — enter your email and we&apos;ll take you to the fastest way
-            to get back into your account.
+            No worries — enter your email and we&apos;ll send you a secure link to
+            reset your password.
           </Text>
 
           <Text style={styles.label}>Email</Text>
@@ -105,8 +138,8 @@ export default function ForgotPasswordEntry() {
             autoCorrect={false}
             autoFocus
             style={styles.input}
-            returnKeyType="next"
-            onSubmitEditing={next}
+            returnKeyType="go"
+            onSubmitEditing={submit}
             testID="forgot-email"
           />
 
@@ -118,7 +151,7 @@ export default function ForgotPasswordEntry() {
 
           <TouchableOpacity
             style={[styles.primaryBtn, busy && { opacity: 0.6 }]}
-            onPress={next}
+            onPress={submit}
             disabled={busy}
             testID="forgot-continue"
           >
@@ -126,33 +159,11 @@ export default function ForgotPasswordEntry() {
               <ActivityIndicator color="#fff" />
             ) : (
               <>
-                <Text style={styles.primaryBtnText}>Continue</Text>
+                <Text style={styles.primaryBtnText}>Send reset link</Text>
                 <Ionicons name="arrow-forward" size={18} color="#fff" />
               </>
             )}
           </TouchableOpacity>
-
-          <View style={styles.optionsBox}>
-            <Text style={styles.optionsLabel}>Recovery methods</Text>
-            <View style={styles.optionRow}>
-              <Ionicons name="keypad-outline" size={18} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>4-digit PIN</Text>
-                <Text style={styles.optionBody}>
-                  Instant reset if you set a PIN in Settings.
-                </Text>
-              </View>
-            </View>
-            <View style={styles.optionRow}>
-              <Ionicons name="mail-outline" size={18} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Email code</Text>
-                <Text style={styles.optionBody}>
-                  We&apos;ll send a 6-digit code to your inbox.
-                </Text>
-              </View>
-            </View>
-          </View>
 
           <TouchableOpacity
             onPress={() => router.replace("/(auth)/login")}
@@ -189,6 +200,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: spacing.lg,
   },
+  hint: { color: colors.textMuted, fontSize: 12.5, marginTop: -8, marginBottom: spacing.md },
   label: {
     color: colors.textSecondary,
     fontSize: 12,
@@ -218,24 +230,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   primaryBtnText: { color: "#fff", fontWeight: "900", fontSize: 16 },
-  optionsBox: {
-    marginTop: spacing.xl,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    borderColor: colors.border,
-    borderWidth: 1,
-    gap: spacing.md,
-  },
-  optionsLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  optionRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  optionTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "700" },
-  optionBody: { color: colors.textSecondary, fontSize: 12.5, marginTop: 2 },
   linkBtn: { alignItems: "center", marginTop: spacing.lg },
   linkText: { color: colors.primary, fontWeight: "700", fontSize: 14 },
 });
