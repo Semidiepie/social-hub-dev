@@ -1,12 +1,19 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, MessageCircle, Loader2 } from "lucide-react";
+import { Heart, MessageCircle, Loader2, Play, Eye } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { timeAgo, formatNumber } from "@/lib/format";
 import { toast } from "sonner";
+
+function formatDuration(secs) {
+  if (!secs && secs !== 0) return null;
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -68,9 +75,13 @@ export default function HomePage() {
         <EmptyState />
       ) : (
         <div className="space-y-4">
-          {items.map((p) => (
-            <PostCard key={p.id} post={p} onToggleLike={() => toggleLike(p)} />
-          ))}
+          {items.map((p) =>
+            p.type === "video" ? (
+              <VideoCard key={p.id} video={p} />
+            ) : (
+              <PostCard key={p.id} post={p} onToggleLike={() => toggleLike(p)} />
+            ),
+          )}
         </div>
       )}
     </div>
@@ -158,6 +169,82 @@ function PostCard({ post, onToggleLike }) {
           <MessageCircle size={18} />
           {formatNumber(post.comments_count)}
         </button>
+      </footer>
+    </article>
+  );
+}
+
+function VideoCard({ video }) {
+  const duration = formatDuration(video.duration);
+  return (
+    <article
+      className="overflow-hidden rounded-2xl border border-border bg-card"
+      data-testid={`feed-video-${video.id}`}
+    >
+      <div className="flex items-center gap-3 px-4 pt-4">
+        {video.author ? (
+          <Link to={`/user/${video.author.id}`}>
+            <Avatar src={video.author.avatar_url} size={40} />
+          </Link>
+        ) : (
+          <Avatar size={40} />
+        )}
+        <div className="min-w-0 flex-1">
+          <UsernameLine user={video.author} className="text-sm" />
+          <div className="text-xs text-muted-foreground">
+            @{video.author?.username} · {timeAgo(video.created_at)}
+          </div>
+        </div>
+        <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
+          Video
+        </span>
+      </div>
+
+      {video.title && (
+        <p className="px-4 pt-3 text-[15px] font-semibold leading-snug">{video.title}</p>
+      )}
+
+      <Link
+        to={`/videos/${video.id}`}
+        className="group relative mt-3 block aspect-video w-full overflow-hidden bg-black"
+        data-testid={`feed-video-thumb-${video.id}`}
+      >
+        {video.thumbnail_url ? (
+          <img
+            src={video.thumbnail_url}
+            alt={video.title}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-secondary">
+            <Play className="text-muted-foreground" size={40} />
+          </div>
+        )}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 transition-colors group-hover:bg-black/30">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/90 shadow-lg">
+            <Play className="ml-0.5 fill-white text-white" size={26} />
+          </span>
+        </div>
+        {duration && (
+          <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-white">
+            {duration}
+          </span>
+        )}
+      </Link>
+
+      <footer className="flex items-center gap-5 px-4 py-3 text-sm font-semibold text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <Eye size={18} />
+          {formatNumber(video.views)}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Heart size={18} className={video.liked_by_me ? "fill-primary text-primary" : ""} />
+          {formatNumber(video.likes)}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <MessageCircle size={18} />
+          {formatNumber(video.comments_count)}
+        </span>
       </footer>
     </article>
   );

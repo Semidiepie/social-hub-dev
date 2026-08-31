@@ -157,8 +157,10 @@ export interface Author {
 
 export interface FeedItem {
   id: string;
-  type: "post" | "reel";
+  type: "post" | "reel" | "video";
   caption: string;
+  title?: string;
+  description?: string;
   image_url: string | null;
   video_url: string | null;
   thumbnail_url: string | null;

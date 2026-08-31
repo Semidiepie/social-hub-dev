@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 26: verified /api/feed now merges public videos with posts on shared backend, and both web + mobile Home render the new video card variant that deep-links to the fullscreen watch route. All 4 backend pytest cases and all 6 requested UX flows (web + mobile parity) pass. Founder password preserved.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration26_feed_videos.py",
+    "/app/test_reports/pytest/iteration26_feed.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/server.py serialize_video_for_feed: sets `caption` = title so mobile PostCard would happily accept a video item too — the type discriminator is the only thing preventing wrong rendering. Consider dropping the `caption` alias to make the schema unambiguous. Not blocking.",
+    "backend/server.py feed(): sort key is the ISO string of created_at — works because all timestamps are timezone-normalized and lexically comparable, but a real datetime sort would be safer if timezones ever diverge.",
+    "web Home.jsx VideoCard: `views` field is rendered but Home never invalidates it after the /videos/:id watch view increments it — a soft-refresh on focus would keep counts fresh (minor UX)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration26_feed_videos.py"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (web + mobile)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! unchanged. Auto-purged test users test_* created transiently.",
+  "seed_data_creation": "Created 3 test_* users and 5 test_* videos (public/private/unlisted mix) — all auto-purged on backend restart.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend: /api/feed returns list of items with `type` in {post,video}, sorted by created_at DESC, capped at 60. Videos filtered by visibility=='public' AND author not in viewer block-set. Web feed cards use data-testid=feed-video-<id> + feed-video-thumb-<id> (thumb is a <Link to=/videos/<id>>). Mobile uses testID same names but tap opens /video/<id>. Verified no /posts/*/like network call fires from video cards on either surface. Post card like toggle still works. Pull-to-refresh and comments on regular posts untouched.",
+  "rca of the issue": "N/A — no issues found."
+}

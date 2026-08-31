@@ -16,6 +16,7 @@ import { api, FeedItem, StoryUser } from "@/src/api/client";
 import { colors, spacing } from "@/src/theme";
 import { StoryBar } from "@/src/components/StoryBar";
 import { PostCard } from "@/src/components/PostCard";
+import { VideoFeedCard } from "@/src/components/VideoFeedCard";
 import { CommentSheet } from "@/src/components/CommentSheet";
 import {
   CONTENT_MAX_WIDTH,
@@ -127,16 +128,20 @@ export default function Home() {
               colors={[colors.primary]}
             />
           }
-          renderItem={({ item }) => (
-            <PostCard
-              post={item}
-              onChange={(updated) =>
-                setFeed((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
-              }
-              onComment={(p) => setCommentTarget(p)}
-              onDeleted={(id) => setFeed((prev) => prev.filter((p) => p.id !== id))}
-            />
-          )}
+          renderItem={({ item }) =>
+            item.type === "video" ? (
+              <VideoFeedCard post={item} />
+            ) : (
+              <PostCard
+                post={item}
+                onChange={(updated) =>
+                  setFeed((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+                }
+                onComment={(p) => setCommentTarget(p)}
+                onDeleted={(id) => setFeed((prev) => prev.filter((p) => p.id !== id))}
+              />
+            )
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="game-controller-outline" size={48} color={colors.textMuted} />

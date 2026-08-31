@@ -954,15 +954,60 @@ async def update_my_privacy(body: PrivacyBody, current: Annotated[dict, Depends(
 # ============================================================
 # Routes — Feed / Discover
 # ============================================================
+async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> dict:
+    """Shape a long-form video as a feed card (type='video'). Clients open the
+    fullscreen watch page on tap instead of using the inline post like/comment."""
+    author = await db.users.find_one({"id": v["author_id"]}, {"_id": 0})
+    liked_by_me = False
+    if viewer_id:
+        liked_by_me = await db.video_likes.find_one({"video_id": v["id"], "user_id": viewer_id}) is not None
+    tags = v.get("tags") or []
+    return {
+        "id": v["id"],
+        "type": "video",
+        "title": v.get("title", ""),
+        "caption": v.get("title", ""),
+        "description": v.get("description", ""),
+        "image_url": None,
+        "video_url": _cloudinary_compat_url(v.get("video_url")),
+        "thumbnail_url": v.get("thumbnail_url"),
+        "game_tag": v.get("category") or (tags[0] if tags else None),
+        "duration": v.get("duration"),
+        "likes": v.get("likes", 0),
+        "comments_count": v.get("comments_count", 0),
+        "views": v.get("views", 0),
+        "created_at": v["created_at"].isoformat() if isinstance(v["created_at"], datetime) else v["created_at"],
+        "liked_by_me": liked_by_me,
+        "author": {
+            "id": author["id"],
+            "username": author["username"],
+            "display_name": author["display_name"],
+            "avatar_url": author.get("avatar_url", ""),
+            "is_verified": author.get("is_verified", False),
+            "is_streamer": author.get("is_streamer", False),
+        } if author else None,
+    }
+
+
 @app.get("/api/feed")
 async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
     viewer_id = viewer["id"] if viewer else None
     blocked = await blocked_ids_for(viewer_id)
-    query: dict = {"type": "post"}
+
+    post_query: dict = {"type": "post"}
+    video_query: dict = {"visibility": "public"}
     if blocked:
-        query["author_id"] = {"$nin": list(blocked)}
-    rows = await db.posts.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
-    return [await serialize_post(p, viewer_id) for p in rows]
+        post_query["author_id"] = {"$nin": list(blocked)}
+        video_query["author_id"] = {"$nin": list(blocked)}
+
+    post_rows = await db.posts.find(post_query, {"_id": 0}).sort("created_at", -1).to_list(50)
+    video_rows = await db.videos.find(video_query, {"_id": 0}).sort("created_at", -1).to_list(50)
+
+    items = [await serialize_post(p, viewer_id) for p in post_rows]
+    items += [await serialize_video_for_feed(v, viewer_id) for v in video_rows]
+    # Interleave both streams chronologically (newest first).
+    items.sort(key=lambda x: x["created_at"], reverse=True)
+    return items[:60]
 
 
 async def blocked_ids_for(user_id: Optional[str]) -> set[str]:
