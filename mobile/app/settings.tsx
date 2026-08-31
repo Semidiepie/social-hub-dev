@@ -205,6 +205,14 @@ export default function Settings() {
                 accent
                 testID="settings-admin-blogs"
               />
+              <Row
+                icon="keypad-outline"
+                label="Reset PINs"
+                hint="Set a 4-digit password-reset PIN for any user"
+                onPress={() => router.push("/admin/reset-pins")}
+                accent
+                testID="settings-admin-reset-pins"
+              />
             </View>
           </>
         )}

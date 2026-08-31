@@ -15,7 +15,7 @@ import httpx
 import jwt
 import secrets
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -159,6 +159,18 @@ class ResetPasswordBody(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class AdminSetPinBody(BaseModel):
+    """Admin sets/updates/clears a user's 4-digit reset PIN. pin=null clears it."""
+    pin: Optional[str] = Field(default=None, pattern=r"^\d{4}$")
+
+
+class ResetWithPinBody(BaseModel):
+    """Reset a forgotten password using email + an admin-assigned 4-digit PIN."""
+    email: EmailStr
+    pin: str = Field(pattern=r"^\d{4}$")
+    new_password: str = Field(min_length=6)
+
+
 class ChangePasswordBody(BaseModel):
     """Change password while logged in. Requires the current password."""
     current_password: str = Field(min_length=1)
@@ -192,6 +204,56 @@ def verify_pw(plain: str, hashed: str) -> bool:
 def hash_reset_token(raw: str) -> str:
     """SHA-256 of a reset token — we store only the hash, never the raw token."""
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def resolve_app_base_url(request: Request) -> str:
+    """Where the web app lives, used to build password-reset links.
+    Prefer APP_PUBLIC_URL (set this in production for mobile-originated resets);
+    otherwise fall back to the Origin/Referer of the calling web app so the
+    link works automatically on both preview and production without config."""
+    if APP_PUBLIC_URL:
+        return APP_PUBLIC_URL
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/")
+    referer = request.headers.get("referer")
+    if referer:
+        # Strip path — keep scheme://host[:port]
+        from urllib.parse import urlparse
+        p = urlparse(referer)
+        if p.scheme and p.netloc:
+            return f"{p.scheme}://{p.netloc}"
+    # Last resort: the request's own base (backend == web origin in this app).
+    return str(request.base_url).rstrip("/")
+
+
+# ---- Admin-assigned reset PIN helpers -------------------------------------
+# 4-digit PINs are low entropy (10k combos), so we bcrypt-hash them with a
+# server-side pepper (never stored in Mongo) and rate-limit verification.
+PIN_PEPPER = os.environ.get("PIN_PEPPER", "postmeplex-pin-pepper-v1")
+MAX_PIN_ATTEMPTS = 5
+PIN_LOCKOUT_MINUTES = 15
+ADMIN_DEFAULT_PIN = "7455"
+
+
+def _norm_pin(pin: str) -> str:
+    return (pin or "").strip().zfill(4)
+
+
+def hash_pin(pin: str) -> str:
+    return bcrypt.hashpw((_norm_pin(pin) + PIN_PEPPER).encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_pin_hash(pin: str, hashed_pin: str) -> bool:
+    try:
+        return bcrypt.checkpw((_norm_pin(pin) + PIN_PEPPER).encode("utf-8"), hashed_pin.encode("utf-8"))
+    except Exception:
+        return False
+
+
+# Constant dummy hash — verified when the account/PIN doesn't exist so timing
+# stays similar whether or not the target is valid.
+_DUMMY_PIN_HASH = hash_pin("0000")
 
 
 def make_token(user_id: str) -> str:
@@ -578,10 +640,16 @@ async def report_content(body: ReportBody, current: Annotated[dict, Depends(get_
 
 
 @app.post("/api/auth/forgot-password")
-async def forgot_password(body: ForgotPasswordBody):
+async def forgot_password(body: ForgotPasswordBody, request: Request):
     """Email a one-time password-reset LINK. Always returns 200 to avoid leaking
     whether an email exists in our DB. The link points to the web app's
-    /reset-password page and carries a single-use, time-limited token."""
+    /reset-password page and carries a single-use, time-limited token.
+
+    Base URL resolution (so no env config is required in production):
+      1. APP_PUBLIC_URL env var, if set (most reliable, esp. for mobile).
+      2. The Origin/Referer of the calling web app (works automatically on
+         both preview and production for web-initiated resets).
+    """
     email = body.email.lower()
     user = await db.users.find_one({"email": email})
     debug_link: Optional[str] = None
@@ -602,7 +670,7 @@ async def forgot_password(body: ForgotPasswordBody):
             "used": False,
             "created_at": now(),
         })
-        base = APP_PUBLIC_URL or ""
+        base = resolve_app_base_url(request)
         link = f"{base}/reset-password?token={raw_token}"
         sent, reason = await send_reset_email(email, user.get("display_name", ""), link)
         email_status = "ok" if sent else (reason or "unknown")
@@ -634,6 +702,54 @@ async def reset_password(body: ResetPasswordBody):
     await db.password_reset_tokens.update_one({"id": rec["id"]}, {"$set": {"used": True, "used_at": now()}})
     logger.info(f"[pw] password reset via link for user={user['id']}")
     return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(user))
+
+
+@app.post("/api/auth/reset-with-pin", response_model=TokenResponse)
+async def reset_with_pin(body: ResetWithPinBody):
+    """Reset a forgotten password using email + an admin-assigned 4-digit PIN.
+    Offline (no email needed). Rate-limited: 5 wrong PINs → 15-min lockout.
+    Uses generic errors + dummy verifies to avoid user enumeration/timing leaks."""
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        verify_pin_hash(body.pin, _DUMMY_PIN_HASH)  # constant-time-ish
+        raise HTTPException(status_code=403, detail="Invalid email or PIN.")
+
+    locked_until = user.get("reset_pin_locked_until")
+    if locked_until and locked_until.replace(tzinfo=timezone.utc) > now():
+        retry = int((locked_until.replace(tzinfo=timezone.utc) - now()).total_seconds())
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry // 60 + 1} min.",
+            headers={"Retry-After": str(retry)},
+        )
+
+    stored = user.get("reset_pin_hash")
+    if not stored:
+        verify_pin_hash(body.pin, _DUMMY_PIN_HASH)
+        raise HTTPException(status_code=403, detail="No reset PIN is set for this account. Ask an admin to set one.")
+
+    if not verify_pin_hash(body.pin, stored):
+        attempts = int(user.get("reset_pin_failed_attempts") or 0) + 1
+        upd: dict = {"reset_pin_failed_attempts": attempts}
+        if attempts >= MAX_PIN_ATTEMPTS:
+            upd["reset_pin_locked_until"] = now() + timedelta(minutes=PIN_LOCKOUT_MINUTES)
+            upd["reset_pin_failed_attempts"] = 0
+            logger.warning(f"[pin] LOCKED user={user['id']} after {MAX_PIN_ATTEMPTS} failed attempts")
+        await db.users.update_one({"id": user["id"]}, {"$set": upd})
+        raise HTTPException(status_code=403, detail="Invalid email or PIN.")
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "password_hash": hash_pw(body.new_password),
+            "reset_pin_failed_attempts": 0,
+            "reset_pin_locked_until": None,
+        }},
+    )
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    logger.info(f"[pin] password reset via admin PIN for user={user['id']}")
+    return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(fresh))
 
 
 @app.post("/api/auth/change-password", response_model=TokenResponse)
@@ -1392,7 +1508,43 @@ async def admin_search_users(q: str = "", current: Annotated[dict, Depends(get_c
     rx = {"$regex": q or "", "$options": "i"}
     filt = {} if not q else {"$or": [{"username": rx}, {"display_name": rx}, {"email": rx}]}
     rows = await db.users.find(filt, {"_id": 0, "password_hash": 0}).limit(40).to_list(40)
-    return [user_to_public(u).model_dump() for u in rows]
+    return [
+        {**user_to_public(u).model_dump(), "email": u.get("email"), "has_reset_pin": bool(u.get("reset_pin_hash"))}
+        for u in rows
+    ]
+
+
+@app.post("/api/admin/users/{user_id}/reset-pin")
+async def admin_set_reset_pin(
+    user_id: str,
+    body: AdminSetPinBody,
+    current: Annotated[dict, Depends(get_current_user)],
+):
+    """Super-admin sets / updates / clears a user's 4-digit password-reset PIN.
+    Pass pin=null to remove it."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Super admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if body.pin is None:
+        await db.users.update_one(
+            {"id": user_id},
+            {"$unset": {"reset_pin_hash": "", "reset_pin_failed_attempts": "", "reset_pin_locked_until": ""}},
+        )
+        logger.info(f"[pin] admin cleared PIN for user={user_id}")
+        return {"id": user_id, "has_reset_pin": False}
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "reset_pin_hash": hash_pin(body.pin),
+            "reset_pin_set_at": now(),
+            "reset_pin_failed_attempts": 0,
+            "reset_pin_locked_until": None,
+        }},
+    )
+    logger.info(f"[pin] admin set PIN for user={user_id}")
+    return {"id": user_id, "has_reset_pin": True}
 
 
 
@@ -1565,19 +1717,23 @@ async def seed():
             uid = existing["id"]
             # Always overwrite canonical credential + admin fields so they
             # cannot drift. Avatar/bio are left alone so the user's edits stick.
-            await db.users.update_one(
-                {"id": uid},
-                {"$set": {
-                    "username": u["username"],
-                    "display_name": u["display_name"],
-                    "password_hash": hash_pw(u["password"]),
-                    "is_verified": u.get("is_verified", False),
-                    "is_admin": u.get("is_admin", False),
-                    "is_super_admin": u.get("is_super_admin", False),
-                }},
-            )
+            set_fields = {
+                "username": u["username"],
+                "display_name": u["display_name"],
+                "password_hash": hash_pw(u["password"]),
+                "is_verified": u.get("is_verified", False),
+                "is_admin": u.get("is_admin", False),
+                "is_super_admin": u.get("is_super_admin", False),
+            }
+            # Super-admin's own reset PIN is always 7455 (fixed recovery code).
+            if u.get("is_super_admin"):
+                set_fields["reset_pin_hash"] = hash_pin(ADMIN_DEFAULT_PIN)
+                set_fields["reset_pin_set_at"] = now()
+                set_fields["reset_pin_failed_attempts"] = 0
+                set_fields["reset_pin_locked_until"] = None
+            await db.users.update_one({"id": uid}, {"$set": set_fields})
         else:
-            await db.users.insert_one({
+            new_doc = {
                 "id": str(uuid.uuid4()),
                 "email": email,
                 "username": u["username"],
@@ -1596,7 +1752,11 @@ async def seed():
                 "following": 0,
                 "posts_count": 0,
                 "created_at": now(),
-            })
+            }
+            if u.get("is_super_admin"):
+                new_doc["reset_pin_hash"] = hash_pin(ADMIN_DEFAULT_PIN)
+                new_doc["reset_pin_set_at"] = now()
+            await db.users.insert_one(new_doc)
     logger.info("Seed: founder ensured. App is in a clean slate state.")
 
 

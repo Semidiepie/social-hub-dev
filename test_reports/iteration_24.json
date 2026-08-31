@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 24 — admin-managed 4-digit password-reset PIN feature verified end-to-end on BACKEND + WEB + MOBILE with a light regression on the iteration-23 email-LINK flow. Backend pytest suite (7/7 GREEN, /app/backend/tests/test_iteration24_admin_pin.py): founder has_reset_pin flag is true; POST /api/auth/reset-with-pin succeeds with founder PIN 7455 (auto sign-in access_token+user returned) and founder password was restored to Semi123! at the end of the run; admin can SET (1234), CHANGE (5678, old PIN now 403), and CLEAR (pin=null) another user's PIN — the has_reset_pin flag on GET /api/admin/users reflects each state; after 5 wrong PIN attempts the account is locked out and even the CORRECT PIN returns 429 with Retry-After header (PIN_LOCKOUT_MINUTES=15); non-admin JWTs cannot call POST /api/admin/users/{id}/reset-pin or GET /api/admin/users (403); anonymous calls return 401/403; validation is enforced (pin not \\d{4} → 422, new_password < 6 → 422, unknown email → 403 no enumeration); email-LINK regression is still green (forgot-password 200 + dev_link in sandbox, reset-password consumes token once, reuse → 400, new password logs in). WEB /reset-pin renders (data-testid=reset-pin-form), submits email+PIN+new password, auto-signs the user in and redirects to /, and displays the 'Invalid email or PIN.' error state for bad PINs plus client-side short-PIN guard; /forgot-password has the working 'Have a reset PIN? Use it here' link (data-testid=forgot-use-pin) pointing at /reset-pin. MOBILE Expo web preview: /forgot-password/index renders with 'Have a reset PIN?' link, /forgot-password/pin renders (email, 4-digit PIN, new password) and on success navigates to /home fully signed-in; /admin/reset-pins loads for the founder, lists users with PIN/No-PIN badge, supports search, opens a Set/Change modal, saves the PIN (row flips to 'Change'), and REMOVE PIN button clears it (row flips back to 'Set PIN'). No critical or minor issues found in scope.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration24_admin_pin.py",
+    "/app/test_reports/pytest/iteration24_admin_pin.xml"
+  ],
+  "action_items": [
+    "None for iteration 24 — feature is production-ready across backend + web + mobile.",
+    "PRIOR ITERATION 22 (still open, HIGH) — GET /api/conversations/{id}/typing 500 due to naive-vs-aware datetime compare in routes/messages.py:219 was NOT exercised here and remains pending fix (same pattern already used correctly in server.py:719/720 for reset-with-pin lockout)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:707 reset-with-pin correctly uses dummy hash verify + generic 403 on unknown user AND on 'no PIN set' to avoid user enumeration/timing leaks. Good.",
+    "server.py:735-738 lockout logic zeros the failed_attempts counter as soon as the lock is set — clean; the lock is enforced by comparing user['reset_pin_locked_until'].replace(tzinfo=utc) > now(), which is the correct fix pattern for Mongo's naive-UTC storage.",
+    "server.py:1517-1547 admin_set_reset_pin gates on is_super_admin only (not is_admin) — matches the requirement that only the founder can manage PINs. Considered whether regular admins should also manage PINs; product decision is founder-only per current spec.",
+    "server.py:1728-1758 seed_admin force-writes ADMIN_DEFAULT_PIN=7455 hash on every startup — matches requirement (1). Confirmed by test_founder_has_reset_pin_flag + test_founder_reset_with_fixed_pin_and_restore.",
+    "AdminSetPinBody uses pin: Optional[str] with pattern ^\\d{4}$ (default None) — sending pin=null OR omitting pin both correctly clear the PIN. Verified in test_admin_set_change_clear_pin.",
+    "Frontend ResetWithPin.jsx correctly calls setSession(access_token, user) + navigate('/', replace=true) — auto sign-in works. Client-side validation blocks non-4-digit PINs before hitting the API.",
+    "Mobile app/forgot-password/pin.tsx uses setToken + refresh + router.replace('/(tabs)/home') — auto sign-in works. All inputs have testIDs and hitSlop is set on the back button.",
+    "Mobile app/admin/reset-pins.tsx surfaces a distinct 'Remove PIN' action only when has_reset_pin is true — matches admin UX intent; row list updates optimistically after save/clear."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration24_admin_pin.py (new — 7 pytest checks covering the full new feature + light email-link regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 iteration-24 pytest)",
+    "frontend": "100% (web /reset-pin happy path + invalid PIN + client-side + /forgot-password PIN link; mobile /forgot-password/pin happy path + admin/reset-pins set/change/clear + auth guard)"
+  },
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! (VERIFIED restored at end of run). Fixed founder reset PIN = 7455. Scratch users use test_* prefix and are auto-purged on backend restart. Login response field = access_token.",
+  "seed_data_creation": "Several test_* scratch users were registered during the run (test_pin_*, test_lock_*, test_link_*, test_webpin_*, test_mobpin_*, test_admui_*) — all auto-purged on next backend restart. No persistent seed data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 24 admin-managed PIN feature is GREEN across backend + web + mobile. Backend: /api/auth/reset-with-pin (public) + /api/admin/users/{id}/reset-pin (super-admin only, pin=null clears) + /api/admin/users includes has_reset_pin flag. Founder PIN 7455 is force-seeded on every backend startup. Email-LINK reset (iteration 23) still works. Web /reset-pin + mobile /forgot-password/pin + mobile /admin/reset-pins all wired correctly to the backend. Both surfaces support the mocked Resend sandbox (dev_link surfaces in /auth/forgot-password response for testing). No open bugs from iteration 24. Only open item is the prior iteration-22 typing 500 (naive-vs-aware datetime at routes/messages.py:219) — not in scope here.",
+  "rca of the issue": "N/A — no bugs found in iteration 24 scope."
+}

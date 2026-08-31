@@ -166,6 +166,14 @@ export default function ForgotPasswordEntry() {
           </TouchableOpacity>
 
           <TouchableOpacity
+            onPress={() => router.push({ pathname: "/forgot-password/pin", params: { email: email.trim() } })}
+            style={styles.linkBtn}
+            testID="forgot-use-pin"
+          >
+            <Text style={styles.linkText}>Have a reset PIN? Use it here</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => router.replace("/(auth)/login")}
             style={styles.linkBtn}
             testID="forgot-back-to-login"

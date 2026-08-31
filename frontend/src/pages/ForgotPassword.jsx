@@ -95,6 +95,11 @@ export default function ForgotPasswordPage() {
             Back to sign in
           </Link>
         </p>
+        <p className="text-center text-sm text-muted-foreground">
+          <Link to="/reset-pin" className="font-semibold text-primary hover:underline" data-testid="forgot-use-pin">
+            Have a reset PIN? Use it here
+          </Link>
+        </p>
       </form>
     </AuthLayout>
   );
