@@ -5,6 +5,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
+import { compressVideoToTarget, TARGET_MAX_BYTES } from "@/lib/videoCompress";
 import { toast } from "sonner";
 
 // Homepage composer: create a text post with an optional photo OR video.
@@ -14,6 +15,7 @@ export function PostComposer({ onPosted }) {
   const [gameTag, setGameTag] = useState("");
   const [media, setMedia] = useState(null); // { kind: 'image'|'video', url, thumbnail_url }
   const [uploading, setUploading] = useState(false);
+  const [phase, setPhase] = useState("");
   const [progress, setProgress] = useState(0);
   const [posting, setPosting] = useState(false);
   const photoRef = useRef(null);
@@ -32,7 +34,19 @@ export function PostComposer({ onPosted }) {
     setUploading(true);
     setProgress(0);
     try {
-      const res = await uploadToCloudinary(file, {
+      let toUpload = file;
+      // Auto-compress oversized videos to fit the upload cap, regardless of size.
+      if (kind === "video" && file.size > TARGET_MAX_BYTES) {
+        setPhase("Compressing");
+        const { file: compressed, wasCompressed } = await compressVideoToTarget(file, {
+          onProgress: (f) => setProgress(Math.round(f * 100)),
+        });
+        toUpload = compressed;
+        if (wasCompressed) toast.success("Video compressed to fit — uploading…");
+      }
+      setPhase("Uploading");
+      setProgress(0);
+      const res = await uploadToCloudinary(toUpload, {
         resourceType: kind === "video" ? "video" : "image",
         onProgress: (f) => setProgress(Math.round(f * 100)),
       });
@@ -49,6 +63,7 @@ export function PostComposer({ onPosted }) {
       toast.error(err.message || "Upload failed");
     } finally {
       setUploading(false);
+      setPhase("");
     }
   };
 
@@ -144,7 +159,7 @@ export function PostComposer({ onPosted }) {
             />
             {uploading && (
               <span className="flex items-center gap-1.5 text-xs font-semibold text-primary" data-testid="composer-progress">
-                <Loader2 size={16} className="animate-spin" /> Uploading {progress}%
+                <Loader2 size={16} className="animate-spin" /> {phase} {progress}%
               </span>
             )}
             <Button

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
+import { compressVideoToTarget, TARGET_MAX_BYTES } from "@/lib/videoCompress";
 
 export default function VideoUploadPage() {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export default function VideoUploadPage() {
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [duration, setDuration] = useState(null);
   const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState("");
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({
     title: "",
@@ -45,7 +47,18 @@ export default function VideoUploadPage() {
     setUploading(true);
     setProgress(0);
     try {
-      const result = await uploadToCloudinary(f, {
+      let toUpload = f;
+      if (f.size > TARGET_MAX_BYTES) {
+        setPhase("compressing");
+        const { file: compressed, wasCompressed } = await compressVideoToTarget(f, {
+          onProgress: setProgress,
+        });
+        toUpload = compressed;
+        if (wasCompressed) toast.success("Video compressed to fit — uploading…");
+      }
+      setPhase("uploading");
+      setProgress(0);
+      const result = await uploadToCloudinary(toUpload, {
         resourceType: "video",
         onProgress: setProgress,
       });
@@ -57,6 +70,7 @@ export default function VideoUploadPage() {
       toast.error(err.message || "Upload failed");
     } finally {
       setUploading(false);
+      setPhase("");
     }
   };
 
@@ -129,7 +143,7 @@ export default function VideoUploadPage() {
             {uploading ? (
               <>
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                Uploading… {Math.round(progress * 100)}%
+                {phase === "compressing" ? "Compressing" : "Uploading"}… {Math.round(progress * 100)}%
               </>
             ) : (
               <>

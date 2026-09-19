@@ -186,6 +186,11 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **IMPORTANT (account, not code):** Cloudinary per-file limits — Video: Free 100MB / Plus 2GB / Advanced 4GB; Image: Free 10MB / Plus 20MB / Advanced 40MB. **1GB videos require upgrading the Cloudinary plan to Plus or higher.** 1GB photos are NOT supported by Cloudinary's image pipeline on any plan (max 40MB). The app code is ready; the real cap is the plan.
 - Not E2E-tested (no 1GB test file; current plan caps at 100MB). Chunked protocol previously validated via curl.
 
+### 2026-09 (part 12) — Auto-compress videos to fit the upload cap (web)
+- New `frontend/src/lib/videoCompress.js`: re-encodes a video in-browser (`<video>` → `canvas.captureStream()` → `MediaRecorder`) at a **bitrate derived from duration** (`targetBytes/duration`, downscaled to 720p) so output lands under `TARGET_MAX_BYTES` (95MB) **regardless of input size**. Falls back to the original on encoder error / 0-byte / no size gain.
+- Wired into the Home composer (`PostComposer.jsx`) and `/videos/new` (`VideoUpload.jsx`): videos >95MB auto-compress (phase "Compressing %") before upload; sub-threshold videos upload unchanged. This lets large videos upload successfully even on the Cloudinary Free plan (100MB cap) without a plan upgrade.
+- Caveat: MediaRecorder re-encodes in REAL TIME (a 10-min clip ≈ 10 min) and outputs WebM/MP4 — the only fully client-side option. Verified in-browser that captureStream+MediaRecorder works; testing agent iteration_31 confirmed 0 JS errors and no regression to normal uploads. The >95MB path can't be E2E-tested headlessly.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.
