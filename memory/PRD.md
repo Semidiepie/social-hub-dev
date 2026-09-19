@@ -170,6 +170,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **Fix:** web `ReelWatch` + `VideoWatch` comment rows now render `BadgeCheck` when `is_verified` (or `author.is_verified`) is true. Also fixed `POST /api/videos/{id}/comments` to return the full serialized comment (author + is_verified + created_at) so a freshly-posted video comment shows the badge without reload (previously returned only `{id,text}`).
 - Verified: testing agent iteration_28 — backend 5/5 + web reel/video + mobile reel badges, non-verified users show no badge.
 
+### 2026-09 (part 9) — Post from the website + clickable profile posts (web)
+- **Web Home composer** (`components/PostComposer.jsx`): create a post with a caption and an optional **photo OR video** (Cloudinary upload) + optional game tag; posts via `POST /api/posts` and prepends to the feed. Feed already renders inline image/video.
+- **Backend:** `CreatePostBody` + `create_post` extended with optional `video_url`, `thumbnail_url`, `duration` (photo posts already used `image_url`).
+- **Clickable profile posts:** web Profile `PostsGrid` tiles now link to a new **post detail page** `/posts/:id` (`pages/PostDetail.jsx`, rendered inside the shell) with media, caption, like, and comments (list + add, verified badge). Video posts show a play badge on the tile.
+- Verified: testing agent iteration_29 — backend 7/7 + web composer/feed/post-detail/like/comment flows all pass.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.

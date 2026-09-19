@@ -122,6 +122,9 @@ class UpdateProfileBody(BaseModel):
 class CreatePostBody(BaseModel):
     caption: str = ""
     image_url: Optional[str] = None
+    video_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    duration: Optional[float] = None
     game_tag: Optional[str] = None
 
 
@@ -1230,6 +1233,9 @@ async def create_post(body: CreatePostBody, current: Annotated[dict, Depends(get
         "author_id": current["id"],
         "caption": body.caption,
         "image_url": body.image_url,
+        "video_url": body.video_url,
+        "thumbnail_url": body.thumbnail_url,
+        "duration": body.duration,
         "game_tag": body.game_tag,
         "likes": 0,
         "comments_count": 0,

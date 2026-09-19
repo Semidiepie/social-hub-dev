@@ -21,6 +21,7 @@ import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
 import NotificationsPage from "@/pages/Notifications";
 import ProfilePage from "@/pages/Profile";
+import PostDetailPage from "@/pages/PostDetail";
 import SettingsPage from "@/pages/Settings";
 import AdminResetPinsPage from "@/pages/AdminResetPins";
 import AdminVerifyPage from "@/pages/AdminVerify";
@@ -95,6 +96,7 @@ export default function App() {
               element={<ProtectedRoute><ProfilePage /></ProtectedRoute>}
             />
             <Route path="/user/:userId" element={<ProfilePage />} />
+            <Route path="/posts/:id" element={<PostDetailPage />} />
             <Route
               path="/settings"
               element={<ProtectedRoute><SettingsPage /></ProtectedRoute>}

@@ -178,15 +178,31 @@ function PostsGrid({ posts }) {
   return (
     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
       {posts.map((p) => (
-        <div key={p.id} className="aspect-square overflow-hidden rounded-xl bg-secondary">
+        <Link
+          key={p.id}
+          to={`/posts/${p.id}`}
+          className="group relative aspect-square overflow-hidden rounded-xl bg-secondary"
+          data-testid={`post-tile-${p.id}`}
+        >
           {p.image_url ? (
-            <img src={p.image_url} alt="" className="h-full w-full object-cover" />
+            <img src={p.image_url} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+          ) : p.video_url ? (
+            <>
+              {p.thumbnail_url ? (
+                <img src={p.thumbnail_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <video src={p.video_url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+              )}
+              <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60">
+                <Play size={13} className="fill-white text-white" />
+              </span>
+            </>
           ) : (
             <div className="flex h-full items-center justify-center p-3 text-center text-xs text-muted-foreground">
               {p.caption || "—"}
             </div>
           )}
-        </div>
+        </Link>
       ))}
     </div>
   );

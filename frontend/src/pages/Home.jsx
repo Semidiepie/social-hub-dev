@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
+import { PostComposer } from "@/components/PostComposer";
 import { timeAgo, formatNumber } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -71,18 +72,23 @@ export default function HomePage() {
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      ) : items.length === 0 ? (
-        <EmptyState />
       ) : (
-        <div className="space-y-4">
-          {items.map((p) =>
-            p.type === "video" ? (
-              <VideoCard key={p.id} video={p} />
-            ) : (
-              <PostCard key={p.id} post={p} onToggleLike={() => toggleLike(p)} />
-            ),
+        <>
+          <PostComposer onPosted={(created) => setItems((rows) => [created, ...rows])} />
+          {items.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="space-y-4">
+              {items.map((p) =>
+                p.type === "video" ? (
+                  <VideoCard key={p.id} video={p} />
+                ) : (
+                  <PostCard key={p.id} post={p} onToggleLike={() => toggleLike(p)} />
+                ),
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

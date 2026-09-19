@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 29 (WEB): validated the new Home PostComposer + /posts/:id PostDetail + Profile post-tile clickability, plus create_post video_url/thumbnail_url/duration acceptance. Backend pytest 7/7 pass (POST /api/posts caption-only, image-only, video, feed placement at top, and like+comment round-trip on /posts/:id — founder comment carries is_verified=true). Web E2E: (1) Home composer posts a text post and it prepends to the feed with a 'Posted!' toast; (2) creating an image post via API renders <img> in the feed card and creating a video post via API renders an inline <video src=cloudinary/dog.mp4 controls> in the feed card; (3) Profile Posts tab shows 14 tiles all with href=/posts/<id>, tapping the video tile navigates to /posts/<id> and PostDetail renders the inline <video> element; video tile also shows a play-badge overlay while the image tile does not; text-only tiles render the caption fallback; (4) On PostDetail, post-detail-like toggles the count (0→1 verified live) and post-detail-comment-input + submit posts a comment which renders instantly with founder BadgeCheck svg. Founder password preserved (Semi123!, verified by final login).",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration29_web_posts.py",
+    "/app/test_reports/pytest/iteration29_web_posts.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/frontend/src/components/PostComposer.jsx (thumbnail derivation): when a user uploads a video, thumbnail_url is derived by regex-stripping the extension: `res.secure_url.replace(/\\.(mp4|mov|webm|m4v)$/i, '.jpg')`. Cloudinary rewrites the URL after upload (e.g. `/upload/f_mp4,vc_h264,q_auto/dog.mp4` is what the backend echoes back on GET), and while Cloudinary DOES generate a `.jpg` for any public video, extensions like `.avi`, `.mkv`, `.3gp`, `.mpg` are not covered — an .avi upload would send `thumbnail_url` still ending in `.avi`, which would 404. Prefer Cloudinary's poster URL (`cloudinary.url(publicId, { resource_type: 'video', format: 'jpg' })`) or ask backend to derive it.",
+    "/app/frontend/src/pages/PostDetail.jsx line 116: fallback `post.video_url && !post.image_url` — if a creator ever attaches BOTH an image_url and a video_url (backend allows it, CreatePostBody accepts both), the video is silently dropped from the detail page. Same fallback exists in Home.jsx PostCard. Consider rendering both, OR make CreatePostBody enforce XOR at the API layer.",
+    "/app/frontend/src/pages/PostDetail.jsx line 44: optimistic like uses `p.likes + (liked ? -1 : 1)` but that can go negative if the server has already reset the count concurrently. Minor — server-side `resp.likes ?? p.likes` reconciles, but the 0→-1 flash is possible if the button is double-tapped.",
+    "/app/frontend/src/components/PostComposer.jsx does not surface upload progress and disables the Post button only via `posting || uploading`; large video uploads to Cloudinary can take a while — consider a progress indicator on the preview card so users don't think it hung.",
+    "/app/backend/server.py CreatePostBody (line 122): all media fields are optional and there's no server-side XOR / minimum-content check. `POST /api/posts` with `{ caption: '' }` succeeds and creates an empty post (frontend guards against it but a direct API caller can litter the DB). Recommend `if not (caption.strip() or image_url or video_url): raise 400`."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration29_web_posts.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/iteration_29.json"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (5/5 web flows)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! — verified working; password NOT changed.",
+  "seed_data_creation": "Founder now has extra TEST_iter29 posts (text-only from composer UI + a caption-only, image-only, video, feed-top and detail-flow rows from pytest, plus one image-inline and one video-inline post seeded via API for the UI regression). All prefixed TEST_iter29 — harmless, non-verified test accounts auto-purge on backend restart; founder-owned test posts persist. Founder posts_count is now higher than 14 (each POST /api/posts increments it).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New surfaces this iteration: web home composer (data-testid=post-composer, composer-caption, composer-submit, composer-add-photo, composer-add-video, composer-game-tag, composer-preview-image/video, composer-remove-media) and web PostDetail page at /posts/:id (data-testid=post-detail-<id>, post-detail-back, post-detail-like, post-detail-comment-input, post-detail-comment-submit, post-detail-comment-<commentId>). Profile PostsGrid tiles are Links with data-testid=post-tile-<id> and href=/posts/<id>. Backend CreatePostBody now accepts video_url/thumbnail_url/duration in addition to image_url. Cloudinary video URLs are rewritten by the backend to inject H.264 transforms (`/upload/f_mp4,vc_h264,q_auto/...`) so string-equality assertions on the raw URL will fail — match by suffix. Comments on /api/posts/{id}/comments use FLAT is_verified (already exercised in iteration 28). Founder verified badge renders as svg.lucide-badge-check.",
+  "rca of the issue": ""
+}
