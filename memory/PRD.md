@@ -191,6 +191,11 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Wired into the Home composer (`PostComposer.jsx`) and `/videos/new` (`VideoUpload.jsx`): videos >95MB auto-compress (phase "Compressing %") before upload; sub-threshold videos upload unchanged. This lets large videos upload successfully even on the Cloudinary Free plan (100MB cap) without a plan upgrade.
 - Caveat: MediaRecorder re-encodes in REAL TIME (a 10-min clip ≈ 10 min) and outputs WebM/MP4 — the only fully client-side option. Verified in-browser that captureStream+MediaRecorder works; testing agent iteration_31 confirmed 0 JS errors and no regression to normal uploads. The >95MB path can't be E2E-tested headlessly.
 
+### 2026-09 (part 13) — Fix iOS upload permission error + delete own posts (web)
+- **iOS Safari "not allowed by the user agent" error:** the web compressor called `canvas.captureStream()`/`MediaRecorder`, which throw `NotAllowedError` on iOS Safari and surfaced as a toast that broke uploads. Fix: `canCompressVideo()` now actively probes the APIs (returns false on iOS → skips compression) and `compressVideoToTarget()` wraps everything in try/catch to **fall back to uploading the original file** on any error. The permission error can no longer appear.
+- **Delete own posts on web (was missing entirely):** added an owner-only Trash button to feed `PostCard` (`post-delete-<id>`), feed `VideoCard` (`feed-video-delete-<id>`), and `PostDetail` (`post-detail-delete`) → `DELETE /api/posts/:id` (or `/api/videos/:id` for videos). Only shows for the current user's own content; backend enforces 403 for non-owners.
+- Verified: testing agent iteration_32 — backend 7/7 (delete + ownership 403 + regression) + frontend 5/5 (feed/detail delete, ownership guard, upload regression). iOS permission error not reproducible in headless Chromium; fix validated by code + no permission toast on normal uploads.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.

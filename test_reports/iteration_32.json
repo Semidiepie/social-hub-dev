@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 32 (WEB, backend+frontend) — Delete-own-post feature verified end-to-end. 7/7 backend pytest checks pass in /app/backend/tests/test_delete_posts_iter32.py: (1) DELETE /api/posts/:id as owner returns 200 + subsequent GET returns 404, (2) DELETE /api/posts/:id by NON-owner returns 403 (post remains), (3) DELETE /api/videos/:id as owner returns 200 + 2nd DELETE returns 404, (4) DELETE /api/videos/:id by NON-owner returns 403, (5) DELETE non-existent post returns 404, (6) DELETE without auth returns 401/403, (7) regression: create+like+comment+delete a text post via founder session still works. All 5 UI flows pass: (a) Home feed PostCard: 'post-delete-<id>' Trash button renders on OWN post, click -> confirm dialog accepted -> post removed from DOM and 'Post deleted' toast fires (screenshot captured, toast visible top-right); (b) Home feed VideoCard: 'feed-video-delete-<id>' Trash button renders on all 7 of the founder's own video posts (verified via querySelectorAll); (c) PostDetail (/posts/:id): 'post-detail-delete' shows on OWN post, click deletes -> navigate back -> post no longer visible in feed; (d) Ownership guard verified — after registering a fresh test_ui_* user and viewing a founder-owned post, ZERO 'post-delete-*' and ZERO 'post-detail-delete' testIDs render (feed + detail routes); (e) Regression: composing and posting a normal text post produces NO 'not allowed by the user agent' toast, NO 'Upload failed' toast, and 0 pageerrors captured. Founder password unchanged (Semi123! still logs in successfully at the end of the run).",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_delete_posts_iter32.py",
+    "/app/test_reports/pytest/iteration32_delete.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/backend/routes/videos.py:203 uses `v['author_id'] != current['id'] and not current.get('is_super_admin')` while /app/backend/server.py:1285 (posts) only checks the author. Inconsistent policy: super-admins can delete any user's video but NOT any user's post. Either extend the posts endpoint to allow super-admin override, or drop the super-admin bypass on videos — pick one and document.",
+    "/app/frontend/src/pages/Home.jsx:62-74 deletePost() branches on `post.type === 'video'` to hit /api/videos/:id vs /api/posts/:id. That's the only place the video-vs-post routing lives on the client. PostDetail.jsx:57 only ever calls /api/posts/:id, so if a user opens a VIDEO item's detail route (/posts/<video_id>) the delete will 404 or 403. In practice /posts/:id returns 404 for videos (they live in db.videos, not db.posts), so /posts/<video_id> never renders the detail page in the first place — but if that routing ever changes the delete button will silently break. Consider unifying under a single /api/feed-items/:id delete endpoint.",
+    "/app/frontend/src/pages/Home.jsx:63 and PostDetail.jsx:55 both use window.confirm() — works but is jarring in a design-system app. A shadcn AlertDialog would match the rest of the UI and be testable with data-testid selectors.",
+    "/app/backend/server.py:1290-1291 decrements posts_count only when type=='post' — matches how the counter is incremented on create, but there is no similar decrement for comments_count on the post's author or reaction cleanup for saved-posts (if that feature exists). Not blocking, worth a follow-up audit.",
+    "/app/frontend/src/pages/Home.jsx:101 `canDelete={user?.id && user.id === p.author?.id}` renders `canDelete` as the truthy user.id STRING (not a bool) when the check succeeds. React accepts it, but a stricter `Boolean(user?.id && ...)` would avoid an inadvertent string being spread to DOM if the prop is ever forwarded."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_delete_posts_iter32.py",
+    "/app/test_reports/iteration_32.json",
+    "/app/test_reports/pytest/iteration32_delete.xml"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (5/5 flows: feed post delete, feed video delete visibility, post-detail delete, ownership guard, regression)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! — login verified before and after the run (password unchanged). Test user test_ui_<ts>@example.com / TestPass123! registered via UI for the ownership-guard check (auto-purged on backend restart).",
+  "seed_data_creation": "Ephemeral posts created and deleted within the same run (TEST_iter32 UI delete-me, TEST_iter32 UI detail-delete, TEST_iter32 UI guard-check, TEST_iter32 regression check) — all removed at end of run via the same delete flow they were validating. No lingering TEST_iter32 posts left in the feed. Pytest module also created and immediately deleted its own TEST_iter32 items.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Stable selectors verified this iteration: [data-testid=post-composer], composer-caption, composer-submit, post-<id> (feed article), post-delete-<id> (feed trash btn on own posts, absent on others), feed-video-<id> (feed video article), feed-video-delete-<id> (feed video trash btn on own videos), post-detail-<id> (detail article), post-detail-delete (own-post trash on /posts/:id), post-detail-back. Delete UI uses window.confirm() — Playwright must attach a page.on('dialog', d.accept()) handler BEFORE clicking. Note: iOS-Safari captureStream/MediaRecorder NotAllowedError from videoCompress.js is UN-REPRODUCIBLE in headless Chromium (both APIs are present), so the try/catch fallback was validated by code inspection + verifying normal video uploads never surface a permission-denied toast; a real iOS Safari device would be needed for a true end-to-end proof of the fix. Backend delete endpoints: DELETE /api/posts/:id (owner-only, 403 otherwise, 404 for missing) and DELETE /api/videos/:id (owner OR super-admin, 403 otherwise) — asymmetry flagged in critical_code_review_comments.",
+  "rca of the issue": "N/A — no bug reproduced. Both fixes work: (1) delete UI (post-delete, feed-video-delete, post-detail-delete) present only for owner and calls the correct DELETE endpoint that already existed on the backend, with the 403 ownership guard confirmed server-side; (2) videoCompress.js regression path unchanged (small-video upload still succeeds without error toast). The only iOS-Safari-specific behavior of the compressor fix (try/catch around captureStream+MediaRecorder) cannot be exercised in the preview environment and was validated by static code review only."
+}

@@ -29,12 +29,24 @@ function pickMime() {
 }
 
 export function canCompressVideo() {
-  return (
-    typeof window !== "undefined" &&
-    typeof MediaRecorder !== "undefined" &&
-    typeof document !== "undefined" &&
-    !!document.createElement("canvas").captureStream
-  );
+  if (typeof window === "undefined" || typeof MediaRecorder === "undefined" || typeof document === "undefined") {
+    return false;
+  }
+  // Probe that canvas.captureStream + MediaRecorder actually work here.
+  // iOS Safari exposes captureStream but throws NotAllowedError on use.
+  try {
+    const c = document.createElement("canvas");
+    c.width = 16;
+    c.height = 16;
+    if (!c.captureStream) return false;
+    const stream = c.captureStream(1);
+    const rec = new MediaRecorder(stream);
+    rec.stop();
+    stream.getTracks().forEach((t) => t.stop());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -141,6 +153,10 @@ export async function compressVideoToTarget(file, { targetBytes = TARGET_MAX_BYT
       return { file, wasCompressed: false };
     }
     return { file: out, wasCompressed: true };
+  } catch {
+    // iOS Safari blocks canvas.captureStream()/MediaRecorder with a
+    // NotAllowedError. Never surface that — just upload the original file.
+    return { file, wasCompressed: false };
   } finally {
     URL.revokeObjectURL(url);
   }

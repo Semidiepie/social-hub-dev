@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, MessageCircle, Loader2, Play, Eye } from "lucide-react";
+import { Heart, MessageCircle, Loader2, Play, Eye, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, UsernameLine } from "@/components/Avatar";
@@ -59,6 +59,20 @@ export default function HomePage() {
     }
   };
 
+  const deletePost = async (post) => {
+    if (!window.confirm("Delete this post? This can't be undone.")) return;
+    const prev = items;
+    setItems((rows) => rows.filter((r) => r.id !== post.id));
+    try {
+      if (post.type === "video") await api.del(`/videos/${post.id}`);
+      else await api.del(`/posts/${post.id}`);
+      toast.success("Post deleted");
+    } catch (e) {
+      setItems(prev);
+      toast.error(e.message || "Failed to delete");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-2xl">
       <header className="mb-6">
@@ -81,9 +95,20 @@ export default function HomePage() {
             <div className="space-y-4">
               {items.map((p) =>
                 p.type === "video" ? (
-                  <VideoCard key={p.id} video={p} />
+                  <VideoCard
+                    key={p.id}
+                    video={p}
+                    canDelete={user?.id && user.id === p.author?.id}
+                    onDelete={() => deletePost(p)}
+                  />
                 ) : (
-                  <PostCard key={p.id} post={p} onToggleLike={() => toggleLike(p)} />
+                  <PostCard
+                    key={p.id}
+                    post={p}
+                    onToggleLike={() => toggleLike(p)}
+                    canDelete={user?.id && user.id === p.author?.id}
+                    onDelete={() => deletePost(p)}
+                  />
                 ),
               )}
             </div>
@@ -113,7 +138,7 @@ function EmptyState() {
   );
 }
 
-function PostCard({ post, onToggleLike }) {
+function PostCard({ post, onToggleLike, canDelete, onDelete }) {
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -137,6 +162,17 @@ function PostCard({ post, onToggleLike }) {
           <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
             #{post.game_tag}
           </span>
+        )}
+        {canDelete && (
+          <button
+            onClick={onDelete}
+            title="Delete post"
+            aria-label="Delete post"
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            data-testid={`post-delete-${post.id}`}
+          >
+            <Trash2 size={16} />
+          </button>
         )}
       </div>
 
@@ -180,7 +216,7 @@ function PostCard({ post, onToggleLike }) {
   );
 }
 
-function VideoCard({ video }) {
+function VideoCard({ video, canDelete, onDelete }) {
   const duration = formatDuration(video.duration);
   return (
     <article
@@ -204,6 +240,17 @@ function VideoCard({ video }) {
         <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
           Video
         </span>
+        {canDelete && (
+          <button
+            onClick={onDelete}
+            title="Delete video"
+            aria-label="Delete video"
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            data-testid={`feed-video-delete-${video.id}`}
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
       </div>
 
       {video.title && (

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Heart, Loader2, MessageCircle, Send, BadgeCheck } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, MessageCircle, Send, BadgeCheck, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,17 @@ export default function PostDetailPage() {
     } catch (e) {
       setPost((p) => ({ ...p, liked_by_me: liked, likes: p.likes + (liked ? 1 : -1) }));
       toast.error(e.message || "Failed");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this post? This can't be undone.")) return;
+    try {
+      await api.del(`/posts/${id}`);
+      toast.success("Post deleted");
+      navigate(-1);
+    } catch (e) {
+      toast.error(e.message || "Failed to delete");
     }
   };
 
@@ -105,6 +116,17 @@ export default function PostDetailPage() {
             <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
               #{post.game_tag}
             </span>
+          )}
+          {user?.id && post.author?.id === user.id && (
+            <button
+              onClick={handleDelete}
+              title="Delete post"
+              aria-label="Delete post"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              data-testid="post-detail-delete"
+            >
+              <Trash2 size={18} />
+            </button>
           )}
         </div>
 
