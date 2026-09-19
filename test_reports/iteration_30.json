@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 30 (WEB): validated the Cloudinary composer upload fix and the verified BadgeCheck on Profile. Backend pytest 7/7 pass (founder /api/users/{id}.is_verified=true, fresh test user is_verified=false, /auth/me carries is_verified, POST /api/posts accepts image_url/video_url composer payloads, /api/videos still accepts small videos, and Cloudinary unsigned preset accepts a direct single-shot POST). Web E2E: (1) Home composer photo upload — 7.5KB sample.jpg → composer-preview-image → Post → 'Posted!' toast; (2) Home composer video upload — 8.7MB sample.mp4 via the hidden video input (accept=video/*) → composer-preview-video with NO 'Upload network error' toast → Post → 'Posted!' toast → new feed card renders inline <video src=cloudinary/dog.mp4 controls>; (3) Verified badge: founder /profile header shows lucide-badge-check (count=1) next to 'semidiepie'; founder via /user/<founderId> also shows the badge (count=1); a freshly-registered test_i30_* user's /user/<id> header shows NO badge (count=0); (4) REGRESSION /videos/new — same 8.7MB sample.mp4 uploads via the unchanged single-shot path, 'Video uploaded' toast fires and the preview + remove button appear. Founder password intact (final 200 OK on Semi123! login).",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration30_verified_and_uploads.py",
+    "/app/test_reports/pytest/iteration30.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/frontend/src/lib/cloudinary.js: single postForm() call uses XMLHttpRequest with `xhr.onerror = () => reject(new Error('Upload network error'))`. That's the exact toast users reported before this iteration; it still fires when a chunked leg fails. Consider surfacing the chunk index (`Error('Upload network error on chunk N/M')`) so the next bug report is diagnosable. The 90MB threshold + 20MB chunk size are reasonable, but there's no per-chunk retry — a single flaky chunk on a 500MB upload throws away the entire session. Recommend at least one retry per chunk with exponential backoff.",
+    "/app/frontend/src/lib/cloudinary.js: `uploadChunked` returns only the LAST chunk's response, which is the one Cloudinary flags as 'done' with full metadata — this is correct — but `secure_url` presence is only asserted in the single-shot branch (`if (!data.secure_url) throw...`). If the chunked path ever returns a partial 200 without secure_url, callers will silently create a post with `undefined` video_url. Suggest moving that guard to a shared unwrap step.",
+    "/app/frontend/src/components/PostComposer.jsx: `res.secure_url.replace(/\\.(mp4|mov|webm|m4v)$/i, '.jpg')` for the video thumbnail — same brittle regex flagged in iter29. Cloudinary will happily accept .avi/.mkv/.3gp uploads and this regex leaves the extension intact, producing a 404 thumbnail. Prefer building the poster URL from the Cloudinary public_id (returned in the same response) with resource_type=video, format=jpg.",
+    "/app/frontend/src/pages/VideoUpload.jsx line 50: `if (result.thumbnail_url) setThumbnailUrl(result.thumbnail_url)` — Cloudinary's video upload response doesn't include a `thumbnail_url` field; it exposes `eager[]` or requires the public_id transform. This branch is effectively dead code today, so VideoUpload posts are always going out with `thumbnail_url: null` (which is why the Profile grid shows blank tiles for uploaded videos). Compute it client-side from public_id or ask backend to derive it.",
+    "/app/backend/server.py RegisterBody (line 98-102): `password: str = Field(min_length=6)` — only 6 chars, no complexity checks. Login uses bcrypt so brute-forcing at 6 chars alphanumeric is still practical. Consider bumping to 8 with at least one letter+digit. Also `username: str = Field(min_length=3, max_length=20)` is fine but there's no regex — a username like `..` or `@@@` would pass validation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration30_verified_and_uploads.py",
+    "/app/test_reports/iteration_30.json",
+    "/app/test_reports/pytest/iteration30.xml"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (4/4 web flows: photo upload, video upload, verified badge across 3 profile shapes, /videos/new regression)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! — verified working; password NOT changed (final 200 OK on login post-test).",
+  "seed_data_creation": "Founder now has 2 additional TEST_iter30 posts from the composer UI (1 image with sample.jpg, 1 video with dog.mp4-derived URL) plus 3 pytest-created posts/video (TEST_iter30 composer video, TEST_iter30 composer image, TEST_iter30 regression). One transient test_i30_782987 user was registered for the unverified-badge test — auto-purged on next backend restart. Founder posts_count moved from 14 (iter29) to 23.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug context: Cloudinary composer video upload was fixed by chunking >90MB in /app/frontend/src/lib/cloudinary.js — the small-file (<90MB) single-shot path is unchanged and works end-to-end (validated with an 8.7MB dog.mp4 through both the home composer and /videos/new). The chunked >90MB path was NOT exercised via UI (would require creating a 90MB+ dummy video); main agent validated it via curl against the same unsigned preset. Verified badge on Profile: the lucide-badge-check svg renders in the <header> next to <h1> whenever `target.is_verified === true`. On preview I confirmed: founder /profile → 1 badge, founder /user/<founderId> → 1 badge, fresh test_i30_* user /user/<id> → 0 badges. UserPublic in /app/backend/server.py exposes is_verified. Test selectors used: [data-testid=\"post-composer\"], composer-preview-image, composer-preview-video, composer-submit, composer-caption, [data-testid^=\"profile-\"], and CSS `header svg.lucide-badge-check` for the badge (there is no dedicated data-testid on the badge svg itself — main agent may want to add one for future automation).",
+  "rca of the issue": "Bug 1 (Upload Network Fail on video): Cloudinary's unsigned single-shot upload silently drops connections around ~100MB. The old uploadToCloudinary did a single XHR POST; XHR.onerror fired -> `Upload network error` toast. Fix in /app/frontend/src/lib/cloudinary.js: files >90MB now stream in 20MB Content-Range chunks with a shared X-Unique-Upload-Id, and the last chunk returns the final response (secure_url + duration). Confirmed no regression on small files (single-shot path unchanged). Bug 2 (Verified badge missing): could NOT reproduce in preview. Backend returns is_verified=true for the founder on /api/users/{id} and /auth/me; Profile.jsx line 104 renders <BadgeCheck> when target.is_verified. Badge visibly renders on /profile and on /user/<founderId>, and absent on the non-verified test user. Most likely the reporter was on a stale prod build — recommend cache-bust/redeploy prod."
+}

@@ -176,6 +176,11 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **Clickable profile posts:** web Profile `PostsGrid` tiles now link to a new **post detail page** `/posts/:id` (`pages/PostDetail.jsx`, rendered inside the shell) with media, caption, like, and comments (list + add, verified badge). Video posts show a play badge on the tile.
 - Verified: testing agent iteration_29 — backend 7/7 + web composer/feed/post-detail/like/comment flows all pass.
 
+### 2026-09 (part 10) — Fix: large video upload from web + verified badge on profile
+- **Web video upload "Upload Network Fail":** the Cloudinary helper (`lib/cloudinary.js`) did a single POST which fails for large videos (>~100MB single-shot unsigned limit). Now **chunks files > 90MB** via `Content-Range` + `X-Unique-Upload-Id` (validated against the unsigned preset); small files keep the single-shot path. Used by both the Home composer and `/videos/new`.
+- **Verified badge on profile:** confirmed the web Profile header renders `BadgeCheck` for verified users (backend `/api/users/{id}` returns `is_verified`); not reproducible in preview → the production report is a stale build (needs redeploy).
+- Verified: testing agent iteration_30 — backend 7/7 + composer video/photo upload + verified badge on own/other/non-verified profiles all pass.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.
