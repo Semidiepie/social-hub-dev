@@ -8,6 +8,10 @@ const UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET || "";
 
 export const cloudinaryAvailable = !!(CLOUD_NAME && UPLOAD_PRESET);
 
+// Hard client-side ceiling. Actual max also depends on the Cloudinary plan's
+// per-file limit (Free plans cap far lower); large files upload in chunks.
+export const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024; // 1GB
+
 // Cloudinary's single-shot unsigned upload caps around 100MB; anything larger
 // must be sent in chunks via Content-Range. We chunk anything over ~90MB (and
 // always chunk videos over the chunk size) so large clips upload reliably.

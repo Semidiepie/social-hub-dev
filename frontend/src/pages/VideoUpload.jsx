@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { uploadToCloudinary, cloudinaryAvailable } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
 
 export default function VideoUploadPage() {
   const navigate = useNavigate();
@@ -33,6 +33,10 @@ export default function VideoUploadPage() {
   const onFile = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      toast.error("Video is too large. Max size is 1GB.");
+      return;
+    }
     setFile(f);
     if (!cloudinaryAvailable) {
       toast.error("Uploads aren't configured. Paste a video URL instead.");

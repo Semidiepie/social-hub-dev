@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
-import { uploadToCloudinary, cloudinaryAvailable } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
 import { toast } from "sonner";
 
 // Homepage composer: create a text post with an optional photo OR video.
@@ -14,6 +14,7 @@ export function PostComposer({ onPosted }) {
   const [gameTag, setGameTag] = useState("");
   const [media, setMedia] = useState(null); // { kind: 'image'|'video', url, thumbnail_url }
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [posting, setPosting] = useState(false);
   const photoRef = useRef(null);
   const videoRef = useRef(null);
@@ -25,9 +26,16 @@ export function PostComposer({ onPosted }) {
     e.target.value = "";
     if (!file) return;
     if (!cloudinaryAvailable) return toast.error("Uploads aren't configured.");
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return toast.error("File is too large. Max size is 1GB.");
+    }
     setUploading(true);
+    setProgress(0);
     try {
-      const res = await uploadToCloudinary(file, { resourceType: kind === "video" ? "video" : "image" });
+      const res = await uploadToCloudinary(file, {
+        resourceType: kind === "video" ? "video" : "image",
+        onProgress: (f) => setProgress(Math.round(f * 100)),
+      });
       setMedia({
         kind,
         url: res.secure_url,
@@ -134,7 +142,11 @@ export function PostComposer({ onPosted }) {
               data-testid="composer-game-tag"
               className="h-9 w-32 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-primary/60"
             />
-            {uploading && <Loader2 size={16} className="animate-spin text-primary" />}
+            {uploading && (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-primary" data-testid="composer-progress">
+                <Loader2 size={16} className="animate-spin" /> Uploading {progress}%
+              </span>
+            )}
             <Button
               onClick={submit}
               disabled={posting || uploading || (!caption.trim() && !media)}

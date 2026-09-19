@@ -181,6 +181,11 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **Verified badge on profile:** confirmed the web Profile header renders `BadgeCheck` for verified users (backend `/api/users/{id}` returns `is_verified`); not reproducible in preview → the production report is a stale build (needs redeploy).
 - Verified: testing agent iteration_30 — backend 7/7 + composer video/photo upload + verified badge on own/other/non-verified profiles all pass.
 
+### 2026-09 (part 11) — Large uploads (up to 1GB) readiness
+- Web + mobile already chunk large videos (Cloudinary chunked upload, Content-Range/X-Unique-Upload-Id). Added a **1GB client guard + upload progress** to the web Home composer, and a 1GB guard to `/videos/new`.
+- **IMPORTANT (account, not code):** Cloudinary per-file limits — Video: Free 100MB / Plus 2GB / Advanced 4GB; Image: Free 10MB / Plus 20MB / Advanced 40MB. **1GB videos require upgrading the Cloudinary plan to Plus or higher.** 1GB photos are NOT supported by Cloudinary's image pipeline on any plan (max 40MB). The app code is ready; the real cap is the plan.
+- Not E2E-tested (no 1GB test file; current plan caps at 100MB). Chunked protocol previously validated via curl.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.
