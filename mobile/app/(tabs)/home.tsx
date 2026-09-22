@@ -17,6 +17,7 @@ import { colors, spacing } from "@/src/theme";
 import { StoryBar } from "@/src/components/StoryBar";
 import { PostCard } from "@/src/components/PostCard";
 import { VideoFeedCard } from "@/src/components/VideoFeedCard";
+import { ReelFeedCard } from "@/src/components/ReelFeedCard";
 import { CommentSheet } from "@/src/components/CommentSheet";
 import {
   CONTENT_MAX_WIDTH,
@@ -131,6 +132,8 @@ export default function Home() {
           renderItem={({ item }) =>
             item.type === "video" ? (
               <VideoFeedCard post={item} />
+            ) : item.type === "reel" ? (
+              <ReelFeedCard post={item} />
             ) : (
               <PostCard
                 post={item}

@@ -1051,19 +1051,23 @@ async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
     blocked = await blocked_ids_for(viewer_id)
 
     post_query: dict = {"type": "post"}
+    reel_query: dict = {"type": "reel"}
     video_query: dict = {"visibility": "public"}
     if blocked:
         post_query["author_id"] = {"$nin": list(blocked)}
+        reel_query["author_id"] = {"$nin": list(blocked)}
         video_query["author_id"] = {"$nin": list(blocked)}
 
     post_rows = await db.posts.find(post_query, {"_id": 0}).sort("created_at", -1).to_list(50)
+    reel_rows = await db.posts.find(reel_query, {"_id": 0}).sort("created_at", -1).to_list(50)
     video_rows = await db.videos.find(video_query, {"_id": 0}).sort("created_at", -1).to_list(50)
 
     items = [await serialize_post(p, viewer_id) for p in post_rows]
+    items += [await serialize_post(r, viewer_id) for r in reel_rows]
     items += [await serialize_video_for_feed(v, viewer_id) for v in video_rows]
-    # Interleave both streams chronologically (newest first).
+    # Interleave all streams chronologically (newest first).
     items.sort(key=lambda x: x["created_at"], reverse=True)
-    return items[:60]
+    return items[:80]
 
 
 async def blocked_ids_for(user_id: Optional[str]) -> set[str]:

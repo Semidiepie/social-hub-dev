@@ -200,6 +200,13 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Homepage feed `PostCard` comment button was previously a static, non-functional count. Now it toggles an inline comment section (`post-comment-toggle-<id>` → `post-comments-<id>`) that fetches `GET /api/posts/:id/comments`, shows an input (`post-comment-input-<id>`) + submit (`post-comment-submit-<id>`), and posts via `POST /api/posts/:id/comments`. Comments render author name + verified badge; live count updates on the card. Non-signed-in users see a disabled "Sign in to comment" input.
 - Reuses existing backend comment endpoints (no backend change). Self-verified via preview: comment posted, count updated to 1, verified badge shown.
 
+### 2026-06 (part 15) — Reels in the Home feed (web + mobile)
+- `GET /api/feed` now also merges **reels** (`db.posts` docs with `type:"reel"`) alongside posts + long-form videos, interleaved newest-first (cap raised 60→80). `serialize_post` already emits `type:"reel"`; block-filter applies to all three streams.
+- **Web** (`pages/Home.jsx`): new `ReelCard` (`feed-reel-<id>`) — "Reel" badge, portrait 9/16 thumbnail (`feed-reel-thumb-<id>`) with play overlay, read-only view/like/comment stats; tapping opens fullscreen `/reels/:id`. Owner delete via `feed-reel-delete-<id>` (`DELETE /api/posts/:id`).
+- **Mobile** (`src/components/ReelFeedCard.tsx`, branched in `app/(tabs)/home.tsx`): matching card with "REEL" pill + portrait thumb (`feed-reel-thumb-<id>`); tapping opens the fullscreen reels player via `/(tabs)/reels?startId=<id>`.
+- Verified: testing agent iteration_33 — backend 5/5 (feed includes reels, fields, sort/cap 80, block filter, anon) + web (3 reel cards, nav to /reels/:id, post/video regression) + mobile (reel cards, nav to reels player, regression), parity confirmed.
+- Minor parity gap (non-blocking): mobile reel/video feed cards have no owner-delete affordance (matches existing mobile video card behavior); web has it. Could add later.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.

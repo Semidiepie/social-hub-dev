@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 33 (BOTH platforms, backend+frontend) — Reels added to the home feed on backend, web and mobile. All checks pass. BACKEND: 5/5 pytest pass in /app/backend/tests/test_iteration33_feed_reels.py — (1) /api/feed returns items of type 'post', 'video' AND 'reel'; (2) a freshly-created reel is found in /api/feed with expected fields video_url/thumbnail_url/likes/comments_count/views/author + author.username; (3) feed sorted by created_at desc and length <= 80; (4) block-filtering: after a fresh viewer blocks the founder, the founder's reel disappears from that viewer's /api/feed; (5) anonymous (no auth) /api/feed also contains reels. WEB (founder auth via localStorage 'postmeplex.token'): home feed shows 3 reel cards ([data-testid=feed-reel-<id>]) each with the 'Reel' badge and portrait thumb ([data-testid=feed-reel-thumb-<id>]); tapping feed-reel-thumb navigates to /reels/<id> and ReelWatch loads with the video player + caption visible. Regressions verified: 25 post articles ([data-testid=post-<id>]) still render with inline comment toggle ([data-testid=post-comment-toggle-<id>]), and 7 long-form video cards ([data-testid=feed-video-<id>]) still render. MOBILE (Expo web preview at social-hub-dev-4.expo.preview.emergentagent.com): home feed rendered 2 reels via ReelFeedCard ([data-testid=feed-reel-<id>], thumb [data-testid=feed-reel-thumb-<id>]) each with the 'REEL' pill; tapping the thumb navigated to /reels?startId=<id> and the fullscreen reels player mounted with all 3 reels stacked ([data-testid=reel-<id>], reel-tap-<id>, reel-like-<id>, reel-comment-<id>, reel-share-<id>, reel-creator-<id>) and correctly focused the tapped reel. Regressions: post cards still render (post-card-<id> present), and 5 feed-video cards render. Parity: identical reel set from /api/feed on both surfaces (ids ba16b3e2-…, 18c7eb40-…), badge text differs by design ('Reel' web vs 'REEL' mobile) — matches spec.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration33_feed_reels.py",
+    "/app/test_reports/pytest/iteration33_feed_reels.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:69-75 uses `allow_origins=['*']` together with `allow_credentials=True`. Per CORS spec browsers reject wildcard + credentials, and Starlette therefore echoes the request Origin back — which currently works only because the Cloudflare/edge ingress is REWRITING Access-Control-Allow-Origin to a single fixed cluster host (https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud). Any browser call from another origin (e.g. the Expo web preview host https://social-hub-dev-4.expo.preview.emergentagent.com) is CORS-blocked. Not a functional bug in production (native apps and same-origin web are unaffected) but blocks testing/parity-debug from the Expo web preview — I had to route.fetch()-rewrite the ACAO header to complete mobile testing. Recommend an explicit allow_origin_regex covering both preview.emergentagent.com hosts.",
+    "/app/backend/server.py:1061-1063 issues three sequential db.find().to_list(50) calls (posts, reels, videos) then Python-side sorts + trims to 80. Fine for now, but at 50+50+50 = up to 150 docs interleaved-then-trimmed, older items from one collection can be silently dropped when another collection dominates the window. Consider a single $unionWith aggregation with a global sort+limit, or per-source cursor pagination, to make ordering deterministic and paginate-friendly.",
+    "/app/backend/server.py:1053-1058 the reel query is `{type: 'reel'}` with no visibility flag, unlike videos which enforce `visibility='public'`. If reels ever gain a private/draft flag, they will leak into /api/feed until this is patched.",
+    "/app/frontend/src/pages/Home.jsx:104 ReelCard branch uses `p.type === 'reel'` — matches serializer. But the enclosing `.map` for the feed only guards `canDelete` for post/video; reels also get a delete button (`feed-reel-delete-<id>`) rendered only when `user?.id === reel.author?.id`. Confirmed present on founder-authored reels — good. Just note this asymmetry: web has feed-reel-delete-<id> but mobile ReelFeedCard has NO delete affordance, so a user can delete a reel from the web home feed but not from the mobile home feed. If parity is desired, add a delete/menu control to ReelFeedCard.tsx.",
+    "/app/mobile/src/components/ReelFeedCard.tsx renders a portrait thumb (aspectRatio 9/16, width 60%). At 375px width that's a ~225x400 tap target which is fine, but there's no visible border/shadow between adjacent reels and a video card — consider marginBottom or a divider so users can distinguish cards while flick-scrolling.",
+    "/app/mobile/app/(tabs)/home.tsx dispatch on `item.type === 'reel'` — if the backend ever emits an unknown type (e.g. a future 'live') the current code falls through to the default renderer with no warning; adding a `console.warn(unknown type)` dev-mode branch would surface silent regressions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration33_feed_reels.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/iteration_33.json",
+    "/app/test_reports/pytest/iteration33_feed_reels.xml"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% web (3 reels rendered + Reel badge + thumb->/reels/<id> nav + post/video regression) + 100% mobile (2 reels rendered + REEL pill + thumb->/reels?startId=<id> nav + post/video regression)"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! — verified working (POST /api/auth/login returned 200 with access_token, password unchanged before + after run).",
+  "seed_data_creation": "One reel POST /api/reels with caption 'TEST_iter33 reel-in-feed' created by the pytest module fixture; two extra reels were created across the test run (module fixture ran twice while iterating on the block-filter test). All are founder-owned and non-destructive; safe to leave. One ephemeral tec_i33v* viewer account also registered to prove block-filtering — auto-purged on next backend restart.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Stable selectors verified for the home feed this iteration:  WEB: [data-testid=feed-reel-<id>] (root ReelCard), feed-reel-thumb-<id> (tapping this navigates to /reels/<id>), feed-reel-delete-<id> (only on own reels), the 'Reel' badge is a plain <span> child of the card. Post/video regression selectors unchanged: post-<id> (article), post-comment-toggle-<id>, feed-video-<id>, feed-video-delete-<id>. MOBILE: feed-reel-<id> (root ReelFeedCard), feed-reel-thumb-<id> -> /(tabs)/reels?startId=<id>, feed-reel-author-<id>, plus post-card-<id> and feed-video-<id> for the other feed types. The fullscreen reels screen exposes reel-<id>, reel-tap-<id>, reel-like-<id>, reel-comment-<id>, reel-share-<id>, reel-creator-<id>. IMPORTANT: The preview environment BLOCKS CORS between the Expo web preview host (…expo.preview.emergentagent.com) and the backend host (…preview.emergentagent.com) because the edge/ingress hardcodes ACAO to a cluster host regardless of the request origin. To test the Expo web preview end-to-end I had to wrap page.route('**/api/**', ...) and rewrite the Access-Control-Allow-Origin header on every response. This is an environment-only workaround — production/native mobile has no CORS. Follow-up recommendation captured under critical_code_review_comments. Auth: mobile web preview stores the token in localStorage as JSON.stringify('<jwt>') because AsyncStorage's web shim JSON-encodes values. Web stores raw string at localStorage['postmeplex.token'] (no JSON wrapping).",
+  "rca of the issue": "N/A — no regression found. The reel-in-feed feature works as specified on both surfaces. Root-cause note for the mobile-preview CORS gate: the FastAPI CORS config is technically invalid (`allow_origins=['*']` with `allow_credentials=True`), which forces the edge/ingress into an origin-echo fallback that happens to hardcode a single cluster host. Fix by switching to an explicit origin regex or allow-list."
+}

@@ -101,6 +101,13 @@ export default function HomePage() {
                     canDelete={user?.id && user.id === p.author?.id}
                     onDelete={() => deletePost(p)}
                   />
+                ) : p.type === "reel" ? (
+                  <ReelCard
+                    key={p.id}
+                    reel={p}
+                    canDelete={user?.id && user.id === p.author?.id}
+                    onDelete={() => deletePost(p)}
+                  />
                 ) : (
                   <PostCard
                     key={p.id}
@@ -406,6 +413,95 @@ function VideoCard({ video, canDelete, onDelete }) {
         <span className="inline-flex items-center gap-1.5">
           <MessageCircle size={18} />
           {formatNumber(video.comments_count)}
+        </span>
+      </footer>
+    </article>
+  );
+}
+
+function ReelCard({ reel, canDelete, onDelete }) {
+  return (
+    <article
+      className="overflow-hidden rounded-2xl border border-border bg-card"
+      data-testid={`feed-reel-${reel.id}`}
+    >
+      <div className="flex items-center gap-3 px-4 pt-4">
+        {reel.author ? (
+          <Link to={`/user/${reel.author.id}`}>
+            <Avatar src={reel.author.avatar_url} size={40} />
+          </Link>
+        ) : (
+          <Avatar size={40} />
+        )}
+        <div className="min-w-0 flex-1">
+          <UsernameLine user={reel.author} className="text-sm" />
+          <div className="text-xs text-muted-foreground">
+            @{reel.author?.username} · {timeAgo(reel.created_at)}
+          </div>
+        </div>
+        <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
+          Reel
+        </span>
+        {canDelete && (
+          <button
+            onClick={onDelete}
+            title="Delete reel"
+            aria-label="Delete reel"
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            data-testid={`feed-reel-delete-${reel.id}`}
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
+      </div>
+
+      {reel.caption && (
+        <p className="px-4 pt-3 text-[15px] leading-relaxed">{reel.caption}</p>
+      )}
+
+      <Link
+        to={`/reels/${reel.id}`}
+        className="group relative mx-auto mt-3 block aspect-[9/16] w-full max-w-[340px] overflow-hidden bg-black"
+        data-testid={`feed-reel-thumb-${reel.id}`}
+      >
+        {reel.thumbnail_url ? (
+          <img
+            src={reel.thumbnail_url}
+            alt={reel.caption || "Reel"}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+        ) : reel.video_url ? (
+          <video
+            src={reel.video_url}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-secondary">
+            <Play className="text-muted-foreground" size={40} />
+          </div>
+        )}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 transition-colors group-hover:bg-black/30">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/90 shadow-lg">
+            <Play className="ml-0.5 fill-white text-white" size={26} />
+          </span>
+        </div>
+      </Link>
+
+      <footer className="flex items-center gap-5 px-4 py-3 text-sm font-semibold text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <Eye size={18} />
+          {formatNumber(reel.views)}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Heart size={18} className={reel.liked_by_me ? "fill-primary text-primary" : ""} />
+          {formatNumber(reel.likes)}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <MessageCircle size={18} />
+          {formatNumber(reel.comments_count)}
         </span>
       </footer>
     </article>
