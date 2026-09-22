@@ -8,15 +8,27 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radii } from "@/src/theme";
 import { FeedItem } from "@/src/api/client";
 import { formatCount, timeAgo } from "@/src/utils/format";
+import { useAuth } from "@/src/context/AuthContext";
+import { OwnerContentMenu } from "@/src/components/OwnerContentMenu";
 
 const FALLBACK_AVATAR =
   "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop";
 const FALLBACK_THUMB =
   "https://images.pexels.com/photos/6489045/pexels-photo-6489045.jpeg?auto=compress&cs=tinysrgb&w=1080";
 
-export function ReelFeedCard({ post }: { post: FeedItem }) {
+export function ReelFeedCard({
+  post,
+  onChange,
+  onDeleted,
+}: {
+  post: FeedItem;
+  onChange?: (updated: FeedItem) => void;
+  onDeleted?: (id: string) => void;
+}) {
   const router = useRouter();
+  const { user } = useAuth();
   const author = post.author;
+  const isOwn = !!user && !!author && user.id === author.id;
 
   return (
     <View style={styles.card} testID={`feed-reel-${post.id}`}>
@@ -45,6 +57,9 @@ export function ReelFeedCard({ post }: { post: FeedItem }) {
           <Ionicons name="play" size={10} color={colors.primary} />
           <Text style={styles.reelPillText}>REEL</Text>
         </View>
+        {isOwn && (
+          <OwnerContentMenu item={post} onChange={onChange} onDeleted={onDeleted} />
+        )}
       </View>
 
       {!!post.caption && (

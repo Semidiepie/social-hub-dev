@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck } from "lucide-react";
+import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatNumber, timeAgo } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
 
 export default function VideoWatchPage() {
@@ -18,6 +19,7 @@ export default function VideoWatchPage() {
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState("");
   const [posting, setPosting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const viewFiredRef = useRef(false);
 
   // Back returns to wherever the user came from (profile/discover) at the same
@@ -57,6 +59,17 @@ export default function VideoWatchPage() {
     if (viewFiredRef.current) return;
     viewFiredRef.current = true;
     api.post(`/videos/${id}/view`).catch(() => {});
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this video? This can't be undone.")) return;
+    try {
+      await api.del(`/videos/${id}`);
+      toast.success("Video deleted");
+      goBack();
+    } catch (e) {
+      toast.error(e.message || "Failed to delete");
+    }
   };
 
   const toggleLike = async () => {
@@ -157,6 +170,26 @@ export default function VideoWatchPage() {
                 <Heart size={16} className={video.liked_by_me ? "fill-current" : ""} />
                 {formatNumber(video.likes)}
               </Button>
+              {user?.id && video.author?.id === user.id && (
+                <>
+                  <Button
+                    onClick={() => setEditing(true)}
+                    variant="outline"
+                    className="gap-2"
+                    data-testid="video-edit-btn"
+                  >
+                    <Pencil size={16} /> Edit
+                  </Button>
+                  <Button
+                    onClick={handleDelete}
+                    variant="outline"
+                    className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+                    data-testid="video-delete-btn"
+                  >
+                    <Trash2 size={16} /> Delete
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -256,6 +289,13 @@ export default function VideoWatchPage() {
           </div>
         </aside>
       </div>
+
+      <EditContentModal
+        item={{ ...video, type: "video" }}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={(updated) => setVideo((v) => ({ ...v, ...updated }))}
+      />
     </div>
   );
 }

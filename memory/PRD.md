@@ -207,6 +207,14 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Verified: testing agent iteration_33 — backend 5/5 (feed includes reels, fields, sort/cap 80, block filter, anon) + web (3 reel cards, nav to /reels/:id, post/video regression) + mobile (reel cards, nav to reels player, regression), parity confirmed.
 - Minor parity gap (non-blocking): mobile reel/video feed cards have no owner-delete affordance (matches existing mobile video card behavior); web has it. Could add later.
 
+### 2026-06 (part 16) — Edit + Delete for posts, reels & videos (web + mobile)
+- **Backend:** new `PUT /api/posts/{id}` (owner-only) edits caption + game_tag for posts AND reels. Existing `PUT /api/videos/{id}` covers full video edit (title, description, category, tags, visibility, thumbnail_url). Delete endpoints already owner-only.
+- **Edit scope (agreed):** posts/reels = caption + game tag (media unchanged); videos = title/description/category/tags + REPLACE THUMBNAIL (video file unchanged).
+- **Web:** reusable `components/EditContentModal.jsx` (post/reel vs video forms; video form uploads a new thumbnail to Cloudinary). Owner Edit(✏️)+Delete(🗑) wired on Home `PostCard`/`ReelCard`/`VideoCard`, `PostDetail`, `ReelWatch`, `VideoWatch`. Also added a **custom thumbnail picker to the web VideoUpload page** (`video-thumb-upload-btn`) — previously web upload had no way to set a thumbnail (mobile upload already did).
+- **Mobile:** reusable `components/EditContentSheet.tsx` + `components/OwnerContentMenu.tsx` (three-dots → Edit/Delete). Wired on `PostCard` menu, `ReelFeedCard`, `VideoFeedCard`, the reels player `(tabs)/reels.tsx` action rail, and `video/[id]` watch (Edit + existing Delete). Mobile video upload already had a thumbnail picker.
+- Delete parity now complete on both surfaces for all three content types; non-owners see no controls and backend enforces 403.
+- Verified: testing agent iteration_34 — backend 11/11, web 100%, mobile 100%, ownership gating confirmed. Non-blocking follow-ups: super-admin edit-bypass asymmetry, EditContentModal a11y description + cancel-state reset, web thumbnail size/MIME guard.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.

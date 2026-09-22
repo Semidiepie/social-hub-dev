@@ -21,6 +21,7 @@ import { api, VideoItem, VideoComment } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radii } from "@/src/theme";
 import { formatCount } from "@/src/utils/format";
+import { EditContentSheet } from "@/src/components/EditContentSheet";
 
 function formatDuration(sec: number | null | undefined): string {
   if (!sec || sec <= 0) return "0:00";
@@ -53,6 +54,7 @@ export default function WatchVideoScreen() {
   const [descExpanded, setDescExpanded] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [sending, setSending] = useState(false);
+  const [editing, setEditing] = useState(false);
   const viewRegistered = useRef(false);
 
   const player = useVideoPlayer(video?.video_url ?? "", (p) => {
@@ -256,6 +258,16 @@ export default function WatchVideoScreen() {
               </TouchableOpacity>
               {isOwner && (
                 <TouchableOpacity
+                  style={styles.actionPill}
+                  onPress={() => setEditing(true)}
+                  testID="watch-edit"
+                >
+                  <Ionicons name="create-outline" size={18} color={colors.textPrimary} />
+                  <Text style={styles.actionText}>Edit</Text>
+                </TouchableOpacity>
+              )}
+              {isOwner && (
+                <TouchableOpacity
                   style={[styles.actionPill, styles.dangerPill]}
                   onPress={deleteVideo}
                   testID="watch-delete"
@@ -411,6 +423,13 @@ export default function WatchVideoScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <EditContentSheet
+        item={editing ? ({ ...video, type: "video" } as any) : null}
+        visible={editing}
+        onClose={() => setEditing(false)}
+        onSaved={(u) => setVideo((cur) => (cur ? { ...cur, ...(u as any) } : cur))}
+      />
     </SafeAreaView>
   );
 }

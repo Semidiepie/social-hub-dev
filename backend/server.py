@@ -142,6 +142,11 @@ class CreateReelBody(BaseModel):
     duration: Optional[float] = None  # seconds
 
 
+class UpdatePostBody(BaseModel):
+    caption: Optional[str] = None
+    game_tag: Optional[str] = None
+
+
 class CreateStoryBody(BaseModel):
     media_url: str
     media_type: Literal["image", "video"] = "image"
@@ -1332,6 +1337,27 @@ async def get_post(post_id: str, viewer: Annotated[Optional[dict], Depends(get_o
         raise HTTPException(404, "Post not found")
     viewer_id = viewer["id"] if viewer else None
     return await serialize_post(post, viewer_id)
+
+
+@app.put("/api/posts/{post_id}")
+async def update_post(post_id: str, body: UpdatePostBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Edit the caption / game tag of your own post or reel. Media stays the same."""
+    post = await db.posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post["author_id"] != current["id"]:
+        raise HTTPException(403, "Not your post")
+    updates: dict = {}
+    if body.caption is not None:
+        updates["caption"] = body.caption.strip()
+    if body.game_tag is not None:
+        tag = body.game_tag.strip()
+        updates["game_tag"] = tag or None
+    if updates:
+        updates["updated_at"] = now()
+        await db.posts.update_one({"id": post_id}, {"$set": updates})
+    fresh = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    return await serialize_post(fresh, current["id"])
 
 
 @app.delete("/api/posts/{post_id}")

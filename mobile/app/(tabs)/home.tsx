@@ -131,9 +131,21 @@ export default function Home() {
           }
           renderItem={({ item }) =>
             item.type === "video" ? (
-              <VideoFeedCard post={item} />
+              <VideoFeedCard
+                post={item}
+                onChange={(updated) =>
+                  setFeed((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+                }
+                onDeleted={(id) => setFeed((prev) => prev.filter((p) => p.id !== id))}
+              />
             ) : item.type === "reel" ? (
-              <ReelFeedCard post={item} />
+              <ReelFeedCard
+                post={item}
+                onChange={(updated) =>
+                  setFeed((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+                }
+                onDeleted={(id) => setFeed((prev) => prev.filter((p) => p.id !== id))}
+              />
             ) : (
               <PostCard
                 post={item}

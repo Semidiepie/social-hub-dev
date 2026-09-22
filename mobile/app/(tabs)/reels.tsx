@@ -22,6 +22,8 @@ import { api, FeedItem } from "@/src/api/client";
 import { colors, spacing, radii } from "@/src/theme";
 import { formatCount } from "@/src/utils/format";
 import { CommentSheet } from "@/src/components/CommentSheet";
+import { useAuth } from "@/src/context/AuthContext";
+import { OwnerContentMenu } from "@/src/components/OwnerContentMenu";
 
 const FALLBACK_THUMB =
   "https://images.pexels.com/photos/6489045/pexels-photo-6489045.jpeg?auto=compress&cs=tinysrgb&w=1080";
@@ -34,9 +36,12 @@ interface ReelItemProps {
   tabBarSpace: number;
   onChange: (updated: FeedItem) => void;
   onComment: (reel: FeedItem) => void;
+  onDeleted: (id: string) => void;
 }
 
-function ReelItem({ reel, active, height, width, tabBarSpace, onChange, onComment }: ReelItemProps) {
+function ReelItem({ reel, active, height, width, tabBarSpace, onChange, onComment, onDeleted }: ReelItemProps) {
+  const { user } = useAuth();
+  const isOwn = !!user && !!reel.author && user.id === reel.author.id;
   const router = useRouter();
   const [liked, setLiked] = useState(reel.liked_by_me);
   const [likes, setLikes] = useState(reel.likes);
@@ -213,6 +218,11 @@ function ReelItem({ reel, active, height, width, tabBarSpace, onChange, onCommen
         >
           <Image source={{ uri: reel.author?.avatar_url || FALLBACK_THUMB }} style={styles.creatorAvatar} />
         </TouchableOpacity>
+        {isOwn && (
+          <View style={styles.ownerMenuWrap}>
+            <OwnerContentMenu item={reel} onChange={onChange} onDeleted={onDeleted} color="#fff" />
+          </View>
+        )}
       </View>
 
       {/* Bottom info */}
@@ -372,6 +382,13 @@ export default function ReelsScreen() {
               tabBarSpace={tabBarSpace}
               onChange={(u) => setReels((prev) => prev.map((p) => (p.id === u.id ? u : p)))}
               onComment={(r) => setCommentTarget(r)}
+              onDeleted={(delId) => {
+                setReels((prev) => {
+                  const next = prev.filter((p) => p.id !== delId);
+                  if (next.length === 0) router.back();
+                  return next;
+                });
+              }}
             />
           )}
           testID="reels-list"
@@ -476,6 +493,16 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   creatorAvatar: { width: 40, height: 40, borderRadius: 20 },
+
+  ownerMenuWrap: {
+    marginTop: 4,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   bottom: { position: "absolute", left: spacing.md, right: 90, gap: 6 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },

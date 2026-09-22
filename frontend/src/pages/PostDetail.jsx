@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Heart, Loader2, MessageCircle, Send, BadgeCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, MessageCircle, Send, BadgeCheck, Trash2, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
+import { EditContentModal } from "@/components/EditContentModal";
 import { timeAgo, formatNumber } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -17,6 +18,7 @@ export default function PostDetailPage() {
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState("");
   const [posting, setPosting] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -118,15 +120,26 @@ export default function PostDetailPage() {
             </span>
           )}
           {user?.id && post.author?.id === user.id && (
-            <button
-              onClick={handleDelete}
-              title="Delete post"
-              aria-label="Delete post"
-              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-              data-testid="post-detail-delete"
-            >
-              <Trash2 size={18} />
-            </button>
+            <>
+              <button
+                onClick={() => setEditing(true)}
+                title="Edit post"
+                aria-label="Edit post"
+                className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                data-testid="post-detail-edit"
+              >
+                <Pencil size={18} />
+              </button>
+              <button
+                onClick={handleDelete}
+                title="Delete post"
+                aria-label="Delete post"
+                className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                data-testid="post-detail-delete"
+              >
+                <Trash2 size={18} />
+              </button>
+            </>
           )}
         </div>
 
@@ -197,6 +210,13 @@ export default function PostDetailPage() {
           ))}
         </div>
       </section>
+
+      <EditContentModal
+        item={post}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={(updated) => setPost((p) => ({ ...p, ...updated }))}
+      />
     </div>
   );
 }

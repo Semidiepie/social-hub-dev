@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 34 (BOTH platforms, backend+frontend) — EDIT + DELETE for posts, reels and videos on web AND mobile, plus custom thumbnail picker on WEB video upload. All checks pass. BACKEND (pytest, 11/11): PUT /api/posts/{id} — owner edits caption+game_tag for both post AND reel and persists on GET; non-owner -> 403; unauth -> 401/403; unknown id -> 404. PUT /api/videos/{id} — owner full edit (title/description/thumbnail_url/visibility/category/tags) persists on GET; non-owner -> 403. DELETE /api/posts/{id} owner -> 200 + subsequent GET 404; reel delete by non-owner -> 403. DELETE /api/videos/{id} owner -> 200; 2nd DELETE -> 404. WEB (founder auth via localStorage 'postmeplex.token'): Home feed on OWN post/reel/video shows Edit pencil + Delete trash (post-edit-<id>/post-delete-<id>, feed-reel-edit-<id>/feed-reel-delete-<id>, feed-video-edit-<id>/feed-video-delete-<id>). Edit opens EditContentModal (edit-content-modal); saving via edit-save-btn calls PUT and persists (verified via API GET after save): post caption+game_tag saved as 'TEST_iter34_UI post edited via modal'/'Overwatch'; video full edit saved title='TEST_iter34_UI video EDITED title', visibility='unlisted', category='IRL', tags=['one','two','three']. Detail routes: PostDetail (/posts/:id) post-detail-edit + post-detail-delete work + edit persists ('TEST_iter34_UI post detail EDITED'). ReelWatch (/reels/:id) reel-edit-btn + reel-delete-btn work + edit persists. VideoWatch (/videos/:id) video-edit-btn + video-delete-btn work + edit persists. Ownership guard: after switching to a fresh bystander token, PostDetail/ReelWatch/VideoWatch show 0 edit + 0 delete controls and the home feed shows 0 owner controls for the founder-owned items. VideoUpload (/videos/new): new custom picker video-thumb-upload-btn renders with hidden accept='image/*' file input and preview slot present. MOBILE (Expo web preview, PIN 7455): Home feed OWN items show post-more-<id> (PostCard) + owner-menu-<id> (ReelFeedCard, VideoFeedCard). Tapping opens the menu with post-menu-edit-<id>/post-menu-delete-<id> or owner-edit-<id>/owner-delete-<id>. Selecting edit opens EditContentSheet with edit-post-caption or edit-video-title/description etc; saving via edit-save-btn persists (verified via API GET): post -> 'TEST_iter34_M post edited mobile', reel -> 'TEST_iter34_M reel edited mobile', video -> 'TEST_iter34_M video edited mobile'. Video watch /video/<id>: watch-edit + watch-delete pills present. Reels player /(tabs)/reels?startId=<id>: owner-menu-<id> present on right rail. Mobile video upload /video/upload: upload-pick-thumb still present.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "EditContentModal", "issues": ["React warning 'Missing Description or aria-describedby={undefined} for DialogContent' — a11y improvement: add a DialogDescription (or aria-describedby) inside DialogContent."]}
+      ]
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration34_edit_delete.py",
+    "/app/test_reports/pytest/iteration34_edit_delete.xml"
+  ],
+  "action_items": [
+    "(optional) Add DialogDescription/aria-describedby to EditContentModal to silence Radix a11y warning.",
+    "(follow-up from iter32) Delete-policy asymmetry still stands: videos allow super-admin override (routes/videos.py:203) but posts do not (server.py:1348). Same asymmetry now applies to EDIT — PUT /api/posts/{id} rejects even super-admins. Pick one policy."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py:1342 PUT /api/posts/{id} has no super-admin bypass while /app/backend/routes/videos.py:185-186 also lacks it (edit is owner-only for videos too, unlike DELETE at line 203 which DOES bypass for super-admin). Result: super-admins can delete any video but cannot edit any post/reel/video. Either add the bypass to all mutating endpoints or drop it from DELETE videos.",
+    "/app/backend/server.py:1350-1358 update_post silently ignores media_url and comment counts, which is correct per spec, but it also does NOT enforce that a reel keeps a non-empty video_url — since editors cannot change video_url this is moot today, but if that Pydantic body ever grows a video_url field the current 'update whatever is not None' pattern will let owners break a reel by nulling its media.",
+    "/app/frontend/src/components/EditContentModal.jsx uses onOpenChange={(v) => !v && onClose?.()} and does NOT reset local state when the modal closes without saving. If the owner opens Edit on Post A, cancels, and opens Edit on Post B before the useEffect has run, state briefly retains A's caption. Not user-visible in practice but a stale-state hazard — call onClose then reset via a key or an explicit reset.",
+    "/app/frontend/src/pages/VideoUpload.jsx:36-53 onThumb has no MAX file size or MIME-type guard — a 100 MB PNG will be uploaded silently. Add a check similar to MAX_UPLOAD_BYTES / accept validation.",
+    "/app/frontend/src/pages/Home.jsx and mobile equivalents both use window.confirm() / Alert.alert for destructive delete. Consistent but neither confirms which item is being deleted (caption/title). Consider showing the item title in the confirm text.",
+    "/app/mobile/src/components/OwnerContentMenu.tsx re-implements a lightweight popover inline; consider extracting into a shared component (same menu pattern is also in PostCard.tsx) to keep parity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration34_edit_delete.py",
+    "/app/test_reports/iteration_34.json",
+    "/app/test_reports/pytest/iteration34_edit_delete.xml"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% web (feed edit post+video+reel, PostDetail edit, ReelWatch edit, VideoWatch edit, delete post from feed, ownership guard 0/0 controls for non-owner across feed+detail, VideoUpload thumbnail picker rendered) + 100% mobile (home feed post-menu edit, reel owner-menu edit, video owner-menu edit, video watch watch-edit/watch-delete present, reels player owner-menu present, upload-pick-thumb still present)"},
+  "test_credentials": "Founder web login: semidiepie@gmail.com / Semi123! (POST /api/auth/login access_token) — verified working. Founder mobile PIN login: identifier 'semidiepie@gmail.com' + 4-digit PIN '7455' via testIDs login-identifier-input / login-pin-input / login-submit-button — verified working (redirects to /home). Non-owner web test used tec_i34ui_<uuid>@example.com (auto-purged on backend restart). Auth registration schema: /api/auth/register requires {email, username, password, display_name, pin} (previous iterations used full_name — now rejected with 422).",
+  "seed_data_creation": "Test items created and CLEANED UP within the same script runs (TEST_iter34* posts, reels, videos). Pytest module creates and immediately deletes its own TEST_iter34 items. One ephemeral tec_i34_* bystander account per pytest run and one tec_i34ui_* for the web ownership-guard flow — all auto-purged by the test_* prefix on the next backend restart.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Stable selectors verified this iteration — WEB feed: post-edit-<id>/post-delete-<id>, feed-reel-edit-<id>/feed-reel-delete-<id>, feed-video-edit-<id>/feed-video-delete-<id>. Edit modal: edit-content-modal, edit-post-caption, edit-post-gametag, edit-video-title, edit-video-description, edit-video-category, edit-video-visibility (native <select>), edit-video-tags, edit-video-thumb-btn, edit-video-thumb-input, edit-save-btn, edit-cancel-btn. Detail: post-detail-edit/post-detail-delete, reel-edit-btn/reel-delete-btn, video-edit-btn/video-delete-btn. VideoUpload picker: video-thumb-upload-btn (label wraps hidden <input type=file accept='image/*'>), video-thumb-preview (img). MOBILE feed: post-more-<id> (PostCard, opens dropdown with post-menu-edit-<id>/post-menu-delete-<id>), owner-menu-<id> on ReelFeedCard/VideoFeedCard (opens dropdown with owner-edit-<id>/owner-delete-<id>). EditContentSheet reuses edit-post-caption/edit-video-title/… + edit-save-btn testIDs. Mobile video watch: watch-edit + watch-delete pills. Mobile reels player: owner-menu-<id> on right rail. Mobile upload thumbnail picker unchanged: upload-pick-thumb. IMPORTANT: mobile login is PIN-BASED via login-pin-input (4 digits) — founder PIN is 7455 (per /app/memory/test_credentials.md). Registration NOW requires display_name AND pin (not full_name) — 422 otherwise. CORS from the Expo web preview host is still blocked; use the page.route rewrite of Access-Control-Allow-Origin as in iter33. Cross-platform delete-parity: web has confirm() dialog (attach page.on('dialog',...)); mobile uses Alert.alert (auto-tap 'Delete').",
+  "rca of the issue": "N/A — no regression found. All new EDIT/DELETE affordances render only for the owner on both surfaces, hit the correct PUT/DELETE endpoints, and the backend correctly enforces owner-only mutation with 403 for non-owners, 401/403 for unauth, and 404 for missing ids. Web VideoUpload's custom thumbnail picker renders and wraps a hidden accept='image/*' file input as designed; mobile upload picker (upload-pick-thumb) still functions from the prior iteration."
+}

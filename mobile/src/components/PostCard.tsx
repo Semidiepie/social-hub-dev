@@ -8,6 +8,7 @@ import { colors, spacing, radii } from "@/src/theme";
 import { api, FeedItem } from "@/src/api/client";
 import { formatCount, timeAgo } from "@/src/utils/format";
 import { useAuth } from "@/src/context/AuthContext";
+import { EditContentSheet } from "@/src/components/EditContentSheet";
 
 interface Props {
   post: FeedItem;
@@ -40,6 +41,7 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const author = post.author;
   const isOwn = !!user && !!author && user.id === author.id;
@@ -245,6 +247,19 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
             {isOwn ? (
               <TouchableOpacity
                 style={sheetStyles.item}
+                onPress={() => {
+                  setMenuOpen(false);
+                  setEditing(true);
+                }}
+                testID={`post-menu-edit-${post.id}`}
+              >
+                <Ionicons name="create-outline" size={22} color={colors.textPrimary} />
+                <Text style={sheetStyles.itemText}>Edit post</Text>
+              </TouchableOpacity>
+            ) : null}
+            {isOwn ? (
+              <TouchableOpacity
+                style={sheetStyles.item}
                 onPress={confirmDelete}
                 testID={`post-menu-delete-${post.id}`}
               >
@@ -343,6 +358,13 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
           </SafeAreaView>
         </View>
       </Modal>
+
+      <EditContentSheet
+        item={editing ? post : null}
+        visible={editing}
+        onClose={() => setEditing(false)}
+        onSaved={(u) => onChange?.(u)}
+      />
     </View>
   );
 }

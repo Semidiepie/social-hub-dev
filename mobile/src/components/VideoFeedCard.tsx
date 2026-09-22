@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radii } from "@/src/theme";
 import { FeedItem } from "@/src/api/client";
 import { formatCount, timeAgo } from "@/src/utils/format";
+import { useAuth } from "@/src/context/AuthContext";
+import { OwnerContentMenu } from "@/src/components/OwnerContentMenu";
 
 const FALLBACK_AVATAR =
   "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop";
@@ -19,11 +21,21 @@ function formatDuration(secs?: number | null): string | null {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function VideoFeedCard({ post }: { post: FeedItem }) {
+export function VideoFeedCard({
+  post,
+  onChange,
+  onDeleted,
+}: {
+  post: FeedItem;
+  onChange?: (updated: FeedItem) => void;
+  onDeleted?: (id: string) => void;
+}) {
   const router = useRouter();
+  const { user } = useAuth();
   const author = post.author;
   const duration = formatDuration(post.duration);
   const title = post.title || post.caption;
+  const isOwn = !!user && !!author && user.id === author.id;
 
   return (
     <View style={styles.card} testID={`feed-video-${post.id}`}>
@@ -52,6 +64,9 @@ export function VideoFeedCard({ post }: { post: FeedItem }) {
           <Ionicons name="videocam" size={10} color={colors.primary} />
           <Text style={styles.videoPillText}>VIDEO</Text>
         </View>
+        {isOwn && (
+          <OwnerContentMenu item={post} onChange={onChange} onDeleted={onDeleted} />
+        )}
       </View>
 
       {!!title && (

@@ -29,8 +29,28 @@ export default function VideoUploadPage() {
   const [busy, setBusy] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState([]);
+  const [thumbUploading, setThumbUploading] = useState(false);
 
   const patch = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const onThumb = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!cloudinaryAvailable) {
+      toast.error("Uploads aren't configured.");
+      return;
+    }
+    setThumbUploading(true);
+    try {
+      const result = await uploadToCloudinary(f, { resourceType: "image" });
+      setThumbnailUrl(result.secure_url);
+      toast.success("Thumbnail set");
+    } catch (err) {
+      toast.error(err.message || "Thumbnail upload failed");
+    } finally {
+      setThumbUploading(false);
+    }
+  };
 
   const onFile = async (e) => {
     const f = e.target.files?.[0];
@@ -169,6 +189,40 @@ export default function VideoUploadPage() {
             data-testid="video-url-input"
             className="h-9 text-xs"
           />
+        </div>
+      </div>
+
+      <div>
+        <Label>Thumbnail</Label>
+        <p className="text-xs text-muted-foreground">
+          A frame is auto-generated. Upload your own to override it (recommended for large videos).
+        </p>
+        <div className="mt-1.5 flex items-center gap-3">
+          <div className="h-24 w-40 overflow-hidden rounded-xl border border-border bg-secondary">
+            {thumbnailUrl ? (
+              <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" data-testid="video-thumb-preview" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                No thumbnail
+              </div>
+            )}
+          </div>
+          <label
+            htmlFor="thumb-upload"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-semibold hover:border-primary/50 hover:text-primary"
+            data-testid="video-thumb-upload-btn"
+          >
+            {thumbUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            {thumbnailUrl ? "Replace thumbnail" : "Upload thumbnail"}
+            <input
+              id="thumb-upload"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onThumb}
+              disabled={thumbUploading}
+            />
+          </label>
         </div>
       </div>
 

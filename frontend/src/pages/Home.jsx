@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, MessageCircle, Loader2, Play, Eye, Trash2, Send, BadgeCheck } from "lucide-react";
+import { Heart, MessageCircle, Loader2, Play, Eye, Trash2, Send, BadgeCheck, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/PostComposer";
+import { EditContentModal } from "@/components/EditContentModal";
 import { timeAgo, formatNumber } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -73,6 +74,9 @@ export default function HomePage() {
     }
   };
 
+  const onUpdated = (updated) =>
+    setItems((rows) => rows.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+
   return (
     <div className="mx-auto max-w-2xl">
       <header className="mb-6">
@@ -98,15 +102,17 @@ export default function HomePage() {
                   <VideoCard
                     key={p.id}
                     video={p}
-                    canDelete={user?.id && user.id === p.author?.id}
+                    canManage={user?.id && user.id === p.author?.id}
                     onDelete={() => deletePost(p)}
+                    onUpdated={onUpdated}
                   />
                 ) : p.type === "reel" ? (
                   <ReelCard
                     key={p.id}
                     reel={p}
-                    canDelete={user?.id && user.id === p.author?.id}
+                    canManage={user?.id && user.id === p.author?.id}
                     onDelete={() => deletePost(p)}
+                    onUpdated={onUpdated}
                   />
                 ) : (
                   <PostCard
@@ -114,8 +120,9 @@ export default function HomePage() {
                     post={p}
                     user={user}
                     onToggleLike={() => toggleLike(p)}
-                    canDelete={user?.id && user.id === p.author?.id}
+                    canManage={user?.id && user.id === p.author?.id}
                     onDelete={() => deletePost(p)}
+                    onUpdated={onUpdated}
                   />
                 ),
               )}
@@ -146,9 +153,10 @@ function EmptyState() {
   );
 }
 
-function PostCard({ post, user, onToggleLike, canDelete, onDelete }) {
+function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) {
   const [showComments, setShowComments] = useState(false);
   const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
+  const [editing, setEditing] = useState(false);
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -173,16 +181,27 @@ function PostCard({ post, user, onToggleLike, canDelete, onDelete }) {
             #{post.game_tag}
           </span>
         )}
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            title="Delete post"
-            aria-label="Delete post"
-            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            data-testid={`post-delete-${post.id}`}
-          >
-            <Trash2 size={16} />
-          </button>
+        {canManage && (
+          <>
+            <button
+              onClick={() => setEditing(true)}
+              title="Edit post"
+              aria-label="Edit post"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+              data-testid={`post-edit-${post.id}`}
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              onClick={onDelete}
+              title="Delete post"
+              aria-label="Delete post"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              data-testid={`post-delete-${post.id}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
         )}
       </div>
 
@@ -236,6 +255,13 @@ function PostCard({ post, user, onToggleLike, canDelete, onDelete }) {
           onCountChange={setCommentsCount}
         />
       )}
+
+      <EditContentModal
+        item={post}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={onUpdated}
+      />
     </article>
   );
 }
@@ -332,8 +358,9 @@ function PostComments({ postId, user, onCountChange }) {
   );
 }
 
-function VideoCard({ video, canDelete, onDelete }) {
+function VideoCard({ video, canManage, onDelete, onUpdated }) {
   const duration = formatDuration(video.duration);
+  const [editing, setEditing] = useState(false);
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -356,16 +383,27 @@ function VideoCard({ video, canDelete, onDelete }) {
         <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
           Video
         </span>
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            title="Delete video"
-            aria-label="Delete video"
-            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            data-testid={`feed-video-delete-${video.id}`}
-          >
-            <Trash2 size={16} />
-          </button>
+        {canManage && (
+          <>
+            <button
+              onClick={() => setEditing(true)}
+              title="Edit video"
+              aria-label="Edit video"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+              data-testid={`feed-video-edit-${video.id}`}
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              onClick={onDelete}
+              title="Delete video"
+              aria-label="Delete video"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              data-testid={`feed-video-delete-${video.id}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
         )}
       </div>
 
@@ -415,11 +453,19 @@ function VideoCard({ video, canDelete, onDelete }) {
           {formatNumber(video.comments_count)}
         </span>
       </footer>
+
+      <EditContentModal
+        item={video}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={onUpdated}
+      />
     </article>
   );
 }
 
-function ReelCard({ reel, canDelete, onDelete }) {
+function ReelCard({ reel, canManage, onDelete, onUpdated }) {
+  const [editing, setEditing] = useState(false);
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -442,16 +488,27 @@ function ReelCard({ reel, canDelete, onDelete }) {
         <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
           Reel
         </span>
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            title="Delete reel"
-            aria-label="Delete reel"
-            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            data-testid={`feed-reel-delete-${reel.id}`}
-          >
-            <Trash2 size={16} />
-          </button>
+        {canManage && (
+          <>
+            <button
+              onClick={() => setEditing(true)}
+              title="Edit reel"
+              aria-label="Edit reel"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+              data-testid={`feed-reel-edit-${reel.id}`}
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              onClick={onDelete}
+              title="Delete reel"
+              aria-label="Delete reel"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              data-testid={`feed-reel-delete-${reel.id}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
         )}
       </div>
 
@@ -504,6 +561,13 @@ function ReelCard({ reel, canDelete, onDelete }) {
           {formatNumber(reel.comments_count)}
         </span>
       </footer>
+
+      <EditContentModal
+        item={reel}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={onUpdated}
+      />
     </article>
   );
 }

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Heart, Loader2, MessageCircle, Volume2, VolumeX, BadgeCheck, X, Send } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, MessageCircle, Volume2, VolumeX, BadgeCheck, X, Send, Trash2, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { formatNumber, timeAgo } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
 
 export default function ReelWatchPage() {
@@ -20,12 +21,24 @@ export default function ReelWatchPage() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [posting, setPosting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const videoRef = useRef(null);
 
   const goBack = useCallback(() => {
     if (window.history.length > 1) navigate(-1);
     else navigate("/discover");
   }, [navigate]);
+
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this reel? This can't be undone.")) return;
+    try {
+      await api.del(`/posts/${id}`);
+      toast.success("Reel deleted");
+      goBack();
+    } catch (e) {
+      toast.error(e.message || "Failed to delete");
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -129,6 +142,26 @@ export default function ReelWatchPage() {
         >
           {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
         </button>
+        {user?.id && reel.author?.id === user.id && (
+          <>
+            <button
+              onClick={() => setEditing(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+              data-testid="reel-edit-btn"
+              aria-label="Edit reel"
+            >
+              <Pencil size={17} />
+            </button>
+            <button
+              onClick={handleDelete}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-red-500/80"
+              data-testid="reel-delete-btn"
+              aria-label="Delete reel"
+            >
+              <Trash2 size={17} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Vertical player */}
@@ -265,6 +298,13 @@ export default function ReelWatchPage() {
           </div>
         </div>
       )}
+
+      <EditContentModal
+        item={reel}
+        open={editing}
+        onClose={() => setEditing(false)}
+        onSaved={(updated) => setReel((r) => ({ ...r, ...updated }))}
+      />
     </div>
   );
 }
