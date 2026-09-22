@@ -48,6 +48,7 @@ def build_router(ctx) -> APIRouter:
     get_optional_user = ctx.get_optional_user
     blocked_ids_for = ctx.blocked_ids_for
     cloudinary_compat_url = ctx.cloudinary_compat_url
+    avatar_or_default = ctx.avatar_or_default
 
     router = APIRouter(tags=["videos"])
 
@@ -76,7 +77,7 @@ def build_router(ctx) -> APIRouter:
                 "id": author["id"],
                 "username": author["username"],
                 "display_name": author["display_name"],
-                "avatar_url": author.get("avatar_url", ""),
+                "avatar_url": avatar_or_default(author.get("avatar_url")),
                 "is_verified": author.get("is_verified", False),
                 "is_streamer": author.get("is_streamer", False),
             } if author else None,
@@ -277,7 +278,7 @@ def build_router(ctx) -> APIRouter:
                     "id": author["id"],
                     "username": author["username"],
                     "display_name": author["display_name"],
-                    "avatar_url": author.get("avatar_url", ""),
+                    "avatar_url": avatar_or_default(author.get("avatar_url")),
                     "is_verified": author.get("is_verified", False),
                 } if author else None,
             })
@@ -310,7 +311,7 @@ def build_router(ctx) -> APIRouter:
                 "id": author["id"],
                 "username": author["username"],
                 "display_name": author["display_name"],
-                "avatar_url": author.get("avatar_url", ""),
+                "avatar_url": avatar_or_default(author.get("avatar_url")),
                 "is_verified": author.get("is_verified", False),
             } if author else None,
         }

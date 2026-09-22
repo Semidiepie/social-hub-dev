@@ -10,6 +10,14 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+# Set from server's DEFAULT_AVATAR_URL when the router is built. Any account
+# without a custom avatar falls back to this (the PostMePlex logo).
+_DEFAULT_AVATAR = ""
+
+
+def _av(url: Optional[str]) -> str:
+    return url or _DEFAULT_AVATAR
+
 
 class CreateConversationBody(BaseModel):
     member_ids: list[str]
@@ -41,14 +49,14 @@ def conv_preview(c: dict, my_id: str, members_by_id: dict) -> dict:
         "id": c["id"],
         "is_group": is_group,
         "title": title,
-        "avatar_url": avatar,
+        "avatar_url": _av(avatar),
         "member_ids": c["member_ids"],
         "members": [
             {
                 "id": m["id"],
                 "username": m["username"],
                 "display_name": m["display_name"],
-                "avatar_url": m.get("avatar_url", ""),
+                "avatar_url": _av(m.get("avatar_url")),
             }
             for m in (members_by_id[i] for i in c["member_ids"] if i in members_by_id)
         ],
@@ -59,6 +67,8 @@ def conv_preview(c: dict, my_id: str, members_by_id: dict) -> dict:
 
 
 def build_router(ctx) -> APIRouter:
+    global _DEFAULT_AVATAR
+    _DEFAULT_AVATAR = getattr(ctx, "default_avatar_url", "") or ""
     db = ctx.db
     now = ctx.now
     logger = ctx.logger
@@ -153,7 +163,7 @@ def build_router(ctx) -> APIRouter:
             "conversation_id": conv_id,
             "sender_id": current["id"],
             "sender_username": current["username"],
-            "sender_avatar": current.get("avatar_url", ""),
+            "sender_avatar": _av(current.get("avatar_url")),
             "text": body.text,
             "image_url": body.image_url,
             "reactions": [],

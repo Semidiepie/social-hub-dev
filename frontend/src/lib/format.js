@@ -41,7 +41,4 @@ export function formatDuration(seconds) {
 
 // Fallback SVG avatar for missing images.
 export const AVATAR_FALLBACK =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><circle cx="40" cy="40" r="40" fill="#252936"/><text x="50%" y="55%" text-anchor="middle" fill="#FF6B3D" font-family="sans-serif" font-weight="800" font-size="30">P</text></svg>'
-  );
+  "https://res.cloudinary.com/dpnrol54k/image/upload/v1790110483/postmeplex_default_avatar.png";

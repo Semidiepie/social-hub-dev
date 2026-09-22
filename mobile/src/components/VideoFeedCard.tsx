@@ -12,7 +12,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { OwnerContentMenu } from "@/src/components/OwnerContentMenu";
 
 const FALLBACK_AVATAR =
-  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop";
+  "https://res.cloudinary.com/dpnrol54k/image/upload/v1790110483/postmeplex_default_avatar.png";
 
 function formatDuration(secs?: number | null): string | null {
   if (secs == null) return null;

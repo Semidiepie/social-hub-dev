@@ -42,6 +42,18 @@ RESET_LINK_TTL_MIN = 60
 # Preview: the preview URL. Production: set APP_PUBLIC_URL=https://postmeplex.com
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 
+# Default profile picture (PostMePlex lightning logo) shown for any account
+# without a custom avatar. Applied on READ so all existing + new users — and
+# anyone who clears their avatar — automatically get it everywhere.
+DEFAULT_AVATAR_URL = os.environ.get(
+    "DEFAULT_AVATAR_URL",
+    "https://res.cloudinary.com/dpnrol54k/image/upload/v1790110483/postmeplex_default_avatar.png",
+)
+
+
+def avatar_or_default(url: Optional[str]) -> str:
+    return url or DEFAULT_AVATAR_URL
+
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
@@ -286,7 +298,7 @@ def user_to_public(u: dict) -> UserPublic:
         display_name=u["display_name"],
         email=u["email"],
         bio=u.get("bio", ""),
-        avatar_url=u.get("avatar_url", ""),
+        avatar_url=avatar_or_default(u.get("avatar_url")),
         is_verified=u.get("is_verified", False),
         is_streamer=u.get("is_streamer", False),
         is_super_admin=u.get("is_super_admin", False),
@@ -459,7 +471,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
             "id": author["id"],
             "username": author["username"],
             "display_name": author["display_name"],
-            "avatar_url": author.get("avatar_url", ""),
+            "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
             "is_streamer": author.get("is_streamer", False),
         } if author else None,
@@ -873,7 +885,7 @@ async def follow_user(user_id: str, current: Annotated[dict, Depends(get_current
         "type": "follow",
         "actor_id": current["id"],
         "actor_name": current["display_name"],
-        "actor_avatar": current.get("avatar_url", ""),
+        "actor_avatar": avatar_or_default(current.get("avatar_url")),
         "text": "started following you",
         "read": False,
         "created_at": now(),
@@ -1043,7 +1055,7 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
             "id": author["id"],
             "username": author["username"],
             "display_name": author["display_name"],
-            "avatar_url": author.get("avatar_url", ""),
+            "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
             "is_streamer": author.get("is_streamer", False),
         } if author else None,
@@ -1143,7 +1155,7 @@ async def list_stories(viewer: Annotated[Optional[dict], Depends(get_optional_us
             "user_id": u["id"],
             "username": u["username"],
             "display_name": u["display_name"],
-            "avatar_url": u.get("avatar_url", ""),
+            "avatar_url": avatar_or_default(u.get("avatar_url")),
             "is_verified": bool(u.get("is_verified", False)),
             "preview_url": r.get("latest_thumb") or r.get("latest_media") or "",
             "count": r["count"],
@@ -1167,6 +1179,8 @@ async def user_stories(user_id: str, viewer: Annotated[dict, Depends(get_current
     user = await db.users.find_one(
         {"id": user_id}, {"_id": 0, "id": 1, "username": 1, "display_name": 1, "avatar_url": 1, "is_verified": 1}
     )
+    if user:
+        user["avatar_url"] = avatar_or_default(user.get("avatar_url"))
     for s in rows:
         s["created_at"] = s["created_at"].isoformat() if isinstance(s.get("created_at"), datetime) else s.get("created_at")
         s["expires_at"] = s["expires_at"].isoformat() if isinstance(s.get("expires_at"), datetime) else s.get("expires_at")
@@ -1399,7 +1413,7 @@ async def like_post(post_id: str, current: Annotated[dict, Depends(get_current_u
             "type": "like",
             "actor_id": current["id"],
             "actor_name": current["display_name"],
-            "actor_avatar": current.get("avatar_url", ""),
+            "actor_avatar": avatar_or_default(current.get("avatar_url")),
             "text": "liked your post",
             "post_id": post_id,
             "read": False,
@@ -1436,13 +1450,16 @@ async def list_comments(post_id: str):
     # Backfill is_verified from users collection (older rows may not have it persisted)
     user_ids = list({c.get("user_id") for c in rows if c.get("user_id")})
     verified: dict[str, bool] = {}
+    avatars: dict[str, str] = {}
     if user_ids:
         async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1}):
             verified[u["id"]] = bool(u.get("is_verified", False))
+            avatars[u["id"]] = u.get("avatar_url") or ""
     for c in rows:
         if isinstance(c.get("created_at"), datetime):
             c["created_at"] = c["created_at"].isoformat()
         c["is_verified"] = c.get("is_verified", verified.get(c.get("user_id"), False))
+        c["avatar_url"] = avatar_or_default(c.get("avatar_url") or avatars.get(c.get("user_id")))
     return rows
 
 
@@ -1457,7 +1474,7 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
         "user_id": current["id"],
         "username": current["username"],
         "display_name": current["display_name"],
-        "avatar_url": current.get("avatar_url", ""),
+        "avatar_url": avatar_or_default(current.get("avatar_url")),
         "is_verified": bool(current.get("is_verified", False)),
         "text": body.text,
         "created_at": now(),
@@ -1471,7 +1488,7 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
             "type": "comment",
             "actor_id": current["id"],
             "actor_name": current["display_name"],
-            "actor_avatar": current.get("avatar_url", ""),
+            "actor_avatar": avatar_or_default(current.get("avatar_url")),
             "text": f"commented: {body.text[:60]}",
             "post_id": post_id,
             "read": False,
@@ -1917,6 +1934,8 @@ route_ctx = SimpleNamespace(
     blocked_ids_for=blocked_ids_for,
     cloudinary_compat_url=_cloudinary_compat_url,
     user_to_public=user_to_public,
+    avatar_or_default=avatar_or_default,
+    default_avatar_url=DEFAULT_AVATAR_URL,
     send_push=send_push,
 )
 

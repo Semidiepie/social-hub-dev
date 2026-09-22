@@ -207,6 +207,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Verified: testing agent iteration_33 — backend 5/5 (feed includes reels, fields, sort/cap 80, block filter, anon) + web (3 reel cards, nav to /reels/:id, post/video regression) + mobile (reel cards, nav to reels player, regression), parity confirmed.
 - Minor parity gap (non-blocking): mobile reel/video feed cards have no owner-delete affordance (matches existing mobile video card behavior); web has it. Could add later.
 
+### 2026-06 (part 17) — Default profile picture (PostMePlex logo)
+- Uploaded the PostMePlex lightning logo to Cloudinary as a permanent default avatar: `https://res.cloudinary.com/dpnrol54k/image/upload/v1790110483/postmeplex_default_avatar.png` (overridable via `DEFAULT_AVATAR_URL` env).
+- **Backend** (`server.py`, `routes/videos.py`, `routes/messages.py`): added `avatar_or_default(url)` and coalesce **on read** at every avatar-serving site — `user_to_public`, `serialize_post`/`serialize_video_for_feed` authors, video authors, stories, comments (list + create), notification actor avatars, and DM/conversation participant + sender avatars. Applied on read so ALL existing users, new signups, and anyone who clears their avatar automatically show the logo; a custom uploaded avatar always takes precedence. No migration/writes changed.
+- **Clients:** web `AVATAR_FALLBACK` (`lib/format.js`) and the 4 mobile `FALLBACK_AVATAR` constants (PostCard/ReelFeedCard/VideoFeedCard/StoryBar) now point to the same logo for null-author edge cases.
+- Self-verified: new account `/register` → `/auth/me` and `/feed` author both return the logo URL; web feed renders it; founder's custom avatar preserved.
+
 ### 2026-06 (part 16) — Edit + Delete for posts, reels & videos (web + mobile)
 - **Backend:** new `PUT /api/posts/{id}` (owner-only) edits caption + game_tag for posts AND reels. Existing `PUT /api/videos/{id}` covers full video edit (title, description, category, tags, visibility, thumbnail_url). Delete endpoints already owner-only.
 - **Edit scope (agreed):** posts/reels = caption + game tag (media unchanged); videos = title/description/category/tags + REPLACE THUMBNAIL (video file unchanged).
