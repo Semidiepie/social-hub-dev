@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,38 +10,63 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "@/src/context/AuthContext";
+import { useAuth, getLastAccount, forgetAccount, LastAccount } from "@/src/context/AuthContext";
 import { colors, spacing, radii } from "@/src/theme";
 import { useResponsive } from "@/src/hooks/useResponsive";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { loginWithPin } = useAuth();
   const { isDesktop } = useResponsive();
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [secure, setSecure] = useState(true);
+  const [identifier, setIdentifier] = useState("");
+  const [pin, setPin] = useState("");
+  const [remembered, setRemembered] = useState<LastAccount | null>(null);
+  const [useDifferent, setUseDifferent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    getLastAccount().then((acc) => {
+      if (acc) {
+        setRemembered(acc);
+        setIdentifier(acc.identifier);
+      } else {
+        setUseDifferent(true);
+      }
+    });
+  }, []);
+
   const submit = async () => {
-    if (!email.trim() || !password) {
-      setError("Enter your email and password.");
+    if (!/^\d{4}$/.test(pin)) {
+      setError("Enter your 4-digit PIN.");
+      return;
+    }
+    if (!identifier.trim()) {
+      setError("Enter your email or username.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      await login(email.trim(), password);
+      await loginWithPin(identifier, pin);
       router.replace("/(tabs)/home");
     } catch (e: any) {
       setError(e?.message ?? "Login failed");
     } finally {
       setBusy(false);
     }
+  };
+
+  const switchAccount = async () => {
+    await forgetAccount();
+    setRemembered(null);
+    setUseDifferent(true);
+    setIdentifier("");
+    setPin("");
   };
 
   return (
@@ -67,36 +92,47 @@ export default function Login() {
             <Text style={styles.brandText}>PostMePlex</Text>
           </View>
 
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Log in to keep the squad updated.</Text>
+          <Text style={styles.title}>Enter your PIN</Text>
+          <Text style={styles.subtitle}>Sign in with the 4-digit PIN you chose at signup.</Text>
 
-          <Text style={styles.label}>Email</Text>
+          {remembered && !useDifferent ? (
+            <View style={styles.account} testID="login-remembered-account">
+              <Image source={{ uri: remembered.avatar_url || undefined }} style={styles.accountAvatar} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.accountName} numberOfLines={1}>{remembered.display_name}</Text>
+                <Text style={styles.accountHandle} numberOfLines={1}>@{remembered.identifier}</Text>
+              </View>
+              <TouchableOpacity onPress={switchAccount} testID="login-switch-account">
+                <Text style={styles.forgotText}>Not you?</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>Email or username</Text>
+              <TextInput
+                value={identifier}
+                onChangeText={setIdentifier}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                style={styles.input}
+                testID="login-identifier-input"
+              />
+            </>
+          )}
+
+          <Text style={styles.label}>PIN</Text>
           <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
+            value={pin}
+            onChangeText={(t) => setPin(t.replace(/\D/g, "").slice(0, 4))}
+            placeholder="••••"
             placeholderTextColor={colors.textMuted}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            style={styles.input}
-            testID="login-email-input"
+            secureTextEntry
+            keyboardType="number-pad"
+            maxLength={4}
+            style={[styles.input, styles.pinInput]}
+            testID="login-pin-input"
           />
-
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor={colors.textMuted}
-              secureTextEntry={secure}
-              style={[styles.input, { flex: 1, marginBottom: 0 }]}
-              testID="login-password-input"
-            />
-            <TouchableOpacity onPress={() => setSecure((s) => !s)} style={styles.eye} testID="login-toggle-password">
-              <Ionicons name={secure ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
 
           {error && (
             <Text style={styles.error} testID="login-error">
@@ -110,18 +146,12 @@ export default function Login() {
             disabled={busy}
             testID="login-submit-button"
           >
-            {busy ? <ActivityIndicator color={colors.bg} /> : <Text style={styles.primaryBtnText}>Log in</Text>}
+            {busy ? <ActivityIndicator color={colors.bg} /> : <Text style={styles.primaryBtnText}>Sign in</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => router.push({ pathname: "/forgot-password", params: { email: email.trim() } })}
-            style={styles.forgotBtn}
-            testID="login-forgot-password"
-            hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
-          >
-            <Ionicons name="help-circle-outline" size={16} color={colors.primary} />
-            <Text style={styles.forgotText}>Forgot password?</Text>
-          </TouchableOpacity>
+          <Text style={styles.hint} testID="login-pin-hint">
+            Forgot your PIN? Ask an admin to reset it for you.
+          </Text>
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>New to PostMePlex? </Text>
@@ -189,4 +219,20 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   forgotText: { color: colors.primary, fontSize: 15, fontWeight: "800" },
+  pinInput: { textAlign: "center", fontSize: 24, fontWeight: "800", letterSpacing: 12 },
+  hint: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: spacing.md },
+  account: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  accountAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.elevated },
+  accountName: { color: colors.textPrimary, fontSize: 15, fontWeight: "800" },
+  accountHandle: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
 });

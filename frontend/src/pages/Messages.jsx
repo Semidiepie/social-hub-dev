@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Loader2, Send, MessageSquare, ArrowLeft } from "lucide-react";
+import { Loader2, Send, MessageSquare, ArrowLeft, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,21 @@ export default function MessagesPage() {
     [conversations, convId],
   );
 
+  const deleteConversation = async (id, e) => {
+    e?.stopPropagation();
+    if (!window.confirm("Delete this conversation? It will be removed from your list.")) return;
+    const prev = conversations;
+    setConversations((rows) => rows.filter((c) => c.id !== id));
+    if (convId === id) navigate("/messages");
+    try {
+      await api.del(`/conversations/${id}`);
+      toast.success("Conversation deleted");
+    } catch (err) {
+      setConversations(prev);
+      toast.error(err.message || "Failed to delete");
+    }
+  };
+
   return (
     <div className="grid gap-0 md:grid-cols-[320px_1fr]" style={{ minHeight: "min(calc(100vh - 120px), 900px)" }}>
       <aside className={`rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
@@ -47,15 +62,15 @@ export default function MessagesPage() {
           <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : conversations.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
-            No conversations yet. Start one from someone's profile.
+            No conversations yet. Start one from someone&apos;s profile.
           </div>
         ) : (
           <ul className="max-h-[calc(100vh-220px)] overflow-y-auto">
             {conversations.map((c) => (
-              <li key={c.id}>
+              <li key={c.id} className="group relative">
                 <button
                   onClick={() => navigate(`/messages/${c.id}`)}
-                  className={`flex w-full items-center gap-3 border-b border-border/60 px-4 py-3 text-left hover:bg-secondary/50 ${
+                  className={`flex w-full items-center gap-3 border-b border-border/60 px-4 py-3 pr-10 text-left hover:bg-secondary/50 ${
                     convId === c.id ? "bg-secondary/70" : ""
                   }`}
                   data-testid={`conv-${c.id}`}
@@ -78,6 +93,15 @@ export default function MessagesPage() {
                     </span>
                   )}
                 </button>
+                <button
+                  onClick={(e) => deleteConversation(c.id, e)}
+                  title="Delete conversation"
+                  aria-label="Delete conversation"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                  data-testid={`conv-delete-${c.id}`}
+                >
+                  <Trash2 size={15} />
+                </button>
               </li>
             ))}
           </ul>
@@ -92,7 +116,7 @@ export default function MessagesPage() {
             <MessageSquare size={44} className="mx-auto text-muted-foreground" />
             <h3 className="mt-3 text-lg font-bold">Select a conversation</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Or open someone's profile to DM them.
+              Or open someone&apos;s profile to DM them.
             </p>
           </div>
         </div>
@@ -152,6 +176,18 @@ function ChatPane({ conv, me, onBack }) {
     }
   };
 
+  const deleteMessage = async (id) => {
+    if (!window.confirm("Delete this message?")) return;
+    const prev = messages;
+    setMessages((rows) => rows.filter((m) => m.id !== id));
+    try {
+      await api.del(`/messages/${id}`);
+    } catch (err) {
+      setMessages(prev);
+      toast.error(err.message || "Failed to delete");
+    }
+  };
+
   if (!conv) {
     return (
       <div className="flex items-center justify-center rounded-2xl border border-border bg-card/60 p-10">
@@ -189,7 +225,18 @@ function ChatPane({ conv, me, onBack }) {
           messages.map((m) => {
             const mine = m.sender_id === me?.id;
             return (
-              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div key={m.id} className={`group flex items-center gap-2 ${mine ? "justify-end" : "justify-start"}`}>
+                {mine && (
+                  <button
+                    onClick={() => deleteMessage(m.id)}
+                    title="Delete message"
+                    aria-label="Delete message"
+                    className="rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                    data-testid={`msg-delete-${m.id}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
                 <div
                   className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
                     mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"

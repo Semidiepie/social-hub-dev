@@ -3,6 +3,33 @@ import { api, clearToken, getToken, setToken } from "@/lib/api";
 
 const AuthContext = createContext(null);
 
+const LAST_ACCOUNT_KEY = "postmeplex.lastAccount";
+
+export function getLastAccount() {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_ACCOUNT_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+function rememberAccount(u) {
+  try {
+    localStorage.setItem(
+      LAST_ACCOUNT_KEY,
+      JSON.stringify({ identifier: u.username || u.email, display_name: u.display_name, avatar_url: u.avatar_url }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+export function forgetAccount() {
+  try {
+    localStorage.removeItem(LAST_ACCOUNT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -48,10 +75,19 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  const loginWithPin = useCallback(async (identifier, pin) => {
+    const resp = await api.post("/auth/login-pin", { identifier: identifier.trim().toLowerCase(), pin }, false);
+    setToken(resp.access_token);
+    setUser(resp.user);
+    rememberAccount(resp.user);
+    return resp.user;
+  }, []);
+
   const register = useCallback(async (payload) => {
     const resp = await api.post("/auth/register", payload, false);
     setToken(resp.access_token);
     setUser(resp.user);
+    rememberAccount(resp.user);
     return resp.user;
   }, []);
 
@@ -65,7 +101,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, patchUser, setSession }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithPin, register, logout, refresh, patchUser, setSession }}>
       {children}
     </AuthContext.Provider>
   );

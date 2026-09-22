@@ -6,9 +6,6 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
-import ForgotPasswordPage from "@/pages/ForgotPassword";
-import ResetPasswordPage from "@/pages/ResetPassword";
-import ResetWithPinPage from "@/pages/ResetWithPin";
 import HomePage from "@/pages/Home";
 import BlogsPage from "@/pages/Blogs";
 import BlogReadPage from "@/pages/BlogRead";
@@ -33,7 +30,7 @@ import AdminBlogsPage from "@/pages/AdminBlogs";
  */
 function Shell({ children }) {
   const location = useLocation();
-  const isAuthRoute = ["/login", "/register", "/forgot-password", "/reset-password", "/reset-pin"].includes(location.pathname);
+  const isAuthRoute = ["/login", "/register"].includes(location.pathname);
   // The video watch screen renders fullscreen (no sidebar/topbar) so a tapped
   // video opens edge-to-edge; Back returns you to where you were.
   const isFullscreenRoute = /^\/(videos|reels)\/(?!new$)[^/]+$/.test(location.pathname);
@@ -61,9 +58,6 @@ export default function App() {
             {/* Public / auth */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/reset-pin" element={<ResetWithPinPage />} />
 
             {/* Home & content — viewable by everyone but interactions need auth */}
             <Route path="/" element={<HomePage />} />

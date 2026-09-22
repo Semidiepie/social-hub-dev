@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, MessageCircle, Loader2, Play, Eye, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Loader2, Play, Eye, Trash2, Send, BadgeCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, UsernameLine } from "@/components/Avatar";
@@ -105,6 +105,7 @@ export default function HomePage() {
                   <PostCard
                     key={p.id}
                     post={p}
+                    user={user}
                     onToggleLike={() => toggleLike(p)}
                     canDelete={user?.id && user.id === p.author?.id}
                     onDelete={() => deletePost(p)}
@@ -138,7 +139,9 @@ function EmptyState() {
   );
 }
 
-function PostCard({ post, onToggleLike, canDelete, onDelete }) {
+function PostCard({ post, user, onToggleLike, canDelete, onDelete }) {
+  const [showComments, setShowComments] = useState(false);
+  const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -207,12 +210,118 @@ function PostCard({ post, onToggleLike, canDelete, onDelete }) {
           <Heart size={18} className={post.liked_by_me ? "fill-primary" : ""} />
           {formatNumber(post.likes)}
         </button>
-        <button className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground">
+        <button
+          onClick={() => setShowComments((v) => !v)}
+          className={`inline-flex items-center gap-1.5 text-sm font-semibold transition-colors ${
+            showComments ? "text-primary" : "text-muted-foreground hover:text-foreground"
+          }`}
+          data-testid={`post-comment-toggle-${post.id}`}
+        >
           <MessageCircle size={18} />
-          {formatNumber(post.comments_count)}
+          {formatNumber(commentsCount)}
         </button>
       </footer>
+
+      {showComments && (
+        <PostComments
+          postId={post.id}
+          user={user}
+          onCountChange={setCommentsCount}
+        />
+      )}
     </article>
+  );
+}
+
+function PostComments({ postId, user, onCountChange }) {
+  const [comments, setComments] = useState(null);
+  const [text, setText] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .get(`/posts/${postId}/comments`)
+      .then((rows) => {
+        if (active) setComments(rows);
+      })
+      .catch(() => {
+        if (active) setComments([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [postId]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!user || !text.trim() || posting) return;
+    setPosting(true);
+    try {
+      await api.post(`/posts/${postId}/comments`, { text: text.trim() });
+      setText("");
+      const rows = await api.get(`/posts/${postId}/comments`);
+      setComments(rows);
+      onCountChange(rows.length);
+    } catch (err) {
+      toast.error(err.message || "Failed to comment");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <section className="border-t border-border px-4 py-3" data-testid={`post-comments-${postId}`}>
+      <form onSubmit={submit} className="flex items-center gap-2">
+        {user && <Avatar src={user.avatar_url} size={32} />}
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={user ? "Add a comment…" : "Sign in to comment"}
+          disabled={!user}
+          data-testid={`post-comment-input-${postId}`}
+          className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm outline-none focus:border-primary/60 disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={posting || !text.trim() || !user}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+          data-testid={`post-comment-submit-${postId}`}
+        >
+          {posting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+        </button>
+      </form>
+
+      {comments === null ? (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        </div>
+      ) : comments.length === 0 ? (
+        <p className="py-4 text-center text-sm text-muted-foreground">
+          No comments yet. Be the first to comment.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {comments.map((c) => (
+            <div key={c.id} className="flex gap-2.5" data-testid={`post-comment-${c.id}`}>
+              <Avatar src={c.author?.avatar_url || c.avatar_url} size={32} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1 text-sm">
+                  <span className="font-semibold">
+                    {c.author?.display_name || c.display_name || c.author?.username}
+                  </span>
+                  {(c.is_verified || c.author?.is_verified) && (
+                    <BadgeCheck size={13} className="shrink-0 fill-primary text-background" />
+                  )}
+                  <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
+                </div>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/95">{c.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

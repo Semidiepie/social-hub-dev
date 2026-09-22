@@ -100,11 +100,17 @@ class RegisterBody(BaseModel):
     username: str = Field(min_length=3, max_length=20)
     password: str = Field(min_length=6)
     display_name: str = Field(min_length=1, max_length=40)
+    pin: str = Field(pattern=r"^\d{4}$")
 
 
 class LoginBody(BaseModel):
     email: EmailStr
     password: str
+
+
+class LoginPinBody(BaseModel):
+    identifier: str  # email or username
+    pin: str = Field(pattern=r"^\d{4}$")
 
 
 class TokenResponse(BaseModel):
@@ -472,6 +478,10 @@ async def register(body: RegisterBody):
         "username": body.username,
         "display_name": body.display_name,
         "password_hash": hash_pw(body.password),
+        "reset_pin_hash": hash_pin(body.pin),
+        "reset_pin_set_at": now(),
+        "reset_pin_failed_attempts": 0,
+        "reset_pin_locked_until": None,
         "bio": "",
         "avatar_url": "",
         "is_verified": False,
@@ -502,6 +512,49 @@ async def login(body: LoginBody):
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not verify_pw(body.password, user["password_hash"]):
         raise HTTPException(400, "Incorrect email or password")
+    return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(user))
+
+
+@app.post("/api/auth/login-pin", response_model=TokenResponse)
+async def login_pin(body: LoginPinBody):
+    """Sign in with a 4-digit PIN (chosen at signup, or reassigned by an admin).
+    `identifier` is the account email or username the client remembers locally.
+    Rate-limited: 5 wrong PINs → 15-min lockout. Generic errors avoid enumeration."""
+    ident = body.identifier.lower().strip()
+    user = await db.users.find_one({"$or": [{"email": ident}, {"username": ident}]})
+    if not user:
+        verify_pin_hash(body.pin, _DUMMY_PIN_HASH)
+        raise HTTPException(status_code=403, detail="Invalid account or PIN.")
+
+    locked_until = user.get("reset_pin_locked_until")
+    if locked_until and locked_until.replace(tzinfo=timezone.utc) > now():
+        retry = int((locked_until.replace(tzinfo=timezone.utc) - now()).total_seconds())
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry // 60 + 1} min.",
+            headers={"Retry-After": str(retry)},
+        )
+
+    stored = user.get("reset_pin_hash")
+    if not stored:
+        verify_pin_hash(body.pin, _DUMMY_PIN_HASH)
+        raise HTTPException(status_code=403, detail="No PIN is set for this account. Ask an admin to set one.")
+
+    if not verify_pin_hash(body.pin, stored):
+        attempts = int(user.get("reset_pin_failed_attempts") or 0) + 1
+        upd: dict = {"reset_pin_failed_attempts": attempts}
+        if attempts >= MAX_PIN_ATTEMPTS:
+            upd["reset_pin_locked_until"] = now() + timedelta(minutes=PIN_LOCKOUT_MINUTES)
+            upd["reset_pin_failed_attempts"] = 0
+            logger.warning(f"[login-pin] LOCKED user={user['id']} after {MAX_PIN_ATTEMPTS} failed attempts")
+        await db.users.update_one({"id": user["id"]}, {"$set": upd})
+        raise HTTPException(status_code=403, detail="Invalid account or PIN.")
+
+    if user.get("reset_pin_failed_attempts") or user.get("reset_pin_locked_until"):
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"reset_pin_failed_attempts": 0, "reset_pin_locked_until": None}},
+        )
     return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(user))
 
 

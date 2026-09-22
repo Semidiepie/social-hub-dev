@@ -14,6 +14,7 @@ export default function RegisterPage() {
     username: "",
     display_name: "",
     password: "",
+    pin: "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -25,6 +26,10 @@ export default function RegisterPage() {
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
+    if (!/^\d{4}$/.test(form.pin)) {
+      setError("Choose a 4-digit PIN (you'll use it to sign in).");
+      return;
+    }
     setBusy(true);
     try {
       await register({
@@ -32,6 +37,7 @@ export default function RegisterPage() {
         username: form.username.trim().toLowerCase(),
         display_name: form.display_name.trim(),
         password: form.password,
+        pin: form.pin,
       });
       toast.success("Account created — welcome!");
       navigate("/", { replace: true });
@@ -98,6 +104,22 @@ export default function RegisterPage() {
             data-testid="register-password-input"
             className="mt-1.5 h-11"
           />
+        </div>
+        <div>
+          <Label htmlFor="pin">Choose a 4-digit PIN</Label>
+          <Input
+            id="pin"
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            required
+            value={form.pin}
+            onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))}
+            placeholder="••••"
+            data-testid="register-pin-input"
+            className="mt-1.5 h-11 text-center text-xl font-bold tracking-[0.5em]"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">You&apos;ll use this PIN to sign back in. Keep it safe.</p>
         </div>
         {error && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" data-testid="register-error">

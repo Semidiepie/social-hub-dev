@@ -70,7 +70,7 @@ def build_router(ctx) -> APIRouter:
     @router.get("/api/conversations")
     async def list_conversations(current: Annotated[dict, Depends(get_current_user)]):
         rows = await db.conversations.find(
-            {"member_ids": current["id"]}, {"_id": 0}
+            {"member_ids": current["id"], "hidden_for": {"$ne": current["id"]}}, {"_id": 0}
         ).sort("updated_at", -1).to_list(100)
         member_ids = {m for c in rows for m in c["member_ids"]}
         members_raw = await db.users.find(
@@ -167,6 +167,7 @@ def build_router(ctx) -> APIRouter:
         update_doc: dict = {
             "$set": {
                 "updated_at": now(),
+                "hidden_for": [],
                 "last_message": {
                     "text": preview,
                     "sender_id": current["id"],
@@ -260,5 +261,34 @@ def build_router(ctx) -> APIRouter:
         )
         updated = await db.messages.find_one({"id": message_id}, {"_id": 0, "reactions": 1})
         return {"reactions": (updated or {}).get("reactions", [])}
+
+    @router.delete("/api/messages/{message_id}")
+    async def delete_message(message_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        """Delete one of your own messages."""
+        msg = await db.messages.find_one({"id": message_id})
+        if not msg:
+            raise HTTPException(404, "Message not found")
+        if msg["sender_id"] != current["id"]:
+            raise HTTPException(403, "You can only delete your own messages")
+        await db.messages.delete_one({"id": message_id})
+        return {"status": "deleted"}
+
+    @router.delete("/api/conversations/{conv_id}")
+    async def delete_conversation(conv_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        """Remove a conversation from YOUR message list (hidden per-user). A new
+        incoming message unhides it. If everyone has hidden it, purge it fully."""
+        c = await db.conversations.find_one({"id": conv_id})
+        if not c or current["id"] not in c["member_ids"]:
+            raise HTTPException(404, "Conversation not found")
+        hidden = set(c.get("hidden_for") or [])
+        hidden.add(current["id"])
+        if hidden.issuperset(set(c["member_ids"])):
+            await db.conversations.delete_one({"id": conv_id})
+            await db.messages.delete_many({"conversation_id": conv_id})
+        else:
+            await db.conversations.update_one(
+                {"id": conv_id}, {"$addToSet": {"hidden_for": current["id"]}}
+            )
+        return {"status": "deleted"}
 
     return router

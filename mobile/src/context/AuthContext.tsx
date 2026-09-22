@@ -9,7 +9,8 @@ interface AuthCtx {
   user: UserPublic | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, username: string, password: string, displayName: string) => Promise<void>;
+  loginWithPin: (identifier: string, pin: string) => Promise<void>;
+  register: (email: string, username: string, password: string, displayName: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -17,6 +18,39 @@ interface AuthCtx {
 const Ctx = createContext<AuthCtx | undefined>(undefined);
 
 const PUSH_TOKEN_CACHE_KEY = "postmeplex.pushtoken";
+const LAST_ACCOUNT_KEY = "postmeplex.lastAccount";
+
+export interface LastAccount {
+  identifier: string;
+  display_name: string;
+  avatar_url: string;
+}
+
+export async function getLastAccount(): Promise<LastAccount | null> {
+  try {
+    return await storage.getItem<LastAccount | null>(LAST_ACCOUNT_KEY, null);
+  } catch {
+    return null;
+  }
+}
+async function rememberAccount(u: UserPublic) {
+  try {
+    await storage.setItem(LAST_ACCOUNT_KEY, {
+      identifier: u.username,
+      display_name: u.display_name,
+      avatar_url: u.avatar_url || "",
+    });
+  } catch {
+    // ignore
+  }
+}
+export async function forgetAccount() {
+  try {
+    await storage.removeItem(LAST_ACCOUNT_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 /** Small helper: sleep for `ms` milliseconds. */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -171,19 +205,32 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     );
     await setToken(resp.access_token);
     setUser(resp.user);
-    // Force re-registration on explicit login (new account or same device switch)
+    await rememberAccount(resp.user);
+    registerPush(resp.user.id, true);
+  }, []);
+
+  const loginWithPin = useCallback(async (identifier: string, pin: string) => {
+    const resp = await api.post<{ access_token: string; user: UserPublic }>(
+      "/auth/login-pin",
+      { identifier: identifier.trim().toLowerCase(), pin },
+      false,
+    );
+    await setToken(resp.access_token);
+    setUser(resp.user);
+    await rememberAccount(resp.user);
     registerPush(resp.user.id, true);
   }, []);
 
   const register = useCallback(
-    async (email: string, username: string, password: string, displayName: string) => {
+    async (email: string, username: string, password: string, displayName: string, pin: string) => {
       const resp = await api.post<{ access_token: string; user: UserPublic }>(
         "/auth/register",
-        { email, username, password, display_name: displayName },
+        { email, username, password, display_name: displayName, pin },
         false,
       );
       await setToken(resp.access_token);
       setUser(resp.user);
+      await rememberAccount(resp.user);
       registerPush(resp.user.id, true);
     },
     [],
@@ -202,7 +249,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, []);
 
   return (
-    <Ctx.Provider value={{ user, loading, login, register, logout, refresh }}>
+    <Ctx.Provider value={{ user, loading, login, loginWithPin, register, logout, refresh }}>
       {children}
     </Ctx.Provider>
   );

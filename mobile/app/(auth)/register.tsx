@@ -25,6 +25,7 @@ export default function Register() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [secure, setSecure] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,10 +39,14 @@ export default function Register() {
       setError("Password must be at least 6 characters.");
       return;
     }
+    if (!/^\d{4}$/.test(pin)) {
+      setError("Choose a 4-digit PIN — you'll use it to sign in.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await register(email.trim(), username.trim(), password, displayName.trim());
+      await register(email.trim(), username.trim(), password, displayName.trim(), pin);
       router.replace("/(tabs)/home");
     } catch (e: any) {
       setError(e?.message ?? "Sign up failed");
@@ -110,6 +115,20 @@ export default function Register() {
               <Ionicons name={secure ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
+
+          <Text style={styles.label}>Choose a 4-digit PIN</Text>
+          <TextInput
+            value={pin}
+            onChangeText={(t) => setPin(t.replace(/\D/g, "").slice(0, 4))}
+            placeholder="••••"
+            placeholderTextColor={colors.textMuted}
+            secureTextEntry
+            keyboardType="number-pad"
+            maxLength={4}
+            style={[styles.input, styles.pinInput]}
+            testID="register-pin-input"
+          />
+          <Text style={styles.pinHint}>You&apos;ll use this PIN to sign back in. Keep it safe.</Text>
 
           {error && (
             <Text style={styles.error} testID="register-error">
@@ -186,4 +205,6 @@ const styles = StyleSheet.create({
   legalText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   legalBold: { color: colors.textPrimary, fontWeight: "700" },
   legalLink: { color: colors.primary, fontWeight: "700" },
+  pinInput: { textAlign: "center", fontSize: 22, fontWeight: "800", letterSpacing: 10 },
+  pinHint: { color: colors.textMuted, fontSize: 12, marginTop: -spacing.sm, marginBottom: spacing.sm },
 });

@@ -196,6 +196,10 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **Delete own posts on web (was missing entirely):** added an owner-only Trash button to feed `PostCard` (`post-delete-<id>`), feed `VideoCard` (`feed-video-delete-<id>`), and `PostDetail` (`post-detail-delete`) → `DELETE /api/posts/:id` (or `/api/videos/:id` for videos). Only shows for the current user's own content; backend enforces 403 for non-owners.
 - Verified: testing agent iteration_32 — backend 7/7 (delete + ownership 403 + regression) + frontend 5/5 (feed/detail delete, ownership guard, upload regression). iOS permission error not reproducible in headless Chromium; fix validated by code + no permission toast on normal uploads.
 
+### 2026-06 (part 14) — Inline commenting on homepage posts (web)
+- Homepage feed `PostCard` comment button was previously a static, non-functional count. Now it toggles an inline comment section (`post-comment-toggle-<id>` → `post-comments-<id>`) that fetches `GET /api/posts/:id/comments`, shows an input (`post-comment-input-<id>`) + submit (`post-comment-submit-<id>`), and posts via `POST /api/posts/:id/comments`. Comments render author name + verified badge; live count updates on the card. Non-signed-in users see a disabled "Sign in to comment" input.
+- Reuses existing backend comment endpoints (no backend change). Self-verified via preview: comment posted, count updated to 1, verified badge shown.
+
 ## Notes
 - All MongoDB documents use UUID `id`; `_id` stripped from every response.
 - Datetimes stored as UTC `datetime`, serialized as ISO 8601.
