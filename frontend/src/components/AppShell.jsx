@@ -11,6 +11,7 @@ import {
   Plus,
   LogOut,
   Shield,
+  Film,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -19,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const NAV = [
   { to: "/", label: "Home", icon: Home, testId: "nav-home" },
+  { to: "/reels", label: "Reels", icon: Film, testId: "nav-reels" },
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },
   { to: "/discover", label: "Discover", icon: Compass, testId: "nav-discover" },
   { to: "/messages", label: "Messages", icon: MessageSquare, testId: "nav-messages" },

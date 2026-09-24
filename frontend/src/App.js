@@ -13,6 +13,7 @@ import BlogComposePage from "@/pages/BlogCompose";
 import BlogRequestPage from "@/pages/BlogRequest";
 import VideoWatchPage from "@/pages/VideoWatch";
 import ReelWatchPage from "@/pages/ReelWatch";
+import ReelsFeedPage from "@/pages/ReelsFeed";
 import VideoUploadPage from "@/pages/VideoUpload";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
@@ -69,6 +70,7 @@ export default function App() {
 
             <Route path="/videos/new" element={<ProtectedRoute><VideoUploadPage /></ProtectedRoute>} />
             <Route path="/videos/:id" element={<VideoWatchPage />} />
+            <Route path="/reels" element={<ReelsFeedPage />} />
             <Route path="/reels/:id" element={<ReelWatchPage />} />
 
             <Route path="/discover" element={<DiscoverPage />} />

@@ -116,6 +116,13 @@ export default function TabsLayout() {
               />
               <CreateFab onPress={() => go("create")} testID="tab-create" />
               <PillTab
+                onPress={() => go("reels")}
+                focused={isFocused("reels")}
+                icon="film-outline"
+                iconFocused="film"
+                testID="tab-reels"
+              />
+              <PillTab
                 onPress={() => go("profile")}
                 focused={isFocused("profile")}
                 icon="person-outline"
@@ -132,7 +139,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="create" />
       <Tabs.Screen name="profile" />
       <Tabs.Screen name="watch" options={{ href: null }} />
-      <Tabs.Screen name="reels" options={{ href: null }} />
+      <Tabs.Screen name="reels" />
     </Tabs>
   );
 }

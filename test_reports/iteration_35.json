@@ -1,0 +1,50 @@
+{
+  "summary": "Tested new WEB /reels 'For You' feed and mobile Reels tab. WEB: all requested flows pass — sidebar Reels link (data-testid=nav-reels) reaches /reels; ReelsFeed loads 4 reels with correct testIDs (reels-scroller, reels-feed-item-<id>, reels-feed-player/mute/like/comment/edit/delete-<id>); mute toggle, like (0→1 persisted across reload), comment modal + post (visible in modal), owner Edit/Delete visible for own reels, fullscreen /reels/:id still works, sidebar order Home·Reels·Blogs·Discover·Messages·Notifications matches spec. MOBILE: BLOCKED by CORS — backend responds to preflight from origin https://social-hub-dev-4.expo.preview.emergentagent.com with access-control-allow-origin: https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud (wrong/stale origin), so login-pin and every /api call from the Expo web preview fails with 'Can't reach PostMePlex servers'. Could not reach the tabs layout to verify the Reels tab or its ordering functionally.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "OPTIONS /api/* (all)", "issue": "CORS Access-Control-Allow-Origin returns hardcoded 'https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud' regardless of request Origin. The Expo web preview origin 'https://social-hub-dev-4.expo.preview.emergentagent.com' is rejected → mobile web preview cannot call any API (login blocked). Verified with curl OPTIONS on /api/auth/login-pin.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "/reels (ReelsFeed)", "issues": ["First reel player initially shows the play-overlay (paused) on load — IntersectionObserver logic looks correct but you may want to auto-play with muted=true immediately when video ref mounts so first-frame is playing without a required user click. Minor UX only."]}
+      ]
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [
+        {"flow": "Login (PIN)", "issue": "CORS blocks POST /api/auth/login-pin from Expo web preview origin. User sees 'Can't reach PostMePlex servers'. All downstream mobile flows (Reels tab, home, discover, profile, reels feed autoplay, like, comment, owner menu) are unreachable via the web preview until CORS is fixed. Root cause is backend, not mobile code.", "affected_testIDs": ["login-submit-button"]}
+      ],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [
+    {"flow": "Reels For You feed", "platform": "mobile", "issue": "Could not verify parity — mobile Expo web preview is blocked by CORS at login. Web verified fully.", "expected": "Both platforms show the /reels feed with newest-first, autoplay, like/comment/owner actions", "actual": "Web: PASS. Mobile: unreachable due to CORS."}
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "URGENT (backend/CORS): update FastAPI CORS middleware to reflect the request Origin (or add the *.expo.preview.emergentagent.com wildcard alongside the *.preview.emergentagent.com origin) so mobile Expo web preview can hit the API. Right now ACAO is hardcoded to a *.emergentcf.cloud host that no longer matches either surface.",
+    "After CORS fix, re-test mobile Reels tab: bottom-bar order Home·Discover·Create(FAB)·Reels·Profile (positions confirmed in code); tap tab-reels → reels-list; verify active reel plays, reel-like-<id>, reel-comment-<id>, owner-menu-<id> Edit/Delete on own reels; regression on tab-home / tab-discover / tab-create / tab-profile.",
+    "OPTIONAL (web polish): consider auto-starting playback of the first visible reel without requiring the IntersectionObserver first tick — some browsers momentarily show the paused overlay on initial mount."
+  ],
+  "critical_code_review_comments": [
+    "AppShell.jsx: `NAV.slice(0,5)` produces bottom nav = Home, Reels, Blogs, Discover, Messages. Spec asks 'Home·Discover·Create(FAB)·Reels·Profile' — that ordering is for MOBILE APP only; web mobile-view bottom nav is not mentioned in the request, so this is likely intentional. Flagging for confirmation.",
+    "ReelsFeed.jsx: IntersectionObserver's dependency array is empty; safe because refs are stable, but consider adding a small explicit `videoRef.current.play()` on mount for the first item to avoid the initial 'paused' flash.",
+    "ReelsFeed.jsx: `useCallback` is imported but not used (line 1).",
+    "reels.tsx: `active` prop is disabled on web (`Platform.OS !== 'web'`) — this means the reel autoplay logic doesn't run in the Expo web preview, so QA via web preview won't validate real device autoplay behaviour even after CORS is fixed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "web 100%, mobile 0% (blocked by CORS)"},
+  "test_credentials": "Web: PIN login identifier=semidiepie, PIN=7455 (login-identifier-input + login-pin-input + Sign in). Mobile: same, but blocked by CORS. Founder email semidiepie@gmail.com / password Semi123! is no longer accepted by /login (page is PIN-only).",
+  "seed_data_creation": "None. Left 4 pre-existing reels intact. Added 1 comment on reel 2382d0ac-... (TEST_iter35_web ...). Like was toggled on then off to leave counts as-is.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Web /reels feed is fully functional (mute, autoplay via IntersectionObserver, like persist, comment persist, edit modal, delete, single-reel /reels/:id fullscreen). The sidebar 'Reels' link (nav-reels) is wired and sits between Home and Blogs. Mobile Reels tab code (app/(tabs)/_layout.tsx + app/(tabs)/reels.tsx) LOOKS correct — tab bar renders in this order: tab-home, tab-discover, tab-create (FAB), tab-reels, tab-profile — but you cannot reach it via the Expo web preview because backend CORS rejects the *.expo.preview.emergentagent.com origin. Once the backend CORS is fixed, the mobile-tab tests should pass; use the login sequence: welcome-login-button → login-identifier-input='semidiepie' → login-pin-input='7455' → login-submit-button.",
+  "rca of the issue": "CORS preflight from Expo web preview: OPTIONS https://social-hub-dev-4.preview.emergentagent.com/api/auth/login-pin with Origin: https://social-hub-dev-4.expo.preview.emergentagent.com returns 'access-control-allow-origin: https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud'. Browser blocks the follow-up POST. Fix: in backend/server.py CORSMiddleware, either use allow_origin_regex to permit both '*.preview.emergentagent.com' and '*.expo.preview.emergentagent.com', or read the Origin header and echo it back (with an allowlist). This affects every mobile web API call, not just login."
+}
