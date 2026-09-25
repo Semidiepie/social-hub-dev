@@ -207,6 +207,11 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Verified: testing agent iteration_33 — backend 5/5 (feed includes reels, fields, sort/cap 80, block filter, anon) + web (3 reel cards, nav to /reels/:id, post/video regression) + mobile (reel cards, nav to reels player, regression), parity confirmed.
 - Minor parity gap (non-blocking): mobile reel/video feed cards have no owner-delete affordance (matches existing mobile video card behavior); web has it. Could add later.
 
+### 2026-06 (part 19) — Video watch page restyled to match the site (web)
+- `/videos/:id` (`VideoWatch.jsx`) previously rendered fullscreen edge-to-edge on `bg-black` with no sidebar. Now it renders **inside the AppShell** (sidebar + top/bottom nav + `bg-background`) like every other page. Changed `App.js` `isFullscreenRoute` regex to fullscreen **reels only** (`/^\/reels\/(?!new$)[^/]+$/`); `/videos/:id` is no longer fullscreen.
+- Player is now in a contained rounded-2xl bordered card (`max-h-[72vh]`, black letterbox inside the card only); back button restyled to a themed outline pill; details/comments/up-next reuse the site's card theme. No behavior/endpoint changes (like/edit/delete/comment unchanged from iteration_34).
+- Self-verified via screenshot: sidebar present, themed background, player in card — matches the rest of the site.
+
 ### 2026-06 (part 18) — Web activity alerts: tab badge + browser Web Push
 - **Goal:** users see missed activity even when not looking at the app — in the browser tab, and via system notifications when the site is closed.
 - **Backend** (`server.py`): new `GET /api/notifications/unread-count`; self-hosted **Web Push** via VAPID/pywebpush — `GET /api/push/vapid-public-key`, `POST /api/push/web-subscribe` (upsert by endpoint, stored in `push_subscriptions`), `POST /api/push/web-unsubscribe`. `send_web_push(user_id,title,body,url)` helper runs pywebpush in a thread, prunes dead subs on 404/410, never raises; hooked into the follow / like / comment notification sites alongside the existing Expo `send_push`. VAPID keys in `backend/.env` (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY_B64`, `VAPID_SUBJECT`); private PEM written to `/tmp/postmeplex_vapid_private.pem` for pywebpush. Added `pywebpush`/`py-vapid` to requirements.
@@ -248,3 +253,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **P2:** Notification-settings screen (toggle DM / follow / comment push categories).
 - **P2:** Batched / muted-chat push (skip push when user is actively reading the chat).
 - **P3:** Web story creation (currently mobile-only).
+
+
+## 2026-06 — Emergent-managed Push Notifications (mobile)
+- Verified against integration_expert playbook (SuprSend relay via `EMERGENT_PUSH_KEY`).
+- Backend: `send_push()` → `/api/v1/push/trigger`; `POST /api/register-push` → `/api/v1/push/users/register`; both short-circuit gracefully on placeholder key in preview. Fired on new message, follow, like, comment, and welcome.
+- Mobile: module-scope `setNotificationHandler` + Android `default` channel; warm + cold-start tap handlers routing `action_url`/`deeplink`; `getDevicePushTokenAsync` registration on login + foreground; `NotificationPermissionPrimer` (first-launch prime + weekly "Open Settings" nudge via `Linking.openSettings` for blocked users).
+- app.json: `expo-notifications` plugin present.
+- PENDING (user action): Android `google-services.json` not yet provided → `android.googleServicesFile` intentionally NOT wired (would break build with missing file). Real delivery requires Publish → Deploy → Generate build (uploads Google service account JSON + APNs `.p8`); cannot be tested on Expo Go / web preview.
+

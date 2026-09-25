@@ -34,9 +34,9 @@ function Shell({ children }) {
   useNotificationBadge();
   const location = useLocation();
   const isAuthRoute = ["/login", "/register"].includes(location.pathname);
-  // The video watch screen renders fullscreen (no sidebar/topbar) so a tapped
-  // video opens edge-to-edge; Back returns you to where you were.
-  const isFullscreenRoute = /^\/(videos|reels)\/(?!new$)[^/]+$/.test(location.pathname);
+  // Only the reels player renders fullscreen (edge-to-edge, immersive). The
+  // video watch page uses the normal shell so it matches the rest of the site.
+  const isFullscreenRoute = /^\/reels\/(?!new$)[^/]+$/.test(location.pathname);
   if (isAuthRoute || isFullscreenRoute) return children;
   return <AppShell>{children}</AppShell>;
 }

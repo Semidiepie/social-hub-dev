@@ -105,7 +105,7 @@ export default function VideoWatchPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-black">
+      <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -113,21 +113,18 @@ export default function VideoWatchPage() {
   if (!video) return null;
 
   return (
-    <div className="min-h-screen bg-black text-foreground" data-testid="video-fullscreen">
-      {/* Sticky top bar with back */}
-      <div className="sticky top-0 z-40 flex items-center gap-3 bg-black/80 px-4 py-3 backdrop-blur">
-        <button
-          onClick={goBack}
-          className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/20"
-          data-testid="video-back-btn"
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
-        <span className="truncate text-sm font-semibold text-white/80">{video.title}</span>
-      </div>
+    <div className="text-foreground" data-testid="video-fullscreen">
+      {/* Back */}
+      <button
+        onClick={goBack}
+        className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+        data-testid="video-back-btn"
+      >
+        <ArrowLeft size={16} /> Back
+      </button>
 
-      {/* Fullscreen player */}
-      <div className="flex w-full items-center justify-center bg-black">
+      {/* Player in a contained, rounded card that matches the site theme */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-black shadow-xl">
         <video
           key={video.id}
           src={video.video_url}
@@ -135,13 +132,13 @@ export default function VideoWatchPage() {
           autoPlay
           poster={video.thumbnail_url || undefined}
           onPlay={registerView}
-          className="max-h-[calc(100vh-56px)] w-full bg-black object-contain"
+          className="mx-auto max-h-[72vh] w-full bg-black object-contain"
           data-testid={`video-player-${video.id}`}
         />
       </div>
 
       {/* Details */}
-      <div className="mx-auto grid max-w-[1180px] gap-8 px-4 py-6 lg:grid-cols-[1fr_320px]">
+      <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_340px]">
         <div>
           <h1 className="text-2xl font-black leading-snug tracking-tight md:text-3xl">{video.title}</h1>
 

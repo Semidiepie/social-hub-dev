@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -30,6 +31,11 @@ import { storage } from "@/src/utils/storage";
 import { colors, radii, spacing, type as tp } from "@/src/theme";
 
 const PRIMER_VERSION_KEY = "postmeplex.pushPrimerVersion";
+// Weekly throttle for nudging users who have permanently blocked notifications.
+const NUDGE_AT_KEY = "postmeplex.pushNudgeAt";
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+type PrimerMode = "prime" | "settings";
 
 /** Read the version string we treat as the app's "current version". */
 function currentAppVersion(): string {
@@ -52,8 +58,18 @@ async function markPrimed(): Promise<void> {
   await storage.setItem(PRIMER_VERSION_KEY, currentAppVersion());
 }
 
+async function nudgedWithinAWeek(): Promise<boolean> {
+  const stamp = await storage.getItem<string>(NUDGE_AT_KEY, "");
+  return !!stamp && Date.now() - Number(stamp) <= ONE_WEEK_MS;
+}
+
+async function markNudged(): Promise<void> {
+  await storage.setItem(NUDGE_AT_KEY, String(Date.now()));
+}
+
 export const NotificationPermissionPrimer: React.FC = () => {
   const [visible, setVisible] = useState(false);
+  const [mode, setMode] = useState<PrimerMode>("prime");
   const [busy, setBusy] = useState(false);
 
   // Decide on mount whether the primer should be shown.
@@ -73,15 +89,23 @@ export const NotificationPermissionPrimer: React.FC = () => {
           return;
         }
         // Blocked forever ("Don't ask again" on Android or 2× denial on iOS)
-        // → the OS won't show the dialog anyway. Let the weekly nudge in
-        // AuthContext handle deep-linking to Settings.
+        // → the OS won't show the dialog anymore, so we can only deep-link the
+        // user to system Settings. Nudge at most once per week.
         if (perm.status === "denied" && perm.canAskAgain === false) {
+          if (await nudgedWithinAWeek()) return;
+          if (!cancelled) {
+            setMode("settings");
+            setVisible(true);
+          }
           return;
         }
         // Already primed for this version → don't nag again this launch cycle.
         if (await alreadyPrimedForThisVersion()) return;
 
-        if (!cancelled) setVisible(true);
+        if (!cancelled) {
+          setMode("prime");
+          setVisible(true);
+        }
       } catch {
         // Non-fatal: keep the app open even if the permissions API misbehaves.
       }
@@ -106,12 +130,29 @@ export const NotificationPermissionPrimer: React.FC = () => {
     }
   }, []);
 
-  const handleDismiss = useCallback(async () => {
-    await markPrimed();
+  // Blocked-forever path: open system Settings so the user can flip it back on.
+  const handleOpenSettings = useCallback(async () => {
+    await markNudged();
     setVisible(false);
+    try {
+      await Linking.openSettings();
+    } catch {
+      // ignore — nothing else we can do from JS
+    }
   }, []);
 
+  const handleDismiss = useCallback(async () => {
+    if (mode === "settings") {
+      await markNudged();
+    } else {
+      await markPrimed();
+    }
+    setVisible(false);
+  }, [mode]);
+
   if (!visible) return null;
+
+  const isSettings = mode === "settings";
 
   return (
     <Modal
@@ -127,11 +168,14 @@ export const NotificationPermissionPrimer: React.FC = () => {
             <Ionicons name="notifications" size={34} color={colors.primary} />
           </View>
 
-          <Text style={styles.title}>Stay in the loop</Text>
+          <Text style={styles.title}>
+            {isSettings ? "Notifications are off" : "Stay in the loop"}
+          </Text>
 
           <Text style={styles.body}>
-            Turn on notifications to hear about new messages, squad activity,
-            and reactions on your posts.
+            {isSettings
+              ? "You've turned off notifications. Re-enable them in Settings to hear about new messages, squad activity, and reactions."
+              : "Turn on notifications to hear about new messages, squad activity, and reactions on your posts."}
           </Text>
 
           <View style={styles.bullets}>
@@ -142,8 +186,9 @@ export const NotificationPermissionPrimer: React.FC = () => {
 
           <Pressable
             accessibilityRole="button"
-            onPress={handleEnable}
+            onPress={isSettings ? handleOpenSettings : handleEnable}
             disabled={busy}
+            testID="push-primer-primary"
             style={({ pressed }) => [
               styles.primaryBtn,
               (pressed || busy) && styles.btnPressed,
@@ -152,7 +197,9 @@ export const NotificationPermissionPrimer: React.FC = () => {
             {busy ? (
               <ActivityIndicator color="#0B0C13" />
             ) : (
-              <Text style={styles.primaryBtnText}>Enable notifications</Text>
+              <Text style={styles.primaryBtnText}>
+                {isSettings ? "Open Settings" : "Enable notifications"}
+              </Text>
             )}
           </Pressable>
 
@@ -160,6 +207,7 @@ export const NotificationPermissionPrimer: React.FC = () => {
             accessibilityRole="button"
             onPress={handleDismiss}
             hitSlop={12}
+            testID="push-primer-dismiss"
             style={styles.secondaryBtn}
           >
             <Text style={styles.secondaryBtnText}>Not now</Text>
