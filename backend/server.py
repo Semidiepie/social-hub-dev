@@ -371,6 +371,19 @@ async def get_optional_user(token: Annotated[Optional[str], Depends(oauth2_schem
     return await db.users.find_one({"id": user_id}, {"_id": 0})
 
 
+async def user_from_token(token: Optional[str]) -> Optional[dict]:
+    """Resolve a user from a raw JWT string (used by WebSocket auth where the
+    token arrives as a query param, not an Authorization header)."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+        user_id = payload.get("sub")
+    except jwt.PyJWTError:
+        return None
+    return await db.users.find_one({"id": user_id}, {"_id": 0})
+
+
 async def send_push(recipients: list[str], data: dict, idempotency_key: Optional[str] = None) -> None:
     if not recipients:
         return
@@ -2212,6 +2225,7 @@ route_ctx = SimpleNamespace(
     logger=logger,
     get_current_user=get_current_user,
     get_optional_user=get_optional_user,
+    user_from_token=user_from_token,
     blocked_ids_for=blocked_ids_for,
     cloudinary_compat_url=_cloudinary_compat_url,
     user_to_public=user_to_public,
@@ -2228,3 +2242,6 @@ app.include_router(_build_videos(route_ctx))
 
 from routes.messages import build_router as _build_messages  # noqa: E402
 app.include_router(_build_messages(route_ctx))
+
+from routes.live import build_router as _build_live  # noqa: E402
+app.include_router(_build_live(route_ctx))

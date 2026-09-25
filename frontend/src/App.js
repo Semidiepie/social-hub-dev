@@ -19,6 +19,9 @@ import ReelWatchPage from "@/pages/ReelWatch";
 import ReelsFeedPage from "@/pages/ReelsFeed";
 import ReelUploadPage from "@/pages/ReelUpload";
 import MusicPage from "@/pages/Music";
+import LiveFeedPage from "@/pages/LiveFeed";
+import GoLivePage from "@/pages/GoLive";
+import LiveWatchPage from "@/pages/LiveWatch";
 import VideoUploadPage from "@/pages/VideoUpload";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
@@ -41,7 +44,10 @@ function Shell({ children }) {
   const isAuthRoute = ["/login", "/register"].includes(location.pathname);
   // Only the reels player renders fullscreen (edge-to-edge, immersive). The
   // video watch page uses the normal shell so it matches the rest of the site.
-  const isFullscreenRoute = /^\/reels\/(?!new$)[^/]+$/.test(location.pathname);
+  const isFullscreenRoute =
+    /^\/reels\/(?!new$)[^/]+$/.test(location.pathname) ||
+    location.pathname === "/live/new" ||
+    /^\/live\/(?!new$)[^/]+$/.test(location.pathname);
   if (isAuthRoute || isFullscreenRoute) return children;
   return <AppShell>{children}</AppShell>;
 }
@@ -124,6 +130,10 @@ export default function App() {
             />
 
             <Route path="/music" element={<MusicPage />} />
+
+            <Route path="/live" element={<ProtectedRoute><LiveFeedPage /></ProtectedRoute>} />
+            <Route path="/live/new" element={<ProtectedRoute><GoLivePage /></ProtectedRoute>} />
+            <Route path="/live/:id" element={<ProtectedRoute><LiveWatchPage /></ProtectedRoute>} />
 
             {/* Clean channel-handle URLs: /@username and /@username/{videoId}.
                 Declared last so all static/specific routes win first. */}

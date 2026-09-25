@@ -47,6 +47,14 @@
 - Mobile: full Agora RTC engine — host/guest broadcaster, listener as audience, host auto-unmute, guest invite/step-down. **Iteration 19 (June 2026): fixed critical bug where audio was never streamed — the room UI never wired to Agora. Now initializes engine, joins channel, mutes/unmutes correctly.**
 - Web (v1.2): list rooms, host can create a room; broadcasting/listening audio deferred to v2.
 
+### Live Video Streaming — TikTok-style (mobile + web) — NEW iteration 37, June 2026
+- **Interactive real-time layer (fully functional, no provider needed):** our own FastAPI WebSocket (`/api/live/{id}/ws?token=JWT`) + MongoDB. Live chat, floating heart animations, virtual gifts (7 free animated gifts), and a live viewer counter that increments/decrements as clients join/leave. Verified: backend 6/6 pytest (`test_iteration37_live.py`) + web e2e.
+- **Video pipeline (Cloudflare Stream Live control plane):** `routes/live.py` creates/stops live inputs; broadcaster gets a WHIP publish URL (owner-only, never persisted/leaked), viewers get a WHEP (sub-second) or HLS playback URL. Gated by env `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`. **Currently EMPTY → "demo mode":** streams create + interactive layer is fully live, but no actual video (a "Waiting for video…" placeholder shows). Add keys to activate real video.
+- **Web:** `/live` feed (browse active), `/live/new` (Go Live — browser WHIP publish via getUserMedia), `/live/:id` (watch — WHEP/HLS playback + overlay). Sidebar + bottom-nav "Live" entry.
+- **Mobile (Expo):** `app/live/index.tsx` (feed), `app/live/new.tsx` (Go Live — expo-camera preview + permission flow), `app/live/[id].tsx` (watch — expo-video HLS + overlay). Home-header "Live" button. Real camera broadcast (WHIP) requires `react-native-whip-whep` in a native/published build — NOT Expo Go/web preview. Mobile UI verified; full mobile-preview e2e blocked by the known Expo-web-preview CORS limitation (works on native builds).
+- Collections: `live_streams`, `live_chat`. `LiveHub` is in-memory (single-worker; Redis pub/sub needed to scale to multiple workers).
+- **Cost note:** video delivery is billed by the provider per viewer-minute (e.g. Cloudflare Stream Live ~$1/1000 delivered min). Thousands of concurrent viewers = thousands of $/mo — inherent to live video, paid directly to the provider.
+
 ### Stories (mobile-only in v1 web)
 - 24-hour ephemeral image/video stories with view tracking.
 

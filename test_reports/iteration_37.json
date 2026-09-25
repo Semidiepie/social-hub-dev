@@ -1,0 +1,56 @@
+{
+  "summary": "Tested new TikTok-style Live feature. Backend: 6/6 pytest tests PASS covering gifts catalog, create/list/get/stop lifecycle, ownership enforcement (403 for non-owner stop), no leakage of input_id/whip_url in public payloads, chat history endpoint, and end-to-end WebSocket flow with 3 concurrent clients (auth guard, init backlog, chat/heart/gift broadcast, viewer count increments to 3 and decrements on disconnect, stream_not_live error). Web: /live feed, /live/new, and broadcasting screen all working — sent chat, incremented hearts, sent Rose gift, viewer counter shows 1, demo banner shown. Mobile: /live and /live/new screens render correctly with all requested testIDs (live-list, golive-nav-btn, golive-empty-btn, golive-title, golive-start-btn, live-back, golive-cancel). Mobile watch/broadcast overlay could NOT be exercised end-to-end because the Expo web preview host is blocked by a pre-existing infrastructure CORS misconfiguration (see parity_issues). No new bugs found in the Live feature itself.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [
+    {
+      "flow": "Any authenticated mobile API call (blocks login + live)",
+      "platform": "mobile",
+      "issue": "PRE-EXISTING infrastructure CORS issue (not introduced by Live feature). Expo web preview origin 'https://social-hub-dev-4.expo.preview.emergentagent.com' is not whitelisted by the Cloudflare/infra CORS gateway — OPTIONS preflight returns 'access-control-allow-origin: https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud' (a fixed different host), so the browser blocks every fetch. Backend FastAPI CORS uses allow_origins=['*'] with allow_credentials=True (invalid CORS combo per spec), but the effective ACAO is set by the ingress. Web preview (same host as API) is unaffected. Verified via: curl -X OPTIONS -H 'Origin: https://social-hub-dev-4.expo.preview.emergentagent.com' ...",
+      "expected": "Mobile web preview should be able to call /api/* like web",
+      "actual": "CORS preflight blocks every API call from expo.preview host; UI screens render but stay empty. Real device build with EXPO_PUBLIC_BACKEND_URL is not affected by browser CORS."
+    }
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration37_live.py",
+    "/app/test_reports/pytest/iteration37_live.xml"
+  ],
+  "action_items": [
+    "Investigate why the Cloudflare/preview ingress pins ACAO to https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud when the request Origin is the expo.preview host. Options: (a) fix ingress to reflect requesting Origin, (b) change backend to explicit allow_origins list (both regular + expo.preview hosts) with allow_credentials=True — replacing the invalid ['*'] + credentials combo. Note: this is infra/pre-existing, NOT caused by the Live feature.",
+    "After CORS is fixed, run a mobile end-to-end pass of the Live flow (owner golive-start-btn -> demo notice banner -> LiveOverlay chat/hearts/gifts/viewer count -> viewer joins from another mobile session -> end stream) — code review shows parity with the verified web flow."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py:104 uses CORSMiddleware with allow_credentials=True AND allow_origins=['*'] — invalid per CORS spec; Starlette silently drops the wildcard when credentials are on. Not the cause of the mobile CORS block (ingress overrides), but should be tightened to an explicit list.",
+    "routes/live.py: hub is an in-memory dict — viewer_count and floating chat state won't survive backend restart and won't scale to more than one uvicorn worker. Fine for MVP, but call it out in PRD for future Redis pub/sub upgrade.",
+    "routes/live.py:277 gifts sent via WebSocket are not charged/decremented against the sender's balance — currently free/no economy. If monetization is planned this is where to add wallet debit before broadcast.",
+    "public_stream() correctly omits input_id and whip_url from the payload — verified by tests. whip_url is returned exactly once, only to the creating owner on POST /api/live, which matches the security intent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration37_live.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6)",
+    "frontend": "web 100%, mobile UI-render 100% / API blocked by pre-existing CORS"
+  },
+  "seed_data_creation": "Created scratch users tec_*_XXXXXXXX@postmeplex.com with pin 1234 (auto-purged on backend restart). No persistent data left except transient live_streams/live_chat docs from stopped test streams (safe to leave; status='ended' excludes from listings).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Live feature backend + web fully verified. Mobile UI code paths verified visually; mobile browser-based end-to-end is blocked by an infra-level CORS mismatch that affects EVERY mobile API call (not just Live). Rerun /app/backend/tests/test_iteration37_live.py as regression. If mobile CORS is fixed, use the credentials note in review_request to register a PIN account via /api/auth/register and drive login through the mobile UI, then exercise golive-start-btn and live-card-{id} flows.",
+  "rca of the issue": "Not a Live-feature bug. Root cause of mobile blockade: the preview ingress hard-codes ACAO to a single cluster host, so any cross-subdomain fetch from the Expo web preview to the API host fails CORS preflight. Repro: OPTIONS /api/auth/login-pin with Origin=https://social-hub-dev-4.expo.preview.emergentagent.com -> response ACAO=https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud."
+}

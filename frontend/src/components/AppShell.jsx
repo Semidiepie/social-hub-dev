@@ -13,6 +13,7 @@ import {
   Shield,
   Film,
   Music2,
+  Radio,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -29,6 +30,7 @@ import {
 
 const NAV = [
   { to: "/", label: "Home", icon: Home, testId: "nav-home" },
+  { to: "/live", label: "Live", icon: Radio, testId: "nav-live" },
   { to: "/reels", label: "Reels", icon: Film, testId: "nav-reels" },
   { to: "/music", label: "Music", icon: Music2, testId: "nav-music" },
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },

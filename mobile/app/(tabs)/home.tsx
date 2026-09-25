@@ -87,6 +87,13 @@ export default function Home() {
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.iconBtn}
+              onPress={() => router.push("/live")}
+              testID="header-live-button"
+            >
+              <Ionicons name="radio-outline" size={22} color={colors.live} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconBtn}
               onPress={() => router.push("/blogs")}
               testID="header-blogs-button"
             >
