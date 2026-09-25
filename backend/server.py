@@ -1602,6 +1602,25 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
     return comment_out
 
 
+@app.delete("/api/posts/{post_id}/comments/{comment_id}")
+async def delete_comment(
+    post_id: str,
+    comment_id: str,
+    current: Annotated[dict, Depends(get_current_user)],
+):
+    """Delete one of your own comments. Only the comment's author may delete it."""
+    comment = await db.comments.find_one({"id": comment_id, "post_id": post_id})
+    if not comment:
+        raise HTTPException(404, "Comment not found")
+    if comment.get("user_id") != current["id"]:
+        raise HTTPException(403, "You can only delete your own comments")
+    await db.comments.delete_one({"id": comment_id})
+    await db.posts.update_one(
+        {"id": post_id, "comments_count": {"$gt": 0}}, {"$inc": {"comments_count": -1}}
+    )
+    return {"status": "deleted"}
+
+
 # ============================================================
 # Routes — Notifications
 # ============================================================

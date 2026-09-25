@@ -303,6 +303,21 @@ function PostComments({ postId, user, onCountChange }) {
     }
   };
 
+  const removeComment = async (c) => {
+    if (!window.confirm("Delete this comment?")) return;
+    const prev = comments || [];
+    const next = prev.filter((x) => x.id !== c.id);
+    setComments(next);
+    onCountChange(next.length);
+    try {
+      await api.del(`/posts/${postId}/comments/${c.id}`);
+    } catch (e) {
+      setComments(prev);
+      onCountChange(prev.length);
+      toast.error(e.message || "Failed to delete");
+    }
+  };
+
   return (
     <section className="border-t border-border px-4 py-3" data-testid={`post-comments-${postId}`}>
       <form onSubmit={submit} className="flex items-center gap-2">
@@ -336,7 +351,7 @@ function PostComments({ postId, user, onCountChange }) {
       ) : (
         <div className="mt-3 space-y-3">
           {comments.map((c) => (
-            <div key={c.id} className="flex gap-2.5" data-testid={`post-comment-${c.id}`}>
+            <div key={c.id} className="group flex items-start gap-2.5" data-testid={`post-comment-${c.id}`}>
               <Avatar src={c.author?.avatar_url || c.avatar_url} size={32} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1 text-sm">
@@ -350,6 +365,18 @@ function PostComments({ postId, user, onCountChange }) {
                 </div>
                 <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/95">{c.text}</p>
               </div>
+              {user && c.user_id === user.id && (
+                <button
+                  type="button"
+                  onClick={() => removeComment(c)}
+                  title="Delete comment"
+                  aria-label="Delete comment"
+                  data-testid={`post-comment-delete-${c.id}`}
+                  className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           ))}
         </div>

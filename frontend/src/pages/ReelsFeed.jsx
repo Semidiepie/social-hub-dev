@@ -99,6 +99,9 @@ export default function ReelsFeedPage() {
           onPosted={() =>
             onUpdated({ ...commentReel, comments_count: (commentReel.comments_count || 0) + 1 })
           }
+          onRemoved={() =>
+            onUpdated({ ...commentReel, comments_count: Math.max(0, (commentReel.comments_count || 0) - 1) })
+          }
         />
       )}
 
@@ -265,7 +268,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
   );
 }
 
-function CommentsModal({ reel, user, onClose, onPosted }) {
+function CommentsModal({ reel, user, onClose, onPosted, onRemoved }) {
   const navigate = useNavigate();
   const [comments, setComments] = useState(null);
   const [text, setText] = useState("");
@@ -277,6 +280,19 @@ function CommentsModal({ reel, user, onClose, onPosted }) {
       .then(setComments)
       .catch(() => setComments([]));
   }, [reel.id]);
+
+  const removeComment = async (c) => {
+    if (!window.confirm("Delete this comment?")) return;
+    const prev = comments || [];
+    setComments(prev.filter((x) => x.id !== c.id));
+    try {
+      await api.del(`/posts/${reel.id}/comments/${c.id}`);
+      onRemoved?.();
+    } catch (e) {
+      setComments(prev);
+      toast.error(e.message || "Failed to delete");
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -317,7 +333,7 @@ function CommentsModal({ reel, user, onClose, onPosted }) {
           ) : (
             <div className="space-y-3">
               {comments.map((c) => (
-                <div key={c.id} className="flex gap-2.5" data-testid={`reels-comment-${c.id}`}>
+                <div key={c.id} className="group flex items-start gap-2.5" data-testid={`reels-comment-${c.id}`}>
                   <Avatar src={c.avatar_url} size={32} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1 text-sm">
@@ -327,6 +343,18 @@ function CommentsModal({ reel, user, onClose, onPosted }) {
                     </div>
                     <p className="mt-0.5 whitespace-pre-wrap text-sm">{c.text}</p>
                   </div>
+                  {user && c.user_id === user.id && (
+                    <button
+                      type="button"
+                      onClick={() => removeComment(c)}
+                      title="Delete comment"
+                      aria-label="Delete comment"
+                      data-testid={`reels-comment-delete-${c.id}`}
+                      className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

@@ -289,3 +289,11 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Route ordering: `/reels/new` declared before `/reels/:id`; the fullscreen regex in App.js already excludes `new`, so the page renders inside AppShell.
 - Verified: `POST /api/reels` via curl (creates `type: reel`), and UI screenshot (both entry points + `/reels/new` form render, publish disabled until a video is chosen). NOT run through testing agent; in-browser file-upload→Cloudinary→publish reuses the same proven path as the post/video uploaders but was not exercised end-to-end with a real file.
 
+
+
+## 2026-06 — Delete own comments (web)
+- Backend: `DELETE /api/posts/{post_id}/comments/{comment_id}` — auth required; author-only (403 for non-author, 401 anon, 404 missing); decrements `comments_count` (floored at 0).
+- Web: trash button on each comment the current user owns (appears on hover) across all four surfaces that use `/posts/{id}/comments`: Home inline `PostComments`, `PostDetail`, `ReelWatch`, and `ReelsFeed` `CommentsModal`. Optimistic removal + count update with rollback on error. testIDs: `post-comment-delete-{id}`, `post-detail-comment-delete-{id}`, `reel-comment-delete-{id}`, `reels-comment-delete-{id}`.
+- Verified: curl (403/401/200/404 + count 1→0) and a Home UI screenshot (delete button renders for owned comment). NOT run through testing agent (self-tested).
+- Scope note: covers POST + REEL comments (shared endpoint). VIDEO comments use a separate `/api/videos/{id}/comments` collection and were NOT included — can extend on request. Web only; mobile comment UIs unchanged.
+

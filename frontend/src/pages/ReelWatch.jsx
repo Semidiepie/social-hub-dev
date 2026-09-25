@@ -89,6 +89,20 @@ export default function ReelWatchPage() {
     }
   };
 
+  const deleteComment = async (c) => {
+    if (!window.confirm("Delete this comment?")) return;
+    const prev = comments;
+    setComments((rows) => rows.filter((x) => x.id !== c.id));
+    setReel((r) => (r ? { ...r, comments_count: Math.max(0, (r.comments_count || 0) - 1) } : r));
+    try {
+      await api.del(`/posts/${id}/comments/${c.id}`);
+    } catch (e) {
+      setComments(prev);
+      setReel((r) => (r ? { ...r, comments_count: (r.comments_count || 0) + 1 } : r));
+      toast.error(e.message || "Failed to delete");
+    }
+  };
+
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
@@ -260,7 +274,7 @@ export default function ReelWatchPage() {
                 </p>
               ) : (
                 comments.map((c) => (
-                  <div key={c.id} className="flex gap-3" data-testid={`reel-comment-${c.id}`}>
+                  <div key={c.id} className="group flex items-start gap-3" data-testid={`reel-comment-${c.id}`}>
                     <Avatar src={c.author?.avatar_url || c.avatar_url} size={32} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1 text-sm">
@@ -272,6 +286,18 @@ export default function ReelWatchPage() {
                       </div>
                       <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/95">{c.text}</p>
                     </div>
+                    {user && c.user_id === user.id && (
+                      <button
+                        type="button"
+                        onClick={() => deleteComment(c)}
+                        title="Delete comment"
+                        aria-label="Delete comment"
+                        data-testid={`reel-comment-delete-${c.id}`}
+                        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 ))
               )}
