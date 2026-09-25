@@ -22,6 +22,7 @@ import MusicPage from "@/pages/Music";
 import LiveFeedPage from "@/pages/LiveFeed";
 import GoLivePage from "@/pages/GoLive";
 import LiveWatchPage from "@/pages/LiveWatch";
+import PetPage from "@/pages/Pet";
 import VideoUploadPage from "@/pages/VideoUpload";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
@@ -134,6 +135,8 @@ export default function App() {
             <Route path="/live" element={<ProtectedRoute><LiveFeedPage /></ProtectedRoute>} />
             <Route path="/live/new" element={<ProtectedRoute><GoLivePage /></ProtectedRoute>} />
             <Route path="/live/:id" element={<ProtectedRoute><LiveWatchPage /></ProtectedRoute>} />
+
+            <Route path="/pet" element={<ProtectedRoute><PetPage /></ProtectedRoute>} />
 
             {/* Clean channel-handle URLs: /@username and /@username/{videoId}.
                 Declared last so all static/specific routes win first. */}

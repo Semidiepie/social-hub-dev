@@ -14,6 +14,7 @@ import {
   Film,
   Music2,
   Radio,
+  PawPrint,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -33,6 +34,7 @@ const NAV = [
   { to: "/live", label: "Live", icon: Radio, testId: "nav-live" },
   { to: "/reels", label: "Reels", icon: Film, testId: "nav-reels" },
   { to: "/music", label: "Music", icon: Music2, testId: "nav-music" },
+  { to: "/pet", label: "Pet", icon: PawPrint, testId: "nav-pet" },
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },
   { to: "/discover", label: "Discover", icon: Compass, testId: "nav-discover" },
   { to: "/messages", label: "Messages", icon: MessageSquare, testId: "nav-messages" },
@@ -200,6 +202,9 @@ export function AppShell({ children }) {
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-music" onClick={() => navigate("/music")}>
                   <Music2 size={16} /> Music
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-pet" onClick={() => navigate("/pet")}>
+                  <PawPrint size={16} /> My Pet
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-settings" onClick={() => navigate("/settings")}>
                   <Settings size={16} /> Settings

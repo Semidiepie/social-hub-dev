@@ -2245,3 +2245,6 @@ app.include_router(_build_messages(route_ctx))
 
 from routes.live import build_router as _build_live  # noqa: E402
 app.include_router(_build_live(route_ctx))
+
+from routes.pets import build_router as _build_pets  # noqa: E402
+app.include_router(_build_pets(route_ctx))

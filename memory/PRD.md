@@ -54,6 +54,17 @@
 - **Mobile (Expo):** `app/live/index.tsx` (feed), `app/live/new.tsx` (Go Live — expo-camera preview + permission flow), `app/live/[id].tsx` (watch — expo-video HLS + overlay). Home-header "Live" button. Real camera broadcast (WHIP) requires `react-native-whip-whep` in a native/published build — NOT Expo Go/web preview. Mobile UI verified; full mobile-preview e2e blocked by the known Expo-web-preview CORS limitation (works on native builds).
 - Collections: `live_streams`, `live_chat`. `LiveHub` is in-memory (single-worker; Redis pub/sub needed to scale to multiple workers).
 - **Cost note:** video delivery is billed by the provider per viewer-minute (e.g. Cloudflare Stream Live ~$1/1000 delivered min). Thousands of concurrent viewers = thousands of $/mo — inherent to live video, paid directly to the provider.
+- Live now ACTIVE (not demo): Cloudflare Stream enabled + valid token in `backend/.env`; graceful demo fallback retained if the provider call ever fails.
+
+### Virtual Pet — "Sage AI" (web, v1) — NEW iteration 38, June 2026
+- Tamagotchi-style pet. Care/leveling/stats are all free (backend); the ONLY paid action is Sage AI image generation.
+- **Sage AI = Gemini "Nano Banana"** (`gemini-3.1-flash-image-preview`) via `EMERGENT_LLM_KEY`. Generates the pet image ONLY on **create** (free-text "dream pet" description) and on **restyle** (image-edit using current pet as reference for consistency). Result is uploaded to Cloudinary (unsigned preset) and cached — never regenerated on other actions. Keeps cost to ~cents per pet.
+- `routes/pets.py`: `GET/POST/PATCH/DELETE /api/pet`, `POST /api/pet/{feed|play|bath}`, `POST /api/pet/style`. One pet per user. Stats (hunger/happiness/cleanliness/health) decay over time (computed on read from `updated_at`, not persisted on GET). Care actions refill a stat, grant XP (play 20 / feed 15 / bath 10), enforce cooldowns (play 2h / feed 4h / bath 6h → 429), and level up (100 XP/level, cap Lv 10). Mood + stage (Baby/Teen/Adult) derived.
+- Web: `/app/frontend/src/pages/Pet.jsx` at `/pet` (green Sage-AI theme matching the reference). Create form, pet card (Lv/XP/AI-styled badge/mood/level bar), 4 stat bars, Care Zone (Play/Feed/Bath w/ live cooldown timers), Play Game button, rename, restyle, release. Nav: sidebar "Pet" + mobile top-bar dropdown "My Pet".
+- **Verified-only:** `POST /api/pet` returns 403 for non-verified users; web shows a "Verified members only" gate (`pet-verified-gate`).
+- **Transparent background:** Sage AI is prompted to paint the pet on a flat magenta (#FF00FF) background, then the backend chroma-keys it out (Pillow+numpy) to a real transparent PNG before uploading to Cloudinary (alpha preserved). Free, no paid bg-removal add-on.
+- Verified: backend all endpoints via curl (incl cooldown 429, XP, rename, restyle-with-reference, delete, transparency alpha check, verified gate) + web e2e via screenshots (create→transparent display, play→XP, rename, stats). NOT run through the testing agent (to avoid repeated paid AI generations).
+- Mobile parity NOT built yet (web-only v1 per user).
 
 ### Stories (mobile-only in v1 web)
 - 24-hour ephemeral image/video stories with view tracking.
