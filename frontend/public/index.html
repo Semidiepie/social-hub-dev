@@ -2,7 +2,7 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
         <meta name="theme-color" content="#12141c" />
         <meta name="description" content="PostMePlex — the home for gamers, streamers, and every clutch moment. Post, publish blogs, and go live." />
         <link rel="icon" type="image/png" href="%PUBLIC_URL%/favicon.png" />
@@ -12,6 +12,21 @@
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap" rel="stylesheet" />
         <title>PostMePlex — Post. Publish. Go live.</title>
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
+        <script>
+            // Lock zoom on iOS Safari (which ignores user-scalable=no): block pinch-gesture and double-tap zoom.
+            document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+            document.addEventListener("gesturechange", function (e) { e.preventDefault(); }, { passive: false });
+            document.addEventListener("gestureend", function (e) { e.preventDefault(); }, { passive: false });
+            var __lastTouch = 0;
+            document.addEventListener("touchend", function (e) {
+                var now = Date.now();
+                if (now - __lastTouch <= 300) { e.preventDefault(); }
+                __lastTouch = now;
+            }, { passive: false });
+            document.addEventListener("touchmove", function (e) {
+                if (e.touches && e.touches.length > 1) { e.preventDefault(); }
+            }, { passive: false });
+        </script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
     <body>

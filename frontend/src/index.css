@@ -48,6 +48,10 @@ html, body {
     "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Lock zoom: allow scroll/pan, block pinch & double-tap zoom */
+  touch-action: pan-x pan-y;
+  -ms-touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
 }
 
 #root { min-height: 100vh; }
