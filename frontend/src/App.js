@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useNotificationBadge } from "@/hooks/useNotificationBadge";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import HomePage from "@/pages/Home";
@@ -30,6 +31,7 @@ import AdminBlogsPage from "@/pages/AdminBlogs";
  * routes. Public routes (auth flows) render outside the shell.
  */
 function Shell({ children }) {
+  useNotificationBadge();
   const location = useLocation();
   const isAuthRoute = ["/login", "/register"].includes(location.pathname);
   // The video watch screen renders fullscreen (no sidebar/topbar) so a tapped

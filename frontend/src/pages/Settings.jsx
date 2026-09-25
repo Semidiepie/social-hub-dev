@@ -11,6 +11,8 @@ import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { uploadToCloudinary, cloudinaryAvailable } from "@/lib/cloudinary";
+import { enableBrowserPush, disableBrowserPush, isBrowserPushEnabled, pushSupported } from "@/lib/webpush";
+import { Bell } from "lucide-react";
 
 export default function SettingsPage() {
   const { user, patchUser, logout, refresh } = useAuth();
@@ -24,6 +26,33 @@ export default function SettingsPage() {
   const [savingPw, setSavingPw] = useState(false);
 
   const [deleting, setDeleting] = useState(false);
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    isBrowserPushEnabled().then(setPushOn);
+  }, []);
+
+  const toggleBrowserPush = async () => {
+    setPushBusy(true);
+    try {
+      if (pushOn) {
+        await disableBrowserPush();
+        setPushOn(false);
+        toast.success("Browser notifications turned off");
+      } else {
+        const ok = await enableBrowserPush();
+        setPushOn(ok);
+        toast[ok ? "success" : "error"](
+          ok ? "Browser notifications enabled" : "Permission denied or unsupported"
+        );
+      }
+    } catch (e) {
+      toast.error(e.message || "Failed");
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -201,6 +230,31 @@ export default function SettingsPage() {
               {savingPw && <Loader2 size={14} className="animate-spin" />} Change password
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Bell size={18} /> Browser notifications</CardTitle></CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div>
+            <div className="font-semibold">Get notified of new activity</div>
+            <p className="text-xs text-muted-foreground">
+              {pushSupported()
+                ? "Alerts show even when PostMePlex is closed. On iPhone, add PostMePlex to your Home Screen first."
+                : "This browser doesn't support push notifications."}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant={pushOn ? "outline" : "default"}
+            disabled={pushBusy || !pushSupported()}
+            onClick={toggleBrowserPush}
+            className={`gap-2 ${pushOn ? "" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+            data-testid="settings-toggle-push"
+          >
+            {pushBusy ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
+            {pushOn ? "Turn off" : "Enable"}
+          </Button>
         </CardContent>
       </Card>
 

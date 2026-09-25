@@ -34,6 +34,29 @@ JWT_TTL_MIN = 60 * 24 * 30  # 30 days
 PUSH_BASE_URL = "https://integrations.emergentagent.com"
 PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
 
+# Web Push (browser) — self-hosted VAPID. Independent of the Expo mobile push above.
+import base64 as _base64  # noqa: E402
+import json as _json  # noqa: E402
+import asyncio as _asyncio  # noqa: E402
+
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY_B64 = os.environ.get("VAPID_PRIVATE_KEY_B64", "")
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:support@postmeplex.com")
+try:
+    _VAPID_PRIVATE_PEM = _base64.b64decode(VAPID_PRIVATE_KEY_B64).decode() if VAPID_PRIVATE_KEY_B64 else ""
+except Exception:
+    _VAPID_PRIVATE_PEM = ""
+
+# pywebpush wants a PEM file path (or raw base64 key), not a PEM string — write once.
+_VAPID_PRIVATE_PEM_PATH = ""
+if _VAPID_PRIVATE_PEM:
+    try:
+        _VAPID_PRIVATE_PEM_PATH = "/tmp/postmeplex_vapid_private.pem"
+        with open(_VAPID_PRIVATE_PEM_PATH, "w") as _f:
+            _f.write(_VAPID_PRIVATE_PEM)
+    except Exception:
+        _VAPID_PRIVATE_PEM_PATH = ""
+
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_FROM = os.environ.get("RESEND_FROM", "PostMePlex <onboarding@resend.dev>")
 
@@ -174,6 +197,16 @@ class PushRegisterBody(BaseModel):
     user_id: str
     platform: str
     device_token: str
+
+
+class WebPushSubscribeBody(BaseModel):
+    endpoint: str = Field(min_length=20, max_length=2048)
+    expirationTime: Optional[float] = None
+    keys: dict
+
+
+class WebPushUnsubscribeBody(BaseModel):
+    endpoint: str = Field(min_length=20, max_length=2048)
 
 
 class ForgotPasswordBody(BaseModel):
@@ -359,6 +392,46 @@ async def send_push(recipients: list[str], data: dict, idempotency_key: Optional
             )
     except Exception as e:
         logger.warning(f"[push] trigger exception (non-blocking): {e}")
+
+
+def _web_push_send_sync(sub: dict, payload: str) -> Optional[int]:
+    """Blocking pywebpush call. Returns an HTTP status code on WebPushException, else None."""
+    from pywebpush import WebPushException, webpush
+
+    try:
+        webpush(
+            subscription_info={"endpoint": sub["endpoint"], "keys": sub["keys"]},
+            data=payload,
+            vapid_private_key=_VAPID_PRIVATE_PEM_PATH,
+            vapid_claims={"sub": VAPID_SUBJECT},
+            ttl=60 * 60,
+            timeout=10,
+        )
+        return None
+    except WebPushException as exc:
+        return getattr(getattr(exc, "response", None), "status_code", None) or 0
+
+
+async def send_web_push(user_id: str, title: str, body: str, url: str = "/notifications") -> None:
+    """Send a browser Web Push to every subscription the user registered. No-op when
+    VAPID isn't configured. Prunes dead subscriptions (404/410). Never raises."""
+    if not (_VAPID_PRIVATE_PEM_PATH and VAPID_PUBLIC_KEY):
+        return
+    try:
+        subs = await db.push_subscriptions.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    except Exception as e:
+        logger.warning(f"[webpush] subscription lookup failed: {e}")
+        return
+    if not subs:
+        return
+    payload = _json.dumps({"title": title, "body": body, "url": url})
+    for sub in subs:
+        try:
+            status_code = await _asyncio.to_thread(_web_push_send_sync, sub, payload)
+            if status_code in (404, 410):
+                await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
+        except Exception as e:
+            logger.warning(f"[webpush] send failed (non-blocking): {e}")
 
 
 async def send_reset_email(email: str, display_name: str, link: str) -> tuple[bool, Optional[str]]:
@@ -901,6 +974,7 @@ async def follow_user(user_id: str, current: Annotated[dict, Depends(get_current
         )
     except Exception as e:
         logger.warning(f"Follow push failed: {e}")
+    await send_web_push(user_id, "New follower!", f"{current['display_name']} started following you.", f"/user/{current['id']}")
     return {"status": "followed"}
 
 
@@ -1430,6 +1504,7 @@ async def like_post(post_id: str, current: Annotated[dict, Depends(get_current_u
             )
         except Exception as e:
             logger.warning(f"Like push failed: {e}")
+        await send_web_push(post["author_id"], "New like", f"{current['display_name']} liked your post.", f"/posts/{post_id}")
     return {"status": "liked", "likes": updated.get("likes", 0)}
 
 
@@ -1505,6 +1580,7 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
             )
         except Exception as e:
             logger.warning(f"Comment push failed: {e}")
+        await send_web_push(post["author_id"], "New comment", f"{current['display_name']}: {body.text[:80]}", f"/posts/{post_id}")
     comment_out = {k: v for k, v in comment.items() if k != "_id"}
     comment_out["created_at"] = comment["created_at"].isoformat()
     return comment_out
@@ -1528,6 +1604,42 @@ async def list_notifications(current: Annotated[dict, Depends(get_current_user)]
 async def mark_all_read(current: Annotated[dict, Depends(get_current_user)]):
     await db.notifications.update_many({"user_id": current["id"]}, {"$set": {"read": True}})
     return {"status": "ok"}
+
+
+@app.get("/api/notifications/unread-count")
+async def unread_notifications_count(current: Annotated[dict, Depends(get_current_user)]):
+    count = await db.notifications.count_documents({"user_id": current["id"], "read": {"$ne": True}})
+    return {"count": count}
+
+
+# ---- Web Push (browser) — self-hosted VAPID ----
+@app.get("/api/push/vapid-public-key")
+async def vapid_public_key():
+    return {"publicKey": VAPID_PUBLIC_KEY}
+
+
+@app.post("/api/push/web-subscribe", status_code=201)
+async def web_push_subscribe(body: WebPushSubscribeBody, current: Annotated[dict, Depends(get_current_user)]):
+    await db.push_subscriptions.update_one(
+        {"endpoint": body.endpoint},
+        {
+            "$set": {
+                "endpoint": body.endpoint,
+                "keys": body.keys,
+                "user_id": current["id"],
+                "updated_at": now(),
+            },
+            "$setOnInsert": {"created_at": now()},
+        },
+        upsert=True,
+    )
+    return {"status": "subscribed"}
+
+
+@app.post("/api/push/web-unsubscribe")
+async def web_push_unsubscribe(body: WebPushUnsubscribeBody, current: Annotated[dict, Depends(get_current_user)]):
+    await db.push_subscriptions.delete_one({"endpoint": body.endpoint, "user_id": current["id"]})
+    return {"status": "unsubscribed"}
 
 
 # ============================================================
