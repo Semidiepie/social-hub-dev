@@ -104,25 +104,55 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-3xl" data-testid={`profile-${target.id}`}>
-      <header className="rounded-2xl border border-border bg-card p-6">
-        <div className="flex flex-wrap items-start gap-6">
-          <Avatar src={target.avatar_url} size={96} />
+      <header className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+        <div className="flex items-start gap-4 sm:gap-6">
+          <Avatar src={target.avatar_url} size={80} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-black tracking-tight">{target.display_name}</h1>
-              {target.is_verified && <BadgeCheck size={20} className={badgeCls(target)} />}
-              {target.remembering && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-red-400"
-                  data-testid="remembering-label"
-                >
-                  Remembering
-                </span>
-              )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h1 className="text-xl font-black leading-tight tracking-tight sm:text-2xl">{target.display_name}</h1>
+                  {target.is_verified && <BadgeCheck size={20} className={`flex-shrink-0 ${badgeCls(target)}`} />}
+                </div>
+                {target.remembering && (
+                  <span
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-red-400"
+                    data-testid="remembering-label"
+                  >
+                    Remembering
+                  </span>
+                )}
+                <p className="mt-1 truncate text-sm text-muted-foreground">@{target.username}</p>
+              </div>
+              <div className="flex flex-shrink-0 gap-2">
+                {isSelf ? (
+                  <Button onClick={() => navigate("/settings")} variant="outline" className="flex-1 gap-2 sm:flex-none" data-testid="profile-settings-btn">
+                    <SettingsIcon size={16} /> Edit profile
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      onClick={toggleFollow}
+                      disabled={busy}
+                      className={
+                        following
+                          ? "flex-1 border-border bg-transparent hover:bg-secondary sm:flex-none"
+                          : "flex-1 bg-primary text-primary-foreground hover:bg-primary/90 sm:flex-none"
+                      }
+                      variant={following ? "outline" : "default"}
+                      data-testid="profile-follow-btn"
+                    >
+                      {following ? "Following" : "Follow"}
+                    </Button>
+                    <Button variant="outline" onClick={startDM} className="flex-1 gap-2 sm:flex-none" data-testid="profile-message-btn">
+                      <MessageCircle size={16} /> Message
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">@{target.username}</p>
             {target.bio && <p className="mt-3 max-w-lg text-sm">{target.bio}</p>}
-            <div className="mt-4 flex items-center gap-4 text-sm">
+            <div className="mt-4 flex items-center gap-5 text-sm sm:gap-6">
               <Stat label="Posts" value={target.posts_count} />
               <Stat
                 label="Followers"
@@ -137,32 +167,6 @@ export default function ProfilePage() {
                 testId="profile-following-stat"
               />
             </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            {isSelf ? (
-              <Button onClick={() => navigate("/settings")} variant="outline" className="gap-2" data-testid="profile-settings-btn">
-                <SettingsIcon size={16} /> Edit profile
-              </Button>
-            ) : (
-              <>
-                <Button
-                  onClick={toggleFollow}
-                  disabled={busy}
-                  className={
-                    following
-                      ? "border-border bg-transparent hover:bg-secondary"
-                      : "bg-primary text-primary-foreground hover:bg-primary/90"
-                  }
-                  variant={following ? "outline" : "default"}
-                  data-testid="profile-follow-btn"
-                >
-                  {following ? "Following" : "Follow"}
-                </Button>
-                <Button variant="outline" onClick={startDM} className="gap-2" data-testid="profile-message-btn">
-                  <MessageCircle size={16} /> Message
-                </Button>
-              </>
-            )}
           </div>
         </div>
       </header>
