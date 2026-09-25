@@ -2138,11 +2138,9 @@ async def purge_legacy_seed_data() -> None:
 
 @app.on_event("startup")
 async def seed():
-    """Idempotent founder-only seed. Removes every legacy demo account, keeps
-    semidiepie as the founder/super-admin, and never seeds fake posts/reels —
-    the app is a blank slate ready for real users."""
-    await purge_legacy_seed_data()
-
+    """Idempotent founder-only seed. ONLY ensures semidiepie exists as the
+    founder/super-admin. No destructive deletions run on startup (legacy demo
+    cleanup already applied; if ever needed again it must be a manual admin op)."""
     logger.info("Seed: ensuring founder account (semidiepie)…")
     for u in SEED_USERS:
         email = u["email"].lower()
