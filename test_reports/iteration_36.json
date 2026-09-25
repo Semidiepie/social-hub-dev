@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 36 (WEB) — Custom channel handle URLs verified end-to-end. All 11 backend tests PASS: /api/users/@{username}, /api/users/{username}, /api/users/{user_id} all resolve; unknown handle 404; PUT /api/auth/me accepts username, lowercases it, rejects duplicates with 400 'already taken'. All WEB UI flows PASS: /@semidiepie renders Profile in AppShell (sidebar visible), /@semidiepie/{videoId} renders VideoWatch (data-testid=video-fullscreen) inside AppShell, legacy /user/{id} redirects (replace) to /@handle, legacy /videos/{id} redirects to /@handle/{videoId}. Author links across Home, Reels, Discover, and BlogRead all use /@username (Blogs listing has no author links on card as designed, but BlogRead does). Unknown handle in UI shows 'User not found' toast and navigates to /discover (intentional). Regression: /, /discover, /reels, /blogs load normally and are not hijacked by the /:handle catch-all. Settings-username editor works: created fresh test_ui36_* account via API, injected token, changed username via UI (data-testid=settings-username + settings-save-profile), verified new /@handle resolves and old 404s, and duplicate-save shows 'That handle is already taken.' Founder semidiepie was NOT modified.",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration36_handles.py",
+    "/app/test_reports/pytest/iteration36_handles.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py get_user (~line 938): resolves by user_id first, then by lowercased username stripped of '@'. Case-insensitive @HANDLE also resolves — good.",
+    "server.py update_me (~line 657): username validation is inline (3–20 chars, [a-z0-9_], lowercased, uniqueness enforced) — correct and matches the spec. The 400 detail 'That handle is already taken.' matches the frontend copy shown in the toast.",
+    "App.js: the two catch-all routes `/:handle` and `/:handle/:videoId` are declared LAST, after all static routes, so /discover, /reels, /blogs, /profile, /settings, /messages, /notifications are not shadowed. Confirmed by manual regression.",
+    "Profile.jsx (~line 54): on load error the page toasts 'User not found' and navigates to /discover. This is intentional but note it means an unknown /@handle URL disappears from history — a shareable 'bad handle' link becomes /discover after landing. Consider rendering a dedicated 404 state inside the shell instead of redirecting (minor UX, not blocking).",
+    "format.js userPath/videoPath helpers correctly prefer /@username and fall back to legacy /user/:id or /videos/:id when username is missing. Used consistently across Home, Discover, Reels, ReelWatch, VideoWatch, BlogRead, PostDetail (verified links in DOM contain /@semidiepie only, no /user/ links leaked)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration36_handles.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all requested web flows pass)"},
+  "test_credentials": "Founder unchanged (@semidiepie / Semi123! / PIN 7455). For UI Settings username-change test, registered a fresh test_ui36_* account via /api/auth/register and injected the JWT into localStorage['postmeplex.token'] because the web /login page is PIN-only and there was no PIN preseeded on the fresh account.",
+  "seed_data_creation": "Created one throwaway account test_ui36_oqioq3 (auto-purged on backend restart), then renamed it to test_ui36n_oqioq3 via the Settings flow. No changes to any existing users, including founder.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Handle URL feature is fully wired on WEB: /@username → Profile inside shell; /@username/{videoId} → VideoWatch inside shell; legacy /user/:id and /videos/:id redirect (replace) to the handle form; Settings has a Channel handle editor (data-testid=settings-username + settings-save-profile) that PUT /api/auth/me with the new username and correctly rejects duplicates with 400 'That handle is already taken.' Backend GET /api/users/{user_id} accepts raw id, bare username, or @handle and is case-insensitive. Founder is @semidiepie and MUST NOT be modified — /api/auth/register requires a `pin` field (4 digits). Mobile-side handle URLs were explicitly out of scope for this iteration.",
+  "rca of the issue": ""
+}

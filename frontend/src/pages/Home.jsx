@@ -7,7 +7,7 @@ import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/PostComposer";
 import { EditContentModal } from "@/components/EditContentModal";
-import { timeAgo, formatNumber } from "@/lib/format";
+import { timeAgo, formatNumber, userPath, videoPath } from "@/lib/format";
 import { toast } from "sonner";
 
 function formatDuration(secs) {
@@ -164,7 +164,7 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
     >
       <div className="flex items-center gap-3 px-4 pt-4">
         {post.author ? (
-          <Link to={`/user/${post.author.id}`}>
+          <Link to={userPath(post.author)}>
             <Avatar src={post.author.avatar_url} size={40} />
           </Link>
         ) : (
@@ -368,7 +368,7 @@ function VideoCard({ video, canManage, onDelete, onUpdated }) {
     >
       <div className="flex items-center gap-3 px-4 pt-4">
         {video.author ? (
-          <Link to={`/user/${video.author.id}`}>
+          <Link to={userPath(video.author)}>
             <Avatar src={video.author.avatar_url} size={40} />
           </Link>
         ) : (
@@ -412,7 +412,7 @@ function VideoCard({ video, canManage, onDelete, onUpdated }) {
       )}
 
       <Link
-        to={`/videos/${video.id}`}
+        to={videoPath(video)}
         className="group relative mt-3 block aspect-video w-full overflow-hidden bg-black"
         data-testid={`feed-video-thumb-${video.id}`}
       >
@@ -473,7 +473,7 @@ function ReelCard({ reel, canManage, onDelete, onUpdated }) {
     >
       <div className="flex items-center gap-3 px-4 pt-4">
         {reel.author ? (
-          <Link to={`/user/${reel.author.id}`}>
+          <Link to={userPath(reel.author)}>
             <Avatar src={reel.author.avatar_url} size={40} />
           </Link>
         ) : (

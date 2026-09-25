@@ -6,7 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatNumber, timeAgo } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, videoPath } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -69,7 +69,7 @@ export default function DiscoverPage() {
       </div>
 
       {searchResults ? (
-        <SearchResultsView results={searchResults} onOpenUser={(u) => navigate(`/user/${u.id}`)} />
+        <SearchResultsView results={searchResults} onOpenUser={(u) => navigate(userPath(u))} />
       ) : (
         <>
           <Tabs value={tab} onValueChange={setTab} className="mb-6">
@@ -87,7 +87,7 @@ export default function DiscoverPage() {
           ) : data.type === "accounts" ? (
             <div className="grid gap-3 md:grid-cols-2">
               {data.items.map((u) => (
-                <UserCard key={u.id} user={u} onOpen={() => navigate(`/user/${u.id}`)} />
+                <UserCard key={u.id} user={u} onOpen={() => navigate(userPath(u))} />
               ))}
             </div>
           ) : data.type === "tags" ? (
@@ -107,9 +107,9 @@ export default function DiscoverPage() {
                   p.type === "reel"
                     ? `/reels/${p.id}`
                     : p.type === "video"
-                      ? `/videos/${p.id}`
+                      ? videoPath(p)
                       : p.author?.id
-                        ? `/user/${p.author.id}`
+                        ? userPath(p.author)
                         : "/";
                 return (
                   <Link

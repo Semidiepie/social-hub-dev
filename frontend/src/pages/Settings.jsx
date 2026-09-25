@@ -18,7 +18,7 @@ export default function SettingsPage() {
   const { user, patchUser, logout, refresh } = useAuth();
   const navigate = useNavigate();
 
-  const [profile, setProfile] = useState({ display_name: "", bio: "", avatar_url: "" });
+  const [profile, setProfile] = useState({ display_name: "", bio: "", avatar_url: "", username: "" });
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -60,6 +60,7 @@ export default function SettingsPage() {
         display_name: user.display_name,
         bio: user.bio || "",
         avatar_url: user.avatar_url || "",
+        username: user.username || "",
       });
     }
   }, [user]);
@@ -68,7 +69,9 @@ export default function SettingsPage() {
     e.preventDefault();
     setSavingProfile(true);
     try {
-      const updated = await api.put("/auth/me", profile);
+      const payload = { ...profile };
+      if (!payload.username || payload.username.length < 3) delete payload.username;
+      const updated = await api.put("/auth/me", payload);
       patchUser(updated);
       toast.success("Profile updated");
     } catch (e) {
@@ -159,6 +162,28 @@ export default function SettingsPage() {
                 </label>
                 <p className="mt-2 text-[11px] text-muted-foreground">JPG/PNG, ≤ 5MB.</p>
               </div>
+            </div>
+            <div>
+              <Label htmlFor="handle">Channel handle</Label>
+              <div className="mt-1.5 flex items-center gap-2 rounded-md border border-border bg-background px-3 h-11 focus-within:border-primary/60">
+                <span className="text-sm text-muted-foreground">postmeplex.com/@</span>
+                <input
+                  id="handle"
+                  value={profile.username}
+                  onChange={(e) =>
+                    setProfile((p) => ({
+                      ...p,
+                      username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20),
+                    }))
+                  }
+                  maxLength={20}
+                  data-testid="settings-username"
+                  className="flex-1 bg-transparent text-sm outline-none"
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Your public channel URL. 3–20 characters: letters, numbers, underscores.
+              </p>
             </div>
             <div>
               <Label htmlFor="dn">Display name</Label>

@@ -42,3 +42,16 @@ export function formatDuration(seconds) {
 // Fallback SVG avatar for missing images.
 export const AVATAR_FALLBACK =
   "https://res.cloudinary.com/dpnrol54k/image/upload/v1790110483/postmeplex_default_avatar.png";
+
+// Clean channel-handle URLs. Prefer /@username; fall back to legacy /user/:id.
+export function userPath(u) {
+  if (u?.username) return `/@${u.username}`;
+  if (u?.id) return `/user/${u.id}`;
+  return "/";
+}
+
+// A video lives under its author's handle: /@username/{videoId}.
+export function videoPath(v) {
+  if (v?.author?.username) return `/@${v.author.username}/${v.id}`;
+  return `/videos/${v?.id}`;
+}

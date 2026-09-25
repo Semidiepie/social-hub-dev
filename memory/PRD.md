@@ -262,3 +262,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - app.json: `expo-notifications` plugin present.
 - PENDING (user action): Android `google-services.json` not yet provided → `android.googleServicesFile` intentionally NOT wired (would break build with missing file). Real delivery requires Publish → Deploy → Generate build (uploads Google service account JSON + APNs `.p8`); cannot be tested on Expo Go / web preview.
 
+
+
+## 2026-06 — Custom channel handle URLs (web) [iteration 36 ✅]
+- Handle = the user's existing **username** (no new field). Profile at `/@username`, video at `/@username/{videoId}`. Web only (per user).
+- Backend: `GET /api/users/{key}` resolves a raw id OR `@handle`/username (strips leading `@`). `PUT /api/auth/me` now accepts `username` — validates 3–20 chars `[a-z0-9_]`, lowercases, enforces uniqueness (400 "already taken"). `UpdateProfileBody.username` added.
+- Web: added routes `/:handle` (Profile) + `/:handle/:videoId` (VideoWatch) declared last so static routes win. `lib/format.js` exposes `userPath(u)` and `videoPath(v)`; all author/video links across Home, Discover, ReelsFeed, ReelWatch, VideoWatch, PostDetail, BlogRead use them. Legacy `/user/:id` and `/videos/:id` still work and canonical-redirect (replace) to the `@handle` form. Settings has a handle editor (`data-testid=settings-username`).
+- Verified: backend 11/11 pytest + full web UI regression (iteration_36.json). Founder handle left unchanged during tests.
+- Minor UX backlog: unknown `/@handle` currently toasts "User not found" and redirects to `/discover` — could show a dedicated 404 state instead.
+

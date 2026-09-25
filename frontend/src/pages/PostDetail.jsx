@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { EditContentModal } from "@/components/EditContentModal";
-import { timeAgo, formatNumber } from "@/lib/format";
+import { timeAgo, formatNumber, userPath } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -104,7 +104,7 @@ export default function PostDetailPage() {
       <article className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center gap-3 px-4 pt-4">
           {post.author && (
-            <button onClick={() => navigate(`/user/${post.author.id}`)}>
+            <button onClick={() => navigate(userPath(post.author))}>
               <Avatar src={post.author.avatar_url} size={40} />
             </button>
           )}

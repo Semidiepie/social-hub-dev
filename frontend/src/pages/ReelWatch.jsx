@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Heart, Loader2, MessageCircle, Volume2, VolumeX, BadgeCheck, X, Send, Trash2, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
-import { formatNumber, timeAgo } from "@/lib/format";
+import { formatNumber, timeAgo, userPath } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
@@ -212,7 +212,7 @@ export default function ReelWatchPage() {
         <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-6 pt-16">
           {reel.author && (
             <Link
-              to={`/user/${reel.author.id}`}
+              to={userPath(reel.author)}
               onClick={(e) => e.stopPropagation()}
               className="flex items-center gap-2"
             >

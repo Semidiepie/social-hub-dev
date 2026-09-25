@@ -158,6 +158,7 @@ class UpdateProfileBody(BaseModel):
     display_name: Optional[str] = None
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
+    username: Optional[str] = Field(default=None, min_length=3, max_length=20)
 
 
 class CreatePostBody(BaseModel):
@@ -656,6 +657,17 @@ async def me(current: Annotated[dict, Depends(get_current_user)]):
 @app.put("/api/auth/me", response_model=UserPublic)
 async def update_me(body: UpdateProfileBody, current: Annotated[dict, Depends(get_current_user)]):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    # Username doubles as the public channel @handle — validate + enforce uniqueness.
+    new_username = updates.pop("username", None)
+    if new_username is not None:
+        uname = new_username.lower().strip()
+        if not (3 <= len(uname) <= 20) or not all(c.isalnum() or c == "_" for c in uname):
+            raise HTTPException(400, "Handle must be 3–20 characters: letters, numbers or underscores.")
+        if uname != current["username"]:
+            clash = await db.users.find_one({"username": uname, "id": {"$ne": current["id"]}})
+            if clash:
+                raise HTTPException(400, "That handle is already taken.")
+            updates["username"] = uname
     if updates:
         await db.users.update_one({"id": current["id"]}, {"$set": updates})
     fresh = await db.users.find_one({"id": current["id"]}, {"_id": 0})
@@ -925,12 +937,16 @@ async def change_password(
 # ============================================================
 @app.get("/api/users/{user_id}")
 async def get_user(user_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
+    # Accept either a raw user id or an @handle / username.
+    key = user_id.lstrip("@").strip()
     u = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not u:
+        u = await db.users.find_one({"username": key.lower()}, {"_id": 0})
     if not u:
         raise HTTPException(404, "User not found")
     follows_them = False
-    if viewer and viewer["id"] != user_id:
-        follows_them = await db.follows.find_one({"follower_id": viewer["id"], "followee_id": user_id}) is not None
+    if viewer and viewer["id"] != u["id"]:
+        follows_them = await db.follows.find_one({"follower_id": viewer["id"], "followee_id": u["id"]}) is not None
     return {**user_to_public(u).model_dump(), "follows_them": follows_them}
 
 

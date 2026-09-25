@@ -11,9 +11,10 @@ import { toast } from "sonner";
 
 export default function ProfilePage() {
   const { user: me } = useAuth();
-  const { userId } = useParams();
+  const { userId, handle } = useParams();
   const navigate = useNavigate();
-  const targetId = userId || me?.id;
+  // Resolve by @handle (username) or legacy user id, else fall back to me.
+  const lookupKey = handle ? handle.replace(/^@/, "") : userId || me?.id;
   const [target, setTarget] = useState(null);
   const [posts, setPosts] = useState([]);
   const [reels, setReels] = useState([]);
@@ -23,18 +24,24 @@ export default function ProfilePage() {
   const [following, setFollowing] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const isSelf = me?.id === targetId;
+  const isSelf = !!me && !!target && me.id === target.id;
 
   const load = useCallback(async () => {
-    if (!targetId) return;
+    if (!lookupKey) return;
     setLoading(true);
     try {
-      const [u, p, r, v, b] = await Promise.all([
-        api.get(`/users/${targetId}`),
-        api.get(`/users/${targetId}/posts`).catch(() => []),
-        api.get(`/users/${targetId}/reels`).catch(() => []),
-        api.get(`/users/${targetId}/videos`).catch(() => []),
-        api.get(`/blogs/user/${targetId}`).catch(() => []),
+      const u = await api.get(`/users/${encodeURIComponent(lookupKey)}`);
+      // Canonical URL: rewrite a legacy /user/:id link to the clean /@handle form.
+      if (userId && u.username) {
+        navigate(`/@${u.username}`, { replace: true });
+        return;
+      }
+      const rid = u.id;
+      const [p, r, v, b] = await Promise.all([
+        api.get(`/users/${rid}/posts`).catch(() => []),
+        api.get(`/users/${rid}/reels`).catch(() => []),
+        api.get(`/users/${rid}/videos`).catch(() => []),
+        api.get(`/blogs/user/${rid}`).catch(() => []),
       ]);
       setTarget(u);
       setFollowing(u.follows_them);
@@ -48,7 +55,7 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, [targetId, navigate]);
+  }, [lookupKey, userId, navigate]);
 
   useEffect(() => {
     load();

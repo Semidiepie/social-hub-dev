@@ -4,13 +4,14 @@ import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil } from "luci
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { formatDuration, formatNumber, timeAgo } from "@/lib/format";
+import { formatDuration, formatNumber, timeAgo, userPath, videoPath } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
 
 export default function VideoWatchPage() {
-  const { id } = useParams();
+  const { id: routeId, videoId } = useParams();
+  const id = videoId || routeId;
   const navigate = useNavigate();
   const { user } = useAuth();
   const [video, setVideo] = useState(null);
@@ -39,13 +40,17 @@ export default function VideoWatchPage() {
       setVideo(v);
       setRelated(r);
       setComments(c);
+      // Canonical URL: rewrite a legacy /videos/:id link to /@handle/{videoId}.
+      if (!videoId && v.author?.username) {
+        navigate(`/@${v.author.username}/${v.id}`, { replace: true });
+      }
     } catch (e) {
       toast.error(e.message || "Video not found");
       navigate("/discover");
     } finally {
       setLoading(false);
     }
-  }, [id, navigate]);
+  }, [id, videoId, navigate]);
 
   useEffect(() => {
     load();
@@ -144,7 +149,7 @@ export default function VideoWatchPage() {
 
           <div className="mt-3 flex flex-wrap items-center gap-3 border-y border-border py-3">
             {video.author && (
-              <Link to={`/user/${video.author.id}`} className="flex items-center gap-3">
+              <Link to={userPath(video.author)} className="flex items-center gap-3">
                 <Avatar src={video.author.avatar_url} size={40} />
                 <div>
                   <div className="flex items-center gap-1 font-semibold hover:text-primary">
@@ -257,7 +262,7 @@ export default function VideoWatchPage() {
             {related.map((v) => (
               <Link
                 key={v.id}
-                to={`/videos/${v.id}`}
+                to={videoPath(v)}
                 className="flex gap-3 rounded-xl hover:bg-secondary/50"
                 data-testid={`video-related-${v.id}`}
               >

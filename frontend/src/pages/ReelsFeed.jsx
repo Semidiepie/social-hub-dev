@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
-import { formatNumber, timeAgo } from "@/lib/format";
+import { formatNumber, timeAgo, userPath } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
@@ -239,7 +239,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
       {/* Bottom author + caption */}
       <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-6 pt-16">
         {reel.author && (
-          <Link to={`/user/${reel.author.id}`} className="flex items-center gap-2">
+          <Link to={userPath(reel.author)} className="flex items-center gap-2">
             <Avatar src={reel.author.avatar_url} size={38} />
             <span className="flex items-center gap-1 font-bold text-white">
               @{reel.author.username}

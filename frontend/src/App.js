@@ -112,6 +112,11 @@ export default function App() {
               element={<ProtectedRoute><AdminBlogsPage /></ProtectedRoute>}
             />
 
+            {/* Clean channel-handle URLs: /@username and /@username/{videoId}.
+                Declared last so all static/specific routes win first. */}
+            <Route path="/:handle/:videoId" element={<VideoWatchPage />} />
+            <Route path="/:handle" element={<ProfilePage />} />
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Shell>
