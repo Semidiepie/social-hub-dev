@@ -18,6 +18,14 @@ import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const NAV = [
   { to: "/", label: "Home", icon: Home, testId: "nav-home" },
@@ -168,9 +176,42 @@ export function AppShell({ children }) {
         <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/85 px-4 py-2.5 backdrop-blur md:hidden">
           <Brand />
           {user ? (
-            <NavLink to="/profile" data-testid="topbar-profile-link">
-              <Avatar src={user.avatar_url} size={32} />
-            </NavLink>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button data-testid="topbar-menu-trigger" className="rounded-full outline-none focus:ring-2 focus:ring-primary">
+                  <Avatar src={user.avatar_url} size={32} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="truncate">
+                  <div className="text-sm font-semibold">{user.display_name}</div>
+                  <div className="text-xs font-normal text-muted-foreground">@{user.username}</div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem data-testid="topbar-menu-profile" onClick={() => navigate("/profile")}>
+                  <Avatar src={user.avatar_url} size={16} /> Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-settings" onClick={() => navigate("/settings")}>
+                  <Settings size={16} /> Settings
+                </DropdownMenuItem>
+                {user?.is_super_admin && (
+                  <DropdownMenuItem data-testid="topbar-menu-admin" onClick={() => navigate("/admin/verify")}>
+                    <Shield size={16} /> Admin
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-testid="topbar-menu-logout"
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {
+                    logout();
+                    navigate("/login");
+                  }}
+                >
+                  <LogOut size={16} /> Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : (
             <Button size="sm" onClick={() => navigate("/login")} data-testid="topbar-login">
               Sign in
