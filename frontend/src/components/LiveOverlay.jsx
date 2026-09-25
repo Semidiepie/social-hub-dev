@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Heart, Send, Gift, Eye, X } from "lucide-react";
+import { Heart, Send, Gift, Eye, X, BadgeCheck } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
+import { badgeCls } from "@/lib/format";
 
 function FloatingHearts({ floaters }) {
   return (
@@ -26,7 +27,8 @@ function ChatRow({ m }) {
     <div className="flex items-start gap-2" data-testid="live-chat-row">
       <Avatar src={m.avatar_url} size={24} className="mt-0.5 flex-shrink-0" />
       <div className="min-w-0 rounded-2xl bg-black/40 px-2.5 py-1.5">
-        <span className="text-[11px] font-bold text-primary">{m.display_name || m.username}</span>{" "}
+        <span className="text-[11px] font-bold text-primary">{m.display_name || m.username}</span>
+        {m.is_verified && <BadgeCheck size={12} className={badgeCls(m, "ml-0.5 inline-block align-[-1px]")} />}{" "}
         {isGift ? (
           <span className="text-[13px] font-semibold text-amber-300">
             {m.text} <span className="text-base">{m.gift?.glyph}</span>

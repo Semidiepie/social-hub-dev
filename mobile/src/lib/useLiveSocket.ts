@@ -20,6 +20,8 @@ export interface LiveChatMessage {
   username?: string;
   display_name?: string;
   avatar_url?: string;
+  is_verified?: boolean;
+  remembering?: boolean;
   text: string;
   gift?: LiveGift;
   created_at?: string;

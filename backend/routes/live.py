@@ -141,17 +141,24 @@ def build_router(ctx) -> APIRouter:
         )
         mode = body.mode if body.mode in ("webrtc", "hls") else "webrtc"
         whip_url = whep_url = hls_url = input_id = None
+        provider_ok = False
         if CF_ACCOUNT_ID and CF_API_TOKEN:
             payload: dict = {"meta": {"name": body.title, "owner": current["id"]}, "preferLowLatency": True}
             if mode == "hls":
                 payload["recording"] = {"mode": "automatic"}
-            res = await _cf("POST", "/stream/live_inputs", json=payload)
-            input_id = res["uid"]
-            if mode == "webrtc":
-                whip_url = (res.get("webRTC") or {}).get("url")
-                whep_url = (res.get("webRTCPlayback") or {}).get("url")
-            else:
-                hls_url = (res.get("playback") or {}).get("hls")
+            try:
+                res = await _cf("POST", "/stream/live_inputs", json=payload)
+                input_id = res["uid"]
+                if mode == "webrtc":
+                    whip_url = (res.get("webRTC") or {}).get("url")
+                    whep_url = (res.get("webRTCPlayback") or {}).get("url")
+                else:
+                    hls_url = (res.get("playback") or {}).get("hls")
+                provider_ok = True
+            except Exception as e:
+                # Keys present but not usable yet (token invalid / Stream not enabled).
+                # Fall back to demo mode so the interactive layer still works.
+                logger.warning(f"Cloudflare live input creation failed, using demo mode: {e}")
         doc = {
             "id": str(uuid.uuid4()),
             "owner_id": current["id"],
@@ -174,7 +181,7 @@ def build_router(ctx) -> APIRouter:
         out = public_stream(doc)
         out["whip_url"] = whip_url  # publish credential — only ever to the owner, at creation
         out["is_owner"] = True
-        out["provider_configured"] = bool(CF_ACCOUNT_ID and CF_API_TOKEN)
+        out["provider_configured"] = provider_ok
         return out
 
     @router.get("/api/live/{stream_id}")
@@ -231,6 +238,8 @@ def build_router(ctx) -> APIRouter:
             "username": user["username"],
             "display_name": user.get("display_name", user["username"]),
             "avatar_url": _av(user.get("avatar_url")),
+            "is_verified": user.get("is_verified", False),
+            "remembering": user.get("remembering", False),
         }
         try:
             # Backlog to the joiner.

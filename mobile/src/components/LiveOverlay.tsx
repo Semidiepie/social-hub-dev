@@ -140,6 +140,10 @@ export function LiveOverlay({
                   <View style={styles.chatBubble}>
                     <Text>
                       <Text style={styles.chatName}>{m.display_name || m.username} </Text>
+                      {m.is_verified && (
+                        <Ionicons name="checkmark-circle" size={12} color={m.remembering ? colors.live : colors.primary} />
+                      )}
+                      {m.is_verified ? <Text> </Text> : null}
                       {m.kind === "gift" ? (
                         <Text style={styles.giftText}>{m.text} {m.gift?.glyph}</Text>
                       ) : (
