@@ -4,6 +4,7 @@ import { Loader2, MessageCircle, BadgeCheck, Settings as SettingsIcon, Play, Hea
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatNumber, timeAgo, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
@@ -22,6 +23,7 @@ export default function ProfilePage() {
   const [videos, setVideos] = useState([]);
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [contentLoading, setContentLoading] = useState(true);
   const [following, setFollowing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [followList, setFollowList] = useState(null); // "followers" | "following" | null
@@ -31,6 +33,7 @@ export default function ProfilePage() {
   const load = useCallback(async () => {
     if (!lookupKey) return;
     setLoading(true);
+    setContentLoading(true);
     try {
       const u = await api.get(`/users/${encodeURIComponent(lookupKey)}`);
       // Canonical URL: rewrite a legacy /user/:id link to the clean /@handle form.
@@ -38,6 +41,10 @@ export default function ProfilePage() {
         navigate(`/@${u.username}`, { replace: true });
         return;
       }
+      // Show the header immediately; load tab content behind skeletons.
+      setTarget(u);
+      setFollowing(u.follows_them);
+      setLoading(false);
       const rid = u.id;
       const [p, r, v, b] = await Promise.all([
         api.get(`/users/${rid}/posts`).catch(() => []),
@@ -45,8 +52,6 @@ export default function ProfilePage() {
         api.get(`/users/${rid}/videos`).catch(() => []),
         api.get(`/blogs/user/${rid}`).catch(() => []),
       ]);
-      setTarget(u);
-      setFollowing(u.follows_them);
       setPosts(p);
       setReels(r);
       setVideos(v);
@@ -56,6 +61,7 @@ export default function ProfilePage() {
       navigate("/discover");
     } finally {
       setLoading(false);
+      setContentLoading(false);
     }
   }, [lookupKey, userId, navigate]);
 
@@ -173,22 +179,22 @@ export default function ProfilePage() {
 
       <Tabs defaultValue={initialTab} key={initialTab} className="mt-6">
         <TabsList>
-          <TabsTrigger value="posts" data-testid="profile-tab-posts">Posts · {posts.length}</TabsTrigger>
-          <TabsTrigger value="reels" data-testid="profile-tab-reels">Reels · {reels.length}</TabsTrigger>
-          <TabsTrigger value="videos" data-testid="profile-tab-videos">Videos · {videos.length}</TabsTrigger>
-          <TabsTrigger value="blogs" data-testid="profile-tab-blogs">Blogs · {blogs.length}</TabsTrigger>
+          <TabsTrigger value="posts" data-testid="profile-tab-posts">Posts{contentLoading ? "" : ` · ${posts.length}`}</TabsTrigger>
+          <TabsTrigger value="reels" data-testid="profile-tab-reels">Reels{contentLoading ? "" : ` · ${reels.length}`}</TabsTrigger>
+          <TabsTrigger value="videos" data-testid="profile-tab-videos">Videos{contentLoading ? "" : ` · ${videos.length}`}</TabsTrigger>
+          <TabsTrigger value="blogs" data-testid="profile-tab-blogs">Blogs{contentLoading ? "" : ` · ${blogs.length}`}</TabsTrigger>
         </TabsList>
         <TabsContent value="posts">
-          <PostsGrid posts={posts} />
+          {contentLoading ? <TileGridSkeleton aspect="square" /> : <PostsGrid posts={posts} />}
         </TabsContent>
         <TabsContent value="reels">
-          <ReelsGrid reels={reels} />
+          {contentLoading ? <TileGridSkeleton aspect="reel" /> : <ReelsGrid reels={reels} />}
         </TabsContent>
         <TabsContent value="videos">
-          <VideosGrid videos={videos} />
+          {contentLoading ? <VideosSkeleton /> : <VideosGrid videos={videos} />}
         </TabsContent>
         <TabsContent value="blogs">
-          <BlogsList blogs={blogs} />
+          {contentLoading ? <BlogsSkeleton /> : <BlogsList blogs={blogs} />}
         </TabsContent>
       </Tabs>
 
@@ -336,6 +342,51 @@ function Empty({ msg }) {
   return (
     <div className="mt-4 rounded-2xl border border-border bg-card/60 p-10 text-center text-muted-foreground">
       {msg}
+    </div>
+  );
+}
+
+function TileGridSkeleton({ aspect = "square" }) {
+  const cols = aspect === "reel" ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4" : "grid-cols-2 sm:grid-cols-3";
+  const ratio = aspect === "reel" ? "aspect-[9/16]" : "aspect-square";
+  return (
+    <div className={`mt-4 grid gap-2 ${cols}`} data-testid="profile-tab-skeleton">
+      {Array.from({ length: aspect === "reel" ? 8 : 6 }).map((_, i) => (
+        <Skeleton key={i} className={`w-full rounded-xl ${ratio}`} />
+      ))}
+    </div>
+  );
+}
+
+function VideosSkeleton() {
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3" data-testid="profile-tab-skeleton">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="overflow-hidden rounded-xl border border-border bg-card">
+          <Skeleton className="aspect-video w-full rounded-none" />
+          <div className="space-y-2 p-3">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BlogsSkeleton() {
+  return (
+    <div className="mt-4 space-y-3" data-testid="profile-tab-skeleton">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex gap-4 rounded-2xl border border-border bg-card p-4">
+          <Skeleton className="h-24 w-32 flex-shrink-0 rounded-xl" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-3 w-1/4" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
