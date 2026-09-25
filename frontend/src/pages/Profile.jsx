@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatNumber, timeAgo } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import { FollowListDialog } from "@/components/FollowListDialog";
 import { toast } from "sonner";
 
 export default function ProfilePage() {
@@ -23,6 +24,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [following, setFollowing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [followList, setFollowList] = useState(null); // "followers" | "following" | null
 
   const isSelf = !!me && !!target && me.id === target.id;
 
@@ -114,8 +116,18 @@ export default function ProfilePage() {
             {target.bio && <p className="mt-3 max-w-lg text-sm">{target.bio}</p>}
             <div className="mt-4 flex items-center gap-4 text-sm">
               <Stat label="Posts" value={target.posts_count} />
-              <Stat label="Followers" value={target.followers} />
-              <Stat label="Following" value={target.following} />
+              <Stat
+                label="Followers"
+                value={target.followers}
+                onClick={() => setFollowList("followers")}
+                testId="profile-followers-stat"
+              />
+              <Stat
+                label="Following"
+                value={target.following}
+                onClick={() => setFollowList("following")}
+                testId="profile-following-stat"
+              />
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -167,17 +179,38 @@ export default function ProfilePage() {
           <BlogsList blogs={blogs} />
         </TabsContent>
       </Tabs>
+
+      <FollowListDialog
+        open={!!followList}
+        onClose={() => setFollowList(null)}
+        userId={target.id}
+        kind={followList || "followers"}
+        title={followList === "following" ? "Following" : "Followers"}
+      />
     </div>
   );
 }
 
-function Stat({ label, value }) {
-  return (
-    <div>
+function Stat({ label, value, onClick, testId }) {
+  const content = (
+    <>
       <div className="text-lg font-black">{formatNumber(value)}</div>
       <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
-    </div>
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        data-testid={testId}
+        className="rounded-lg text-left transition-colors hover:text-primary focus:outline-none"
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div>{content}</div>;
 }
 
 function PostsGrid({ posts }) {

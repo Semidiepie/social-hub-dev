@@ -271,3 +271,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Verified: backend 11/11 pytest + full web UI regression (iteration_36.json). Founder handle left unchanged during tests.
 - Minor UX backlog: unknown `/@handle` currently toasts "User not found" and redirects to `/discover` — could show a dedicated 404 state instead.
 
+
+
+## 2026-06 — Clickable followers/following counters (web)
+- Profile Followers/Following counts are now clickable → open `FollowListDialog` (`/app/frontend/src/components/FollowListDialog.jsx`) listing the accounts, each linking to `/@handle`, with a Follow/Following toggle for logged-in non-self viewers.
+- Uses existing backend `GET /api/users/{id}/followers` and `/following` (returns `{private, users:[{...public, follows_them, is_me}]}`, honors privacy + blocks). No backend change.
+- Stat component in `Profile.jsx` extended with optional `onClick` (renders as button). testIDs: `profile-followers-stat`, `profile-following-stat`, `follow-list-{kind}`, `follow-row-{id}`, `follow-row-btn-{id}`.
+- Self-tested: endpoints via curl (created a real follow → list populated), UI screenshot (modal opens, shows follower, links to profile). NOT run through testing agent; the in-modal follow/unfollow button (logged-in only) reuses the same proven `/follow` endpoints but was not UI-clicked while authenticated.
+- Known pre-existing data drift (unrelated): denormalized `following` counter can differ from the follows collection (e.g. semidiepie shows 1 but has 0 follow records); the list reflects actual records.
+
