@@ -111,6 +111,13 @@ export default function LiveWatchPage() {
           isOwner={stream.is_owner}
           onEnd={async () => { try { await api.post(`/live/${id}/stop`); } catch { /* noop */ } navigate("/live"); }}
           onClose={() => navigate("/live")}
+          onShare={async () => {
+            const url = `${window.location.origin}/live/${id}`;
+            try {
+              if (navigator.share) await navigator.share({ title: stream.title, url });
+              else { await navigator.clipboard.writeText(url); toast.success("Live link copied!"); }
+            } catch { /* cancelled */ }
+          }}
         />
       )}
     </div>

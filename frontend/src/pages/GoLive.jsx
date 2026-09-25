@@ -28,25 +28,40 @@ export default function GoLivePage() {
       const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
       mediaRef.current = media;
       const s = await api.post("/live", { title: title.trim() || "Live", mode: "webrtc" });
-      setStream(s);
       setDemo(!s.provider_configured);
-      if (videoRef.current) {
-        videoRef.current.srcObject = media;
-        await videoRef.current.play().catch(() => {});
-      }
       if (s.whip_url) {
         rtcRef.current = await whipPublish(s.whip_url, media);
       }
+      setStream(s); // mounts the broadcasting screen; the effect below binds the preview
     } catch (e) {
       toast.error(e.message?.includes("getUserMedia") || e.name === "NotAllowedError"
         ? "Camera/microphone permission denied."
         : (e.message || "Couldn't start the stream"));
-      // cleanup media if stream creation failed
       mediaRef.current?.getTracks().forEach((t) => t.stop());
       mediaRef.current = null;
     } finally {
       setStarting(false);
     }
+  };
+
+  // Bind the local camera to the preview <video> once the broadcasting screen is mounted.
+  useEffect(() => {
+    if (stream && videoRef.current && mediaRef.current) {
+      videoRef.current.srcObject = mediaRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [stream]);
+
+  const shareLink = async () => {
+    const url = `${window.location.origin}/live/${stream.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${stream.owner?.display_name || "I'm"} live on PostMePlex`, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        toast.success("Live link copied — share it so people can watch!");
+      }
+    } catch { /* user cancelled share */ }
   };
 
   const endStream = async () => {
@@ -122,6 +137,7 @@ export default function GoLivePage() {
         onSendGift={live.sendGift}
         isOwner
         onEnd={endStream}
+        onShare={shareLink}
       />
     </div>
   );

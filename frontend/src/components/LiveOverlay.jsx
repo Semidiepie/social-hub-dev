@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Heart, Send, Gift, Eye, X, BadgeCheck } from "lucide-react";
+import { Heart, Send, Gift, Eye, X, BadgeCheck, Share2 } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { badgeCls } from "@/lib/format";
 
@@ -59,6 +59,7 @@ export function LiveOverlay({
   isOwner,
   onEnd,
   onClose,
+  onShare,
 }) {
   const [text, setText] = useState("");
   const [giftsOpen, setGiftsOpen] = useState(false);
@@ -97,6 +98,16 @@ export function LiveOverlay({
           <span className="flex items-center gap-1 rounded-full bg-black/50 px-3 py-1.5 text-xs font-bold text-white backdrop-blur" data-testid="live-viewer-count">
             <Eye size={14} /> {viewers}
           </span>
+          {onShare && (
+            <button
+              onClick={onShare}
+              data-testid="live-share-btn"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur hover:bg-primary"
+              title="Share live link"
+            >
+              <Share2 size={16} />
+            </button>
+          )}
           {(isOwner || onClose) && (
             <button
               onClick={isOwner ? onEnd : onClose}
