@@ -306,3 +306,9 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 ## Queued (requested, not yet built)
 - Remembering account: users apply in Settings → super-admin (semidiepie) approves → "Remembering" label; verified users get a RED badge. (web+mobile)
 - Music page (Spotify-style, semidiepie-only songs): browse+play for all; upload/delete admin-only from web+mobile; Cloudinary audio.
+
+## 2026-06 — "Remembering account" (web + mobile)
+- Users apply in Settings → super-admin (semidiepie) approves → account gets a red "REMEMBERING" label; verified users' badge turns RED.
+- Backend: UserPublic + author serializers now carry `remembering`/`remembering_status`. Endpoints: `POST /api/remembering/apply` (pending), `GET /api/admin/remembering/requests` (admin), `POST /api/admin/users/{id}/remembering` {action: approve|revoke} (admin). Verified via curl (apply→pending→approve→verify→get; non-admin 403).
+- Web: `badgeCls(entity)` helper (red when remembering) applied to ALL verified badges (Profile, Home, PostDetail, Reels, ReelWatch, VideoWatch, Blogs, BlogRead, Discover, FollowList, UsernameLine). Profile shows REMEMBERING pill. Settings apply card. New AdminRemembering page + tab + route. Verified via screenshot (red badge + pill).
+- Mobile: ProfileView red badge + REMEMBERING pill; Settings apply row; admin/remembering.tsx approval screen + link; `remembering` added to UserPublic type. Lint clean + Metro bundles OK; NOT visually confirmed in preview (auth-gate spinner on deep-linked profile). Mobile red badge NOT yet applied to feed/comment badges (only profile) — follow-up.

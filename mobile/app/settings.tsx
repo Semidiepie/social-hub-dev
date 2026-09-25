@@ -15,7 +15,7 @@ const FALLBACK =
 
 export default function Settings() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const { isDesktop } = useResponsive();
   const isAdmin = !!user?.is_super_admin;
   const [testing, setTesting] = React.useState(false);
@@ -157,6 +157,36 @@ export default function Settings() {
             onPress={() => router.push("/account/change-password")}
             testID="settings-change-password"
           />
+          <Row
+            icon="heart-outline"
+            label={
+              user?.remembering
+                ? "Remembering account"
+                : user?.remembering_status === "pending"
+                ? "Remembering — pending"
+                : "Apply for Remembering"
+            }
+            hint={
+              user?.remembering
+                ? "Your account is memorialized"
+                : user?.remembering_status === "pending"
+                ? "Awaiting admin review"
+                : "Memorialize this account (admin approval)"
+            }
+            onPress={
+              user?.remembering || user?.remembering_status === "pending"
+                ? undefined
+                : async () => {
+                    try {
+                      await api.post("/remembering/apply", {});
+                      await refresh();
+                    } catch {
+                      // non-fatal
+                    }
+                  }
+            }
+            testID="settings-apply-remembering"
+          />
         </View>
 
         <Text style={styles.sectionLabel}>Discover</Text>
@@ -212,6 +242,14 @@ export default function Settings() {
                 onPress={() => router.push("/admin/reset-pins")}
                 accent
                 testID="settings-admin-reset-pins"
+              />
+              <Row
+                icon="heart-outline"
+                label="Remembering requests"
+                hint="Approve accounts requesting a Remembering label"
+                onPress={() => router.push("/admin/remembering")}
+                accent
+                testID="settings-admin-remembering"
               />
             </View>
           </>

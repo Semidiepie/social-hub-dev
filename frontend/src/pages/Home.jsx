@@ -7,7 +7,7 @@ import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/PostComposer";
 import { EditContentModal } from "@/components/EditContentModal";
-import { timeAgo, formatNumber, userPath, videoPath } from "@/lib/format";
+import { timeAgo, formatNumber, userPath, videoPath, badgeCls } from "@/lib/format";
 import { toast } from "sonner";
 
 function formatDuration(secs) {
@@ -359,7 +359,7 @@ function PostComments({ postId, user, onCountChange }) {
                     {c.author?.display_name || c.display_name || c.author?.username}
                   </span>
                   {(c.is_verified || c.author?.is_verified) && (
-                    <BadgeCheck size={13} className="shrink-0 fill-primary text-background" />
+                    <BadgeCheck size={13} className={badgeCls(c, "shrink-0")} />
                   )}
                   <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
                 </div>

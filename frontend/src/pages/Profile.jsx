@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { formatNumber, timeAgo } from "@/lib/format";
+import { formatNumber, timeAgo, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { FollowListDialog } from "@/components/FollowListDialog";
 import { toast } from "sonner";
@@ -108,9 +108,17 @@ export default function ProfilePage() {
         <div className="flex flex-wrap items-start gap-6">
           <Avatar src={target.avatar_url} size={96} />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-black tracking-tight">{target.display_name}</h1>
-              {target.is_verified && <BadgeCheck size={20} className="fill-primary text-background" />}
+              {target.is_verified && <BadgeCheck size={20} className={badgeCls(target)} />}
+              {target.remembering && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-red-400"
+                  data-testid="remembering-label"
+                >
+                  Remembering
+                </span>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">@{target.username}</p>
             {target.bio && <p className="mt-3 max-w-lg text-sm">{target.bio}</p>}

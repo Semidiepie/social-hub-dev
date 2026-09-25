@@ -125,6 +125,8 @@ class UserPublic(BaseModel):
     is_verified: bool = False
     is_streamer: bool = False
     is_super_admin: bool = False
+    remembering: bool = False
+    remembering_status: Optional[str] = None
     followers: int = 0
     following: int = 0
     posts_count: int = 0
@@ -336,6 +338,8 @@ def user_to_public(u: dict) -> UserPublic:
         is_verified=u.get("is_verified", False),
         is_streamer=u.get("is_streamer", False),
         is_super_admin=u.get("is_super_admin", False),
+        remembering=u.get("remembering", False),
+        remembering_status=u.get("remembering_status"),
         followers=u.get("followers", 0),
         following=u.get("following", 0),
         posts_count=u.get("posts_count", 0),
@@ -547,6 +551,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
             "display_name": author["display_name"],
             "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
+            "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
         } if author else None,
     }
@@ -1147,6 +1152,7 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
             "display_name": author["display_name"],
             "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
+            "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
         } if author else None,
     }
@@ -1560,14 +1566,17 @@ async def list_comments(post_id: str):
     user_ids = list({c.get("user_id") for c in rows if c.get("user_id")})
     verified: dict[str, bool] = {}
     avatars: dict[str, str] = {}
+    remembering: dict[str, bool] = {}
     if user_ids:
-        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1}):
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1}):
             verified[u["id"]] = bool(u.get("is_verified", False))
             avatars[u["id"]] = u.get("avatar_url") or ""
+            remembering[u["id"]] = bool(u.get("remembering", False))
     for c in rows:
         if isinstance(c.get("created_at"), datetime):
             c["created_at"] = c["created_at"].isoformat()
         c["is_verified"] = c.get("is_verified", verified.get(c.get("user_id"), False))
+        c["remembering"] = remembering.get(c.get("user_id"), c.get("remembering", False))
         c["avatar_url"] = avatar_or_default(c.get("avatar_url") or avatars.get(c.get("user_id")))
     return rows
 
@@ -1585,6 +1594,7 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
         "display_name": current["display_name"],
         "avatar_url": avatar_or_default(current.get("avatar_url")),
         "is_verified": bool(current.get("is_verified", False)),
+        "remembering": bool(current.get("remembering", False)),
         "text": body.text,
         "created_at": now(),
     }
@@ -1815,6 +1825,55 @@ async def admin_toggle_verify(user_id: str, current: Annotated[dict, Depends(get
     new_val = not target.get("is_verified", False)
     await db.users.update_one({"id": user_id}, {"$set": {"is_verified": new_val}})
     return {"id": user_id, "is_verified": new_val}
+
+
+@app.post("/api/remembering/apply")
+async def apply_remembering(current: Annotated[dict, Depends(get_current_user)]):
+    """User requests their account become a 'Remembering' (memorial) account.
+    Sets status to pending for super-admin review. Idempotent."""
+    if current.get("remembering"):
+        return {"remembering": True, "remembering_status": "approved"}
+    if (current.get("remembering_status") or "none") != "pending":
+        await db.users.update_one(
+            {"id": current["id"]},
+            {"$set": {"remembering_status": "pending", "remembering_requested_at": now()}},
+        )
+    return {"remembering": False, "remembering_status": "pending"}
+
+
+@app.get("/api/admin/remembering/requests")
+async def list_remembering_requests(current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_admin") and not current.get("is_super_admin"):
+        raise HTTPException(403, "Admin only")
+    rows = await db.users.find(
+        {"remembering_status": "pending"}, {"_id": 0, "password_hash": 0}
+    ).sort("remembering_requested_at", 1).to_list(200)
+    return [user_to_public(u).model_dump() for u in rows]
+
+
+class RememberingActionBody(BaseModel):
+    action: Literal["approve", "revoke"]
+
+
+@app.post("/api/admin/users/{user_id}/remembering")
+async def admin_set_remembering(
+    user_id: str,
+    body: RememberingActionBody,
+    current: Annotated[dict, Depends(get_current_user)],
+):
+    """Super-admin/admin approves or revokes a 'Remembering' account."""
+    if not current.get("is_admin") and not current.get("is_super_admin"):
+        raise HTTPException(403, "Admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if body.action == "approve":
+        patch = {"remembering": True, "remembering_status": "approved"}
+    else:
+        patch = {"remembering": False, "remembering_status": "none"}
+    await db.users.update_one({"id": user_id}, {"$set": patch})
+    logger.info(f"[remembering] {body.action} user={user_id} by admin={current['id']}")
+    return {"id": user_id, **patch}
 
 
 @app.get("/api/admin/users")

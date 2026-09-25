@@ -25,6 +25,7 @@ import PostDetailPage from "@/pages/PostDetail";
 import SettingsPage from "@/pages/Settings";
 import AdminResetPinsPage from "@/pages/AdminResetPins";
 import AdminVerifyPage from "@/pages/AdminVerify";
+import AdminRememberingPage from "@/pages/AdminRemembering";
 import AdminBlogsPage from "@/pages/AdminBlogs";
 
 /**
@@ -108,6 +109,10 @@ export default function App() {
             <Route
               path="/admin/verify"
               element={<ProtectedRoute><AdminVerifyPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/admin/remembering"
+              element={<ProtectedRoute><AdminRememberingPage /></ProtectedRoute>}
             />
             <Route
               path="/admin/blogs"

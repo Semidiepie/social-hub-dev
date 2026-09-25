@@ -79,6 +79,7 @@ def build_router(ctx) -> APIRouter:
                 "display_name": author["display_name"],
                 "avatar_url": avatar_or_default(author.get("avatar_url")),
                 "is_verified": author.get("is_verified", False),
+                "remembering": author.get("remembering", False),
                 "is_streamer": author.get("is_streamer", False),
             } if author else None,
         }
@@ -280,6 +281,7 @@ def build_router(ctx) -> APIRouter:
                     "display_name": author["display_name"],
                     "avatar_url": avatar_or_default(author.get("avatar_url")),
                     "is_verified": author.get("is_verified", False),
+                    "remembering": author.get("remembering", False),
                 } if author else None,
             })
         return out
@@ -313,6 +315,7 @@ def build_router(ctx) -> APIRouter:
                 "display_name": author["display_name"],
                 "avatar_url": avatar_or_default(author.get("avatar_url")),
                 "is_verified": author.get("is_verified", False),
+                "remembering": author.get("remembering", False),
             } if author else None,
         }
 

@@ -1,11 +1,12 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { BadgeCheck, BookText, KeyRound } from "lucide-react";
+import { BadgeCheck, BookText, KeyRound, Heart } from "lucide-react";
 
 const TABS = [
   { to: "/admin/verify", label: "Verify accounts", icon: BadgeCheck, testId: "admin-tab-verify" },
   { to: "/admin/blogs", label: "Blog approvals", icon: BookText, testId: "admin-tab-blogs" },
   { to: "/admin/reset-pins", label: "Reset PINs", icon: KeyRound, testId: "admin-tab-reset-pins" },
+  { to: "/admin/remembering", label: "Remembering", icon: Heart, testId: "admin-tab-remembering" },
 ];
 
 export function AdminTabs() {

@@ -6,7 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatNumber, timeAgo, userPath, videoPath } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, videoPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -226,7 +226,7 @@ function UserCard({ user, onOpen }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1 truncate font-semibold">
           {user.display_name}
-          {user.is_verified && <BadgeCheck size={14} className="fill-primary text-background" />}
+          {user.is_verified && <BadgeCheck size={14} className={badgeCls(user)} />}
         </div>
         <div className="truncate text-xs text-muted-foreground">
           @{user.username} · {formatNumber(user.followers)} followers

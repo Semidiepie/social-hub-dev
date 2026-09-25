@@ -213,7 +213,12 @@ export default function ProfileView({ userId, isOwn = false }: Props) {
             <View style={styles.bioBlock}>
               <View style={styles.nameRow}>
                 <Text style={styles.displayName}>{profile.display_name}</Text>
-                {profile.is_verified && <Ionicons name="checkmark-circle" size={16} color={colors.primary} />}
+                {profile.is_verified && <Ionicons name="checkmark-circle" size={16} color={profile.remembering ? "#ef4444" : colors.primary} />}
+                {profile.remembering && (
+                  <View style={styles.rememberingPill} testID="remembering-label">
+                    <Text style={styles.rememberingText}>REMEMBERING</Text>
+                  </View>
+                )}
                 {profile.is_streamer && (
                   <View style={styles.streamerPill}>
                     <Ionicons name="game-controller" size={10} color={colors.primary} />
@@ -507,6 +512,8 @@ const styles = StyleSheet.create({
   displayName: { color: colors.textPrimary, fontSize: 16, fontWeight: "800" },
   streamerPill: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: colors.primaryFaint, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radii.sm, marginLeft: 4 },
   streamerText: { color: colors.primary, fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
+  rememberingPill: { backgroundColor: "rgba(239,68,68,0.12)", borderColor: "rgba(239,68,68,0.4)", borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radii.sm, marginLeft: 4 },
+  rememberingText: { color: "#ef4444", fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
   bio: { color: colors.textPrimary, fontSize: 14, marginTop: 6, lineHeight: 20 },
 
   ctaRow: { flexDirection: "row", paddingHorizontal: spacing.md, gap: spacing.sm, marginBottom: spacing.md },

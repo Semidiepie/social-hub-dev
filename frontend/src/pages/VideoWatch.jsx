@@ -4,7 +4,7 @@ import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil } from "luci
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { formatDuration, formatNumber, timeAgo, userPath, videoPath } from "@/lib/format";
+import { formatDuration, formatNumber, timeAgo, userPath, videoPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
@@ -154,7 +154,7 @@ export default function VideoWatchPage() {
                 <div>
                   <div className="flex items-center gap-1 font-semibold hover:text-primary">
                     {video.author.display_name}
-                    {video.author.is_verified && <BadgeCheck size={14} className="fill-primary text-background" />}
+                    {video.author.is_verified && <BadgeCheck size={14} className={badgeCls(video.author)} />}
                   </div>
                   <div className="text-xs text-muted-foreground">@{video.author.username}</div>
                 </div>
@@ -242,7 +242,7 @@ export default function VideoWatchPage() {
                     <div className="flex items-center gap-1 text-sm">
                       <span className="font-semibold">{c.author?.display_name || c.display_name}</span>
                       {(c.is_verified || c.author?.is_verified) && (
-                        <BadgeCheck size={13} className="shrink-0 fill-primary text-background" data-testid={`video-comment-verified-${c.id}`} />
+                        <BadgeCheck size={13} className={badgeCls(c, "shrink-0")} data-testid={`video-comment-verified-${c.id}`} />
                       )}
                       <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
                     </div>

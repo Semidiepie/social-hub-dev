@@ -55,3 +55,9 @@ export function videoPath(v) {
   if (v?.author?.username) return `/@${v.author.username}/${v.id}`;
   return `/videos/${v?.id}`;
 }
+
+// Verified-badge color: RED for approved "Remembering" accounts, brand otherwise.
+export function badgeCls(entity, base = "") {
+  const red = !!entity?.remembering;
+  return `${base} ${red ? "fill-red-500 text-background" : "fill-primary text-background"}`.trim();
+}

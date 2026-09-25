@@ -41,6 +41,7 @@ def _author_view(user: dict) -> dict:
         "display_name": user.get("display_name") or user["username"],
         "avatar_url": user.get("avatar_url", ""),
         "is_verified": bool(user.get("is_verified")),
+        "remembering": bool(user.get("remembering")),
     }
 
 

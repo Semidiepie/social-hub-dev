@@ -70,6 +70,8 @@ export interface UserPublic {
   is_streamer: boolean;
   is_super_admin?: boolean;
   is_admin?: boolean;
+  remembering?: boolean;
+  remembering_status?: string | null;
   followers: number;
   following: number;
   posts_count: number;

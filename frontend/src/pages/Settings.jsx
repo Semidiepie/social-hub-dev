@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound, ChevronRight } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,20 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  const [remBusy, setRemBusy] = useState(false);
+
+  const applyRemembering = async () => {
+    setRemBusy(true);
+    try {
+      const res = await api.post("/remembering/apply");
+      patchUser({ remembering: res.remembering, remembering_status: res.remembering_status });
+      toast.success("Request submitted — an admin will review it.");
+    } catch (e) {
+      toast.error(e.message || "Failed to submit");
+    } finally {
+      setRemBusy(false);
+    }
+  };
 
   useEffect(() => {
     isBrowserPushEnabled().then(setPushOn);
@@ -283,6 +297,43 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Heart size={18} /> Remembering account</CardTitle></CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div>
+            <div className="font-semibold">Turn this into a Remembering account</div>
+            <p className="text-xs text-muted-foreground">
+              A memorialized account carries a “Remembering” label. Verified accounts show a red badge. Requires admin approval.
+            </p>
+          </div>
+          {user.remembering ? (
+            <span
+              className="shrink-0 rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-red-400"
+              data-testid="remembering-approved"
+            >
+              Remembering
+            </span>
+          ) : user.remembering_status === "pending" ? (
+            <span
+              className="shrink-0 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+              data-testid="remembering-pending"
+            >
+              Pending review
+            </span>
+          ) : (
+            <Button
+              type="button"
+              onClick={applyRemembering}
+              disabled={remBusy}
+              className="shrink-0 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+              data-testid="settings-apply-remembering"
+            >
+              {remBusy ? <Loader2 size={14} className="animate-spin" /> : <Heart size={14} />} Apply
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
       {user.is_super_admin && (
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound size={18} /> Admin</CardTitle></CardHeader>
@@ -291,6 +342,7 @@ export default function SettingsPage() {
               { to: "/admin/verify", title: "Verify accounts", desc: "Grant or remove the verified badge.", testId: "settings-admin-verify" },
               { to: "/admin/blogs", title: "Blog approvals", desc: "Approve or deny blog-publisher requests.", testId: "settings-admin-blogs" },
               { to: "/admin/reset-pins", title: "Reset PINs", desc: "Set a 4-digit password-reset PIN for any user.", testId: "settings-admin-reset-pins" },
+              { to: "/admin/remembering", title: "Remembering requests", desc: "Approve accounts requesting a Remembering label.", testId: "settings-admin-remembering" },
             ].map((item) => (
               <button
                 key={item.to}

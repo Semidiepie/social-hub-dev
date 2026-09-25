@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Heart, Loader2, MessageCircle, Volume2, VolumeX, BadgeCheck, X, Send, Trash2, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
-import { formatNumber, timeAgo, userPath } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
@@ -233,7 +233,7 @@ export default function ReelWatchPage() {
               <Avatar src={reel.author.avatar_url} size={38} />
               <span className="flex items-center gap-1 font-bold text-white">
                 @{reel.author.username}
-                {reel.author.is_verified && <BadgeCheck size={14} className="fill-white text-black" />}
+                {reel.author.is_verified && <BadgeCheck size={14} className={reel.author.remembering ? "fill-red-500 text-white" : "fill-white text-black"} />}
               </span>
             </Link>
           )}
@@ -280,7 +280,7 @@ export default function ReelWatchPage() {
                       <div className="flex items-center gap-1 text-sm">
                         <span className="font-semibold">{c.author?.display_name || c.display_name || c.author?.username}</span>
                         {(c.is_verified || c.author?.is_verified) && (
-                          <BadgeCheck size={13} className="shrink-0 fill-primary text-background" data-testid={`reel-comment-verified-${c.id}`} />
+                          <BadgeCheck size={13} className={badgeCls(c, "shrink-0")} data-testid={`reel-comment-verified-${c.id}`} />
                         )}
                         <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
                       </div>

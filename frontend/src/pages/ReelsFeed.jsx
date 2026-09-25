@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
-import { formatNumber, timeAgo, userPath } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
@@ -258,7 +258,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
             <Avatar src={reel.author.avatar_url} size={38} />
             <span className="flex items-center gap-1 font-bold text-white">
               @{reel.author.username}
-              {reel.author.is_verified && <BadgeCheck size={14} className="fill-white text-black" />}
+              {reel.author.is_verified && <BadgeCheck size={14} className={reel.author.remembering ? "fill-red-500 text-white" : "fill-white text-black"} />}
             </span>
           </Link>
         )}
@@ -338,7 +338,7 @@ function CommentsModal({ reel, user, onClose, onPosted, onRemoved }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1 text-sm">
                       <span className="font-semibold">{c.display_name || c.username}</span>
-                      {c.is_verified && <BadgeCheck size={13} className="fill-primary text-background" />}
+                      {c.is_verified && <BadgeCheck size={13} className={badgeCls(c)} />}
                       <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
                     </div>
                     <p className="mt-0.5 whitespace-pre-wrap text-sm">{c.text}</p>

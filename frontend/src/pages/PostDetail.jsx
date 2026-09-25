@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { EditContentModal } from "@/components/EditContentModal";
-import { timeAgo, formatNumber, userPath } from "@/lib/format";
+import { timeAgo, formatNumber, userPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -214,7 +214,7 @@ export default function PostDetailPage() {
                 <div className="flex items-center gap-1 text-sm">
                   <span className="font-semibold">{c.author?.display_name || c.display_name || c.author?.username}</span>
                   {(c.is_verified || c.author?.is_verified) && (
-                    <BadgeCheck size={13} className="shrink-0 fill-primary text-background" />
+                    <BadgeCheck size={13} className={badgeCls(c, "shrink-0")} />
                   )}
                   <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
                 </div>
