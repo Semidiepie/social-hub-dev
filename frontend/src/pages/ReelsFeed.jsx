@@ -11,6 +11,7 @@ import {
   Trash2,
   Pencil,
   Film,
+  Plus,
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -24,6 +25,7 @@ import { toast } from "sonner";
 // mirroring the mobile Reels tab. Each reel autoplays when scrolled into view.
 export default function ReelsFeedPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [reels, setReels] = useState(null);
   const [muted, setMuted] = useState(true);
   const [commentReel, setCommentReel] = useState(null);
@@ -46,6 +48,16 @@ export default function ReelsFeedPage() {
         <Film className="text-primary" size={22} />
         <h1 className="text-2xl font-black tracking-tight">Reels</h1>
         <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">For You</span>
+        {user && (
+          <button
+            type="button"
+            onClick={() => navigate("/reels/new")}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+            data-testid="reels-create-btn"
+          >
+            <Plus size={16} /> Create reel
+          </button>
+        )}
       </div>
 
       {reels === null ? (

@@ -280,3 +280,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Self-tested: endpoints via curl (created a real follow → list populated), UI screenshot (modal opens, shows follower, links to profile). NOT run through testing agent; the in-modal follow/unfollow button (logged-in only) reuses the same proven `/follow` endpoints but was not UI-clicked while authenticated.
 - Known pre-existing data drift (unrelated): denormalized `following` counter can differ from the follows collection (e.g. semidiepie shows 1 but has 0 follow records); the list reflects actual records.
 
+
+
+## 2026-06 — Post reels on web
+- Mobile already supported reels (Create tab). Added the missing WEB flow.
+- New page `/app/frontend/src/pages/ReelUpload.jsx` at route `/reels/new` (ProtectedRoute): vertical video upload with auto-compression (reuses `videoCompress` + `uploadToCloudinary`), caption, single game tag → `POST /api/reels {caption, video_url, thumbnail_url, game_tag, duration}` → redirects to `/reels`.
+- Entry points: sidebar "Post a reel" (`data-testid=sidebar-post-reel`) in AppShell; "Create reel" button on the Reels feed header (`data-testid=reels-create-btn`, logged-in only).
+- Route ordering: `/reels/new` declared before `/reels/:id`; the fullscreen regex in App.js already excludes `new`, so the page renders inside AppShell.
+- Verified: `POST /api/reels` via curl (creates `type: reel`), and UI screenshot (both entry points + `/reels/new` form render, publish disabled until a video is chosen). NOT run through testing agent; in-browser file-upload→Cloudinary→publish reuses the same proven path as the post/video uploaders but was not exercised end-to-end with a real file.
+

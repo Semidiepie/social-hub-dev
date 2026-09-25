@@ -89,6 +89,14 @@ export function AppShell({ children }) {
           >
             <Video size={16} /> Upload video
           </Button>
+          <Button
+            data-testid="sidebar-post-reel"
+            variant="outline"
+            onClick={() => navigate("/reels/new")}
+            className="mt-2 justify-start gap-2 border-border bg-transparent hover:bg-secondary"
+          >
+            <Film size={16} /> Post a reel
+          </Button>
         </nav>
 
         {/* Bottom user card */}
