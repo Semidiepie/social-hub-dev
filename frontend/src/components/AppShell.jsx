@@ -39,6 +39,11 @@ const NAV = [
   { to: "/notifications", label: "Notifications", icon: Bell, testId: "nav-notifications" },
 ];
 
+// Mobile bottom bar: Discover replaces Music (Music lives in the top-bar menu).
+const BOTTOM_NAV = ["/", "/live", "/reels", "/discover", "/blogs"].map((to) =>
+  NAV.find((n) => n.to === to),
+);
+
 function Brand() {
   return (
     <div className="flex items-center gap-3 px-3 py-2">
@@ -193,6 +198,9 @@ export function AppShell({ children }) {
                 <DropdownMenuItem data-testid="topbar-menu-profile" onClick={() => navigate("/profile")}>
                   <Avatar src={user.avatar_url} size={16} /> Profile
                 </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-music" onClick={() => navigate("/music")}>
+                  <Music2 size={16} /> Music
+                </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-settings" onClick={() => navigate("/settings")}>
                   <Settings size={16} /> Settings
                 </DropdownMenuItem>
@@ -227,7 +235,7 @@ export function AppShell({ children }) {
 
         {/* Mobile bottom nav */}
         <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-border bg-card/95 py-1.5 backdrop-blur md:hidden">
-          {NAV.slice(0, 5).map((n) => (
+          {BOTTOM_NAV.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
