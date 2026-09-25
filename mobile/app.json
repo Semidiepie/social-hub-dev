@@ -20,7 +20,8 @@
         "NSPhotoLibraryUsageDescription": "Select photos and videos to share with your squad",
         "NSPhotoLibraryAddUsageDescription": "Save photos and reels you create to your library",
         "NSMicrophoneUsageDescription": "Record audio for reels and live streams",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {
@@ -39,7 +40,9 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.BLUETOOTH_CONNECT"
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "web": {
@@ -83,7 +86,8 @@
           "recordAudioAndroid": true
         }
       ],
-      "react-native-compressor"
+      "react-native-compressor",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

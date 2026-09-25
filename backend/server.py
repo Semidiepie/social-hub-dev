@@ -1924,6 +1924,65 @@ async def admin_set_reset_pin(
 
 
 # ============================================================
+# Routes — Music (Semidiepie songs)
+# ============================================================
+class CreateSongBody(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    audio_url: str = Field(min_length=5)
+    cover_url: Optional[str] = None
+    duration: Optional[float] = None
+    artist: Optional[str] = None
+
+
+def _song_out(s: dict) -> dict:
+    return {
+        "id": s["id"],
+        "title": s.get("title", ""),
+        "artist": s.get("artist") or "semidiepie",
+        "audio_url": s.get("audio_url"),
+        "cover_url": s.get("cover_url"),
+        "duration": s.get("duration"),
+        "created_at": s["created_at"].isoformat() if isinstance(s.get("created_at"), datetime) else s.get("created_at"),
+    }
+
+
+@app.get("/api/songs")
+async def list_songs():
+    """Public: everyone can browse/stream the music library (newest first)."""
+    rows = await db.songs.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [_song_out(s) for s in rows]
+
+
+@app.post("/api/songs", status_code=201)
+async def create_song(body: CreateSongBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Only the super-admin (semidiepie) can upload songs."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Only the admin can upload songs")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": body.title.strip(),
+        "artist": (body.artist or "semidiepie").strip(),
+        "audio_url": body.audio_url,
+        "cover_url": body.cover_url,
+        "duration": body.duration,
+        "uploader_id": current["id"],
+        "created_at": now(),
+    }
+    await db.songs.insert_one(doc)
+    return _song_out(doc)
+
+
+@app.delete("/api/songs/{song_id}")
+async def delete_song(song_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Only the admin can delete songs")
+    res = await db.songs.delete_one({"id": song_id})
+    if not res.deleted_count:
+        raise HTTPException(404, "Song not found")
+    return {"status": "deleted"}
+
+
+# ============================================================
 # Seed Demo Data
 # ============================================================
 SEED_USERS = [

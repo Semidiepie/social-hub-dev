@@ -192,6 +192,13 @@ export default function Settings() {
         <Text style={styles.sectionLabel}>Discover</Text>
         <View style={styles.group}>
           <Row
+            icon="musical-notes-outline"
+            label="Music"
+            hint="Listen to semidiepie's tracks"
+            onPress={() => router.push("/music")}
+            testID="settings-music"
+          />
+          <Row
             icon="library-outline"
             label="Blogs"
             hint="Read & publish long-form articles"

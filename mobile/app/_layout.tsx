@@ -14,6 +14,7 @@ import { AuthProvider } from "@/src/context/AuthContext";
 import { colors } from "@/src/theme";
 import { NotificationPermissionPrimer } from "@/src/components/NotificationPermissionPrimer";
 import { GlobalDesktopShell } from "@/src/components/GlobalDesktopShell";
+import { MusicPlayerProvider } from "@/src/context/MusicPlayer";
 
 // Keep the native splash visible from cold start until icon fonts register.
 SplashScreen.preventAutoHideAsync();
@@ -87,15 +88,17 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <AuthProvider>
             <StatusBar style="light" />
-            <GlobalDesktopShell>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: colors.bg },
-                  animation: "fade",
-                }}
-              />
-            </GlobalDesktopShell>
+            <MusicPlayerProvider>
+              <GlobalDesktopShell>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: colors.bg },
+                    animation: "fade",
+                  }}
+                />
+              </GlobalDesktopShell>
+            </MusicPlayerProvider>
             <NotificationPermissionPrimer />
           </AuthProvider>
         </SafeAreaProvider>
