@@ -1345,6 +1345,23 @@ async def delete_story(story_id: str, current: Annotated[dict, Depends(get_curre
     return {"status": "deleted"}
 
 
+async def annotate_follows(items: list[dict], viewer_id: Optional[str]) -> list[dict]:
+    """Attach `follows_them` + `is_me` to a list of serialized users so the UI
+    can render Follow vs Following correctly in lists (discover, search)."""
+    followed: set[str] = set()
+    if viewer_id and items:
+        ids = [it["id"] for it in items]
+        frows = await db.follows.find(
+            {"follower_id": viewer_id, "followee_id": {"$in": ids}},
+            {"_id": 0, "followee_id": 1},
+        ).to_list(length=10000)
+        followed = {r["followee_id"] for r in frows}
+    for it in items:
+        it["follows_them"] = it["id"] in followed
+        it["is_me"] = it["id"] == viewer_id
+    return items
+
+
 @app.get("/api/discover")
 async def discover(filter: Literal["top", "accounts", "tags"] = "top",
                    viewer: Annotated[Optional[dict], Depends(get_optional_user)] = None):
@@ -1354,7 +1371,8 @@ async def discover(filter: Literal["top", "accounts", "tags"] = "top",
     if filter == "accounts":
         user_q: dict = {"id": {"$nin": blocked_list}} if blocked_list else {}
         users = await db.users.find(user_q, {"_id": 0, "password_hash": 0}).sort("followers", -1).limit(30).to_list(30)
-        return {"type": "accounts", "items": [user_to_public(u).model_dump() for u in users]}
+        items = await annotate_follows([user_to_public(u).model_dump() for u in users], viewer_id)
+        return {"type": "accounts", "items": items}
     if filter == "tags":
         match: dict = {"game_tag": {"$ne": None}}
         if blocked_list:
@@ -1781,7 +1799,7 @@ async def search(q: str = "", viewer: Annotated[Optional[dict], Depends(get_opti
     ).sort("created_at", -1).limit(15).to_list(15)
     viewer_id = viewer["id"] if viewer else None
     return {
-        "users": [user_to_public(u).model_dump() for u in users_raw],
+        "users": await annotate_follows([user_to_public(u).model_dump() for u in users_raw], viewer_id),
         "tags": [{"tag": t["_id"], "count": t["count"]} for t in tags_raw if t["_id"]],
         "posts": [await serialize_post(p, viewer_id) for p in posts_raw],
     }

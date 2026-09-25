@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Loader2, Bell, Heart, MessageCircle, UserPlus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
@@ -15,6 +16,7 @@ const ICONS = {
 export default function NotificationsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     try {
@@ -36,6 +38,14 @@ export default function NotificationsPage() {
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
+  // Route a notification to the thing it's about: a follow → the actor's
+  // profile; a like/comment → the post/reel it references.
+  const openNotification = (n) => {
+    setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    if (n.post_id) navigate(`/posts/${n.post_id}`);
+    else if (n.actor_id) navigate(`/user/${n.actor_id}`);
+  };
+
   return (
     <div className="mx-auto max-w-2xl">
       <header className="mb-6 flex items-center justify-between">
@@ -54,7 +64,7 @@ export default function NotificationsPage() {
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card/60 p-10 text-center">
           <Bell size={30} className="mx-auto text-muted-foreground" />
-          <h3 className="mt-3 text-lg font-bold">You're all caught up</h3>
+          <h3 className="mt-3 text-lg font-bold">You&apos;re all caught up</h3>
           <p className="mt-1 text-sm text-muted-foreground">New activity will show here.</p>
         </div>
       ) : (
@@ -64,7 +74,8 @@ export default function NotificationsPage() {
             return (
               <li
                 key={n.id}
-                className={`flex items-center gap-3 rounded-2xl border p-4 ${
+                onClick={() => openNotification(n)}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-colors hover:border-primary/50 ${
                   n.read ? "border-border bg-card/50" : "border-primary/30 bg-primary/5"
                 }`}
                 data-testid={`notif-${n.id}`}

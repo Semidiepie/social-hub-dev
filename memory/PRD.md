@@ -297,3 +297,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Verified: curl (403/401/200/404 + count 1→0) and a Home UI screenshot (delete button renders for owned comment). NOT run through testing agent (self-tested).
 - Scope note: covers POST + REEL comments (shared endpoint). VIDEO comments use a separate `/api/videos/{id}/comments` collection and were NOT included — can extend on request. Web only; mobile comment UIs unchanged.
 
+
+## 2026-06 — Clickable notifications
+- Web `/notifications` rows now clickable: follow → `/user/{actor_id}` (redirects to `/@handle`); like/comment → `/posts/{post_id}`. Marks that row read locally on click. (`Notifications.jsx`)
+- Mobile `app/notifications.tsx` already routed to `/post/{id}` or `/profile/{id}` — unchanged.
+- Verified: web screenshot — clicking a follow notif routed to the actor profile. Backend unchanged.
+
+## Queued (requested, not yet built)
+- Remembering account: users apply in Settings → super-admin (semidiepie) approves → "Remembering" label; verified users get a RED badge. (web+mobile)
+- Music page (Spotify-style, semidiepie-only songs): browse+play for all; upload/delete admin-only from web+mobile; Cloudinary audio.
