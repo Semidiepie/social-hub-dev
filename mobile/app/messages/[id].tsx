@@ -163,6 +163,17 @@ export default function ChatScreen() {
     }
   };
 
+  const deleteMessage = async (msg: Message) => {
+    setReactionTarget(null);
+    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+    try {
+      await api.del(`/messages/${msg.id}`);
+    } catch (e) {
+      console.warn("delete message", e);
+      load(); // restore on failure
+    }
+  };
+
   // Index of last message I sent (used to render "Seen" indicator below it).
   const lastMineIndex = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -351,17 +362,29 @@ export default function ChatScreen() {
           activeOpacity={1}
           onPress={() => setReactionTarget(null)}
         >
-          <View style={styles.reactionPicker}>
-            {REACTION_EMOJIS.map((e) => (
+          <View style={styles.reactionPickerWrap}>
+            <View style={styles.reactionPicker}>
+              {REACTION_EMOJIS.map((e) => (
+                <TouchableOpacity
+                  key={e}
+                  style={styles.reactionPickerItem}
+                  onPress={() => reactionTarget && react(reactionTarget, e)}
+                  testID={`reaction-${e}`}
+                >
+                  <Text style={{ fontSize: 26 }}>{e}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {reactionTarget?.sender_id === me?.id && (
               <TouchableOpacity
-                key={e}
-                style={styles.reactionPickerItem}
-                onPress={() => reactionTarget && react(reactionTarget, e)}
-                testID={`reaction-${e}`}
+                style={styles.deleteAction}
+                onPress={() => reactionTarget && deleteMessage(reactionTarget)}
+                testID="msg-delete"
               >
-                <Text style={{ fontSize: 26 }}>{e}</Text>
+                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                <Text style={styles.deleteActionText}>Delete message</Text>
               </TouchableOpacity>
-            ))}
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -408,8 +431,11 @@ const styles = StyleSheet.create({
   send: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
 
   reactionBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
+  reactionPickerWrap: { alignItems: "center", gap: spacing.sm },
   reactionPicker: { flexDirection: "row", backgroundColor: colors.surface, borderRadius: radii.full, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: colors.border, gap: 4 },
   reactionPickerItem: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22 },
+  deleteAction: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.surface, borderRadius: radii.full, paddingHorizontal: 18, paddingVertical: 12, borderWidth: 1, borderColor: colors.border },
+  deleteActionText: { color: "#ef4444", fontSize: 15, fontWeight: "700" },
 });
 
 // Keep import used (KeyboardAwareScrollView reserved for a future polish)

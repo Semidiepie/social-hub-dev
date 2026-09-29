@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -28,6 +29,7 @@ export default function Messages() {
   const [convos, setConvos] = useState<ConversationPreview[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ConversationPreview | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -37,6 +39,17 @@ export default function Messages() {
       console.warn("convos", e);
     }
   }, []);
+
+  const removeConv = useCallback(async (conv: ConversationPreview) => {
+    setPendingDelete(null);
+    setConvos((prev) => prev.filter((c) => c.id !== conv.id));
+    try {
+      await api.del(`/conversations/${conv.id}`);
+    } catch (e) {
+      console.warn("remove conv", e);
+      load(); // restore on failure
+    }
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -99,6 +112,8 @@ export default function Messages() {
             <TouchableOpacity
               style={styles.row}
               onPress={() => router.push(`/messages/${item.id}`)}
+              onLongPress={() => setPendingDelete(item)}
+              delayLongPress={350}
               testID={`conv-${item.id}`}
             >
               <View style={styles.avatarWrap}>
@@ -137,6 +152,33 @@ export default function Messages() {
         />
       )}
       </View>
+
+      <Modal
+        visible={!!pendingDelete}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setPendingDelete(null)}
+      >
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setPendingDelete(null)}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Remove conversation?</Text>
+            <Text style={styles.sheetSub} numberOfLines={2}>
+              This removes “{pendingDelete?.title}” from your list. A new message will bring it back.
+            </Text>
+            <TouchableOpacity
+              style={styles.sheetDelete}
+              onPress={() => pendingDelete && removeConv(pendingDelete)}
+              testID="conv-remove-confirm"
+            >
+              <Text style={styles.sheetDeleteText}>Remove from list</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetCancel} onPress={() => setPendingDelete(null)} testID="conv-remove-cancel">
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -163,4 +205,12 @@ const styles = StyleSheet.create({
   previewUnread: { color: colors.textPrimary, fontWeight: "700" },
   unreadBadge: { backgroundColor: colors.primary, borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   unreadText: { color: colors.bg, fontSize: 11, fontWeight: "900" },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, padding: spacing.lg, gap: spacing.sm },
+  sheetTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: "800" },
+  sheetSub: { color: colors.textSecondary, fontSize: 14, marginBottom: spacing.sm },
+  sheetDelete: { backgroundColor: "#ef4444", borderRadius: radii.md, paddingVertical: 14, alignItems: "center" },
+  sheetDeleteText: { color: "#fff", fontSize: 15, fontWeight: "800" },
+  sheetCancel: { paddingVertical: 14, alignItems: "center" },
+  sheetCancelText: { color: colors.textSecondary, fontSize: 15, fontWeight: "700" },
 });
