@@ -90,7 +90,7 @@ export function SageChat({ onBack }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 font-bold">
             {SAGE.display_name}
-            <BadgeCheck size={15} className="text-green-500" data-testid="sage-badge" />
+            <BadgeCheck size={15} className="fill-green-500 text-background" data-testid="sage-badge" />
           </div>
           <div className="text-[11px] text-muted-foreground">Your AI companion · always here to listen</div>
         </div>
@@ -374,7 +374,7 @@ function SageCall({ onEnd, onCrisis }) {
         <Avatar src={SAGE.avatar_url} size={150} />
       </div>
       <div className="mt-6 flex items-center justify-center gap-1 text-2xl font-black text-white">
-        Sage AI <BadgeCheck size={20} className="text-green-500" />
+        Sage AI <BadgeCheck size={20} className="fill-green-500 text-background" />
       </div>
       <div className="mt-1 text-sm text-white/60" data-testid="sage-call-status">{statusText}</div>
       {caption && <p className="mt-6 max-w-md text-sm leading-relaxed text-white/80" data-testid="sage-caption">“{caption}”</p>}

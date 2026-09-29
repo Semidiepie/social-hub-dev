@@ -90,7 +90,7 @@ export default function MessagesPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1 text-sm font-semibold">
                     Sage AI
-                    <BadgeCheck size={14} className="shrink-0 text-green-500" />
+                    <BadgeCheck size={14} className="shrink-0 fill-green-500 text-background" />
                   </div>
                   <div className="truncate text-xs text-muted-foreground">Your AI companion · always here to listen</div>
                 </div>
