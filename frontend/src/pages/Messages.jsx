@@ -59,7 +59,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="grid gap-0 md:grid-cols-[320px_1fr]" style={{ minHeight: "min(calc(100vh - 120px), 900px)" }}>
+    <div className="grid gap-0 md:grid-cols-[320px_1fr]" style={{ height: "calc(100dvh - 88px)" }}>
       <aside className={`rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <h1 className="text-xl font-black">Messages</h1>

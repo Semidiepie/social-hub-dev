@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowLeft, Send, Loader2, Phone, PhoneOff, BadgeCheck, Mic, Square, ShieldAlert, Trash2,
+  ArrowLeft, Send, Loader2, Phone, PhoneOff, BadgeCheck, Mic, MicOff, Volume2, VolumeX, ShieldAlert, Trash2,
 } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
@@ -174,125 +174,229 @@ export function SageChat({ onBack }) {
 }
 
 function SageCall({ onEnd, onCrisis }) {
-  const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
+  // status: connecting | listening | recording | thinking | speaking
+  const [status, setStatus] = useState("connecting");
   const [caption, setCaption] = useState("");
+  const [speaker, setSpeaker] = useState(true);
+  const [micMuted, setMicMuted] = useState(false);
+
   const audioRef = useRef(null);
+  const streamRef = useRef(null);
+  const acRef = useRef(null);
+  const analyserRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
-  const streamRef = useRef(null);
+  const rafRef = useRef(null);
   const endedRef = useRef(false);
+  const speakerRef = useRef(true);
+  const micMutedRef = useRef(false);
+  // VAD bookkeeping
+  const speakingSinceRef = useRef(0);
+  const lastVoiceRef = useRef(0);
+  const heardSpeechRef = useRef(false);
+  const busyRef = useRef(true); // true while connecting/thinking/speaking (don't record)
+
+  speakerRef.current = speaker;
+  micMutedRef.current = micMuted;
+
+  const setBusy = (b) => { busyRef.current = b; };
 
   const playAudio = useCallback((url) => new Promise((resolve) => {
     const audio = new Audio(url);
+    audio.muted = !speakerRef.current;
     audioRef.current = audio;
     setStatus("speaking");
-    audio.onended = () => { if (!endedRef.current) setStatus("idle"); resolve(); };
-    audio.onerror = () => { if (!endedRef.current) setStatus("idle"); resolve(); };
-    audio.play().catch(() => { setStatus("idle"); resolve(); });
+    setBusy(true);
+    const finish = () => { audioRef.current = null; resolve(); };
+    audio.onended = finish;
+    audio.onerror = finish;
+    audio.play().catch(finish);
   }), []);
 
-  // opening greeting
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await api.post("/sage/voice-turn", { greeting: true });
-        if (endedRef.current) return;
-        setCaption(r.reply);
-        await playAudio(r.audio_url);
-      } catch (e) {
-        if (!endedRef.current) { toast.error("Couldn't start the voice call"); onEnd(); }
-      }
-    })();
-    return () => { endedRef.current = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const rec = new MediaRecorder(stream);
-      recorderRef.current = rec;
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
-      rec.start();
-      setStatus("recording");
-    } catch {
-      toast.error("Allow microphone access to talk with Sage");
-    }
-  };
-
-  const stopRecordingAndSend = async () => {
-    const rec = recorderRef.current;
-    if (!rec) return;
+  const sendUtterance = useCallback(async (blob, mime) => {
     setStatus("thinking");
-    const done = new Promise((res) => { rec.onstop = res; });
-    rec.stop();
-    await done;
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+    setBusy(true);
     try {
       const fd = new FormData();
-      fd.append("audio", blob, "speech.webm");
+      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+      fd.append("audio", blob, `speech.${ext}`);
       const sttRes = await fetch(`${BACKEND_URL}/api/sage/stt`, {
         method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd,
       });
       if (!sttRes.ok) throw new Error("stt");
       const { text } = await sttRes.json();
-      if (!text) { toast("I didn't catch that — try again"); setStatus("idle"); return; }
+      if (!text || endedRef.current) { if (!endedRef.current) resumeListening(); return; }
       const r = await api.post("/sage/voice-turn", { text });
       if (endedRef.current) return;
       if (r.crisis) onCrisis();
       setCaption(r.reply);
       await playAudio(r.audio_url);
+      if (!endedRef.current) resumeListening();
     } catch {
-      if (!endedRef.current) { toast.error("Something went wrong — let's try again"); setStatus("idle"); }
+      if (!endedRef.current) { setStatus("listening"); resumeListening(); }
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCrisis, playAudio]);
+
+  const startUtterance = useCallback(() => {
+    const stream = streamRef.current;
+    if (!stream) return;
+    let mime = "";
+    for (const m of ["audio/webm", "audio/mp4", "audio/ogg"]) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+    }
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    recorderRef.current = rec;
+    chunksRef.current = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
+    rec.onstop = () => {
+      const type = rec.mimeType || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type });
+      recorderRef.current = null;
+      if (heardSpeechRef.current && blob.size > 1200) sendUtterance(blob, type);
+      else if (!endedRef.current) resumeListening();
+    };
+    rec.start();
+    setStatus("recording");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendUtterance]);
+
+  // Voice-activity detection loop
+  const tick = useCallback(() => {
+    if (endedRef.current) return;
+    const analyser = analyserRef.current;
+    if (analyser && !busyRef.current && !micMutedRef.current) {
+      const buf = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      const now = performance.now();
+      const SPEECH = 0.025;   // rms threshold for voice
+      const SILENCE_MS = 1100; // how long of silence ends a turn
+      const recording = !!recorderRef.current;
+
+      if (rms > SPEECH) {
+        lastVoiceRef.current = now;
+        if (!recording) {
+          if (!speakingSinceRef.current) speakingSinceRef.current = now;
+          if (now - speakingSinceRef.current > 120) { heardSpeechRef.current = true; startUtterance(); }
+        } else {
+          heardSpeechRef.current = true;
+        }
+      } else {
+        speakingSinceRef.current = 0;
+        if (recording && heardSpeechRef.current && now - lastVoiceRef.current > SILENCE_MS) {
+          try { recorderRef.current.stop(); } catch { /* noop */ }
+          heardSpeechRef.current = false;
+        }
+      }
+    }
+    rafRef.current = requestAnimationFrame(tick);
+  }, [startUtterance]);
+
+  const resumeListening = useCallback(() => {
+    heardSpeechRef.current = false;
+    speakingSinceRef.current = 0;
+    lastVoiceRef.current = 0;
+    setBusy(false);
+    setStatus("listening");
+  }, []);
+
+  // Setup: mic + analyser + greeting, then start VAD loop
+  useEffect(() => {
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+        if (endedRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        const AC = window.AudioContext || window.webkitAudioContext;
+        const ac = new AC();
+        acRef.current = ac;
+        const source = ac.createMediaStreamSource(stream);
+        const analyser = ac.createAnalyser();
+        analyser.fftSize = 1024;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+        rafRef.current = requestAnimationFrame(tick);
+        // greeting
+        const r = await api.post("/sage/voice-turn", { greeting: true });
+        if (endedRef.current) return;
+        setCaption(r.reply);
+        await playAudio(r.audio_url);
+        if (!endedRef.current) resumeListening();
+      } catch {
+        if (!endedRef.current) { toast.error("Allow microphone access to talk with Sage"); onEnd(); }
+      }
+    })();
+    return () => {
+      endedRef.current = true;
+      cancelAnimationFrame(rafRef.current);
+      try { audioRef.current?.pause(); } catch { /* noop */ }
+      try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
+      try { acRef.current?.close(); } catch { /* noop */ }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const hangUp = () => {
     endedRef.current = true;
+    cancelAnimationFrame(rafRef.current);
     try { audioRef.current?.pause(); } catch { /* noop */ }
     try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
+    try { acRef.current?.close(); } catch { /* noop */ }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     onEnd();
   };
 
-  const recording = status === "recording";
-  const busy = status === "connecting" || status === "thinking" || status === "speaking";
+  const toggleSpeaker = () => {
+    const next = !speaker;
+    setSpeaker(next);
+    if (audioRef.current) audioRef.current.muted = !next;
+  };
+
   const statusText = {
-    connecting: "Connecting…", idle: "Tap the mic and talk", recording: "Listening… tap to send",
-    thinking: "Sage is thinking…", speaking: "Sage is speaking…",
+    connecting: "Connecting…",
+    listening: micMuted ? "Mic muted" : "Listening… just talk",
+    recording: "Listening…",
+    thinking: "Sage is thinking…",
+    speaking: "Sage is speaking…",
   }[status];
 
+  const active = status === "recording" || status === "speaking";
+
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-neutral-950 px-6 text-center" data-testid="sage-call-screen">
-      <div className={`relative flex h-40 w-40 items-center justify-center rounded-full ${status === "speaking" ? "animate-pulse" : ""}`}>
-        <div className="absolute inset-0 rounded-full bg-green-500/20 blur-xl" />
-        <Avatar src={SAGE.avatar_url} size={140} />
+    <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-neutral-950 px-6 text-center"
+      style={{ height: "100dvh" }} data-testid="sage-call-screen">
+      <div className={`relative flex h-44 w-44 items-center justify-center rounded-full ${active ? "animate-pulse" : ""}`}>
+        <div className={`absolute inset-0 rounded-full blur-xl transition-colors ${status === "speaking" ? "bg-green-400/30" : status === "recording" ? "bg-primary/30" : "bg-green-500/15"}`} />
+        <Avatar src={SAGE.avatar_url} size={150} />
       </div>
       <div className="mt-6 flex items-center justify-center gap-1 text-2xl font-black text-white">
         Sage AI <BadgeCheck size={20} className="text-green-500" />
       </div>
-      <div className="mt-1 text-sm text-white/60">{statusText}</div>
+      <div className="mt-1 text-sm text-white/60" data-testid="sage-call-status">{statusText}</div>
       {caption && <p className="mt-6 max-w-md text-sm leading-relaxed text-white/80" data-testid="sage-caption">“{caption}”</p>}
 
-      <div className="mt-10 flex items-center gap-8">
-        <button
-          onClick={recording ? stopRecordingAndSend : startRecording}
-          disabled={busy}
-          className={`flex h-20 w-20 items-center justify-center rounded-full transition-colors ${recording ? "bg-white text-black" : "bg-green-500 text-white"} disabled:opacity-40`}
-          data-testid="sage-mic-btn"
-        >
-          {recording ? <Square size={26} /> : <Mic size={30} />}
+      <div className="mt-10 flex items-center gap-6">
+        <button onClick={() => setMicMuted((m) => !m)}
+          className={`flex h-14 w-14 items-center justify-center rounded-full ${micMuted ? "bg-white text-black" : "bg-white/15 text-white"}`}
+          title={micMuted ? "Unmute mic" : "Mute mic"} data-testid="sage-mic-toggle">
+          {micMuted ? <MicOff size={22} /> : <Mic size={22} />}
+        </button>
+        <button onClick={hangUp} className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-white" data-testid="sage-hangup">
+          <PhoneOff size={26} />
+        </button>
+        <button onClick={toggleSpeaker}
+          className={`flex h-14 w-14 items-center justify-center rounded-full ${speaker ? "bg-green-500 text-white" : "bg-white/15 text-white"}`}
+          title={speaker ? "Speaker on" : "Speaker off"} data-testid="sage-speaker-toggle">
+          {speaker ? <Volume2 size={22} /> : <VolumeX size={22} />}
         </button>
       </div>
 
-      <button onClick={hangUp} className="mt-10 flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white" data-testid="sage-hangup">
-        <PhoneOff size={24} />
-      </button>
-      <p className="mt-6 max-w-xs text-[11px] text-white/40">
-        Sage is an AI companion, not a substitute for professional help. In a crisis, call or text 988 (US) or your local emergency services.
+      <p className="mt-8 max-w-xs text-[11px] text-white/40">
+        Just speak naturally — Sage listens and replies on its own. Sage is an AI companion, not a substitute for professional help. In a crisis, call or text 988 (US) or local emergency services.
       </p>
     </div>
   );

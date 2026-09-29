@@ -279,7 +279,7 @@ function CallUI({ call, peers, localVideoTrack, micOn, camOn, onAccept, onDeclin
 
   if (call.status === "incoming") {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm" data-testid="incoming-call">
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm" style={{ height: "100dvh" }} data-testid="incoming-call">
         <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-8 text-center">
           <div className="mx-auto mb-4 flex justify-center">
             <Avatar src={call.from?.avatar_url} size={88} frame={frameOf(call.from)} />
@@ -308,7 +308,7 @@ function CallUI({ call, peers, localVideoTrack, micOn, camOn, onAccept, onDeclin
 
   const ringing = call.status === "outgoing" || call.status === "ringing_joined";
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-neutral-950" data-testid="call-screen">
+    <div className="fixed inset-0 z-[120] flex flex-col bg-neutral-950" style={{ height: "100dvh" }} data-testid="call-screen">
       <div className="flex items-center justify-between px-4 py-3 text-white">
         <div className="font-bold">{call.title || "Call"}</div>
         <div className="text-xs text-white/70">{ringing ? "Ringing…" : (isVideo ? "Video call" : "Audio call")}</div>
