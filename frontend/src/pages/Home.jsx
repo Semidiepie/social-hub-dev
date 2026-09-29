@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, MessageCircle, Loader2, Play, Eye, Trash2, Send, BadgeCheck, Pencil } from "lucide-react";
+import { Heart, MessageCircle, Loader2, Play, Eye, Trash2, Send, BadgeCheck, Pencil, Bookmark, Gamepad2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, UsernameLine } from "@/components/Avatar";
@@ -167,14 +167,19 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
       <div className="flex items-center gap-3 px-4 pt-4">
         {post.author ? (
           <Link to={userPath(post.author)}>
-            <Avatar src={post.author.avatar_url} size={40} frame={frameOf(post.author)} live={post.author?.is_live} />
+            <Avatar src={post.author.avatar_url} size={40} ring frame={frameOf(post.author)} live={post.author?.is_live} />
           </Link>
         ) : (
-          <Avatar size={40} />
+          <Avatar size={40} ring />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <UsernameLine user={post.author} className="text-sm" />
+            {post.author?.is_streamer && (
+              <span className="pmp-streamer" data-testid={`post-streamer-${post.id}`}>
+                <Gamepad2 size={9} /> Streamer
+              </span>
+            )}
             <FeaturedBadge show={featured} />
           </div>
           <div className="text-xs text-muted-foreground">
@@ -183,7 +188,7 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
         </div>
         <FeatureToggle type={post.type === "reel" ? "reel" : "post"} id={post.id} featured={featured} onChange={setFeatured} />
         {post.game_tag && (
-          <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
+          <span className="pmp-kind" style={{ textTransform: "none" }}>
             #{post.game_tag}
           </span>
         )}
@@ -211,48 +216,58 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
         )}
       </div>
 
-      {post.caption && (
-        <p className="px-4 pt-3 text-[15px] leading-relaxed">{post.caption}</p>
-      )}
-
       {post.image_url && (
-        <img
-          src={post.image_url}
-          alt=""
-          className="mt-3 max-h-[600px] w-full object-cover"
-        />
+        <div className="relative mx-2 mt-2 overflow-hidden rounded-2xl bg-secondary/40">
+          <img src={post.image_url} alt="" className="max-h-[600px] w-full object-cover" />
+          <div className="pointer-events-none absolute right-2.5 top-2.5 flex gap-1.5">
+            <span className="pmp-statchip"><Heart size={11} className="fill-primary text-primary" /> {formatNumber(post.likes)}</span>
+            {commentsCount > 0 && (
+              <span className="pmp-statchip"><MessageCircle size={11} /> {formatNumber(commentsCount)}</span>
+            )}
+          </div>
+        </div>
       )}
       {post.video_url && !post.image_url && (
         <video
           src={post.video_url}
           controls
           poster={post.thumbnail_url || undefined}
-          className="mt-3 max-h-[720px] w-full bg-black"
+          className="mx-2 mt-2 max-h-[720px] w-[calc(100%-1rem)] rounded-2xl bg-black"
         />
       )}
 
-      <footer className="flex items-center gap-5 px-4 py-3">
+      <footer className="flex items-center gap-2 px-4 pb-1 pt-3">
         <button
           onClick={onToggleLike}
-          className={`inline-flex items-center gap-1.5 text-sm font-semibold transition-colors ${
-            post.liked_by_me ? "text-primary" : "text-muted-foreground hover:text-foreground"
-          }`}
+          className={`pmp-chip ${post.liked_by_me ? "pmp-chip-active" : ""}`}
           data-testid={`post-like-${post.id}`}
         >
-          <Heart size={18} className={post.liked_by_me ? "fill-primary" : ""} />
+          <Heart size={16} className={post.liked_by_me ? "fill-white" : ""} />
           {formatNumber(post.likes)}
         </button>
         <button
           onClick={() => setShowComments((v) => !v)}
-          className={`inline-flex items-center gap-1.5 text-sm font-semibold transition-colors ${
-            showComments ? "text-primary" : "text-muted-foreground hover:text-foreground"
-          }`}
+          className={`pmp-chip ${showComments ? "pmp-chip-active" : ""}`}
           data-testid={`post-comment-toggle-${post.id}`}
         >
-          <MessageCircle size={18} />
+          <MessageCircle size={16} />
           {formatNumber(commentsCount)}
         </button>
+        <button className="pmp-iconchip" title="Share" aria-label="Share" data-testid={`post-share-${post.id}`}>
+          <Send size={16} />
+        </button>
+        <div className="flex-1" />
+        <button className="pmp-iconchip" title="Save" aria-label="Save" data-testid={`post-bookmark-${post.id}`}>
+          <Bookmark size={16} />
+        </button>
       </footer>
+
+      {post.caption && (
+        <div className="pmp-cap px-4 pb-3 pt-2">
+          <span className="pmp-cap-bar" />
+          <p className="text-[15px] leading-snug">{post.caption}</p>
+        </div>
+      )}
 
       {showComments && (
         <PostComments

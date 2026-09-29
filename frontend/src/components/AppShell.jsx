@@ -11,12 +11,14 @@ import {
   Plus,
   LogOut,
   Shield,
+  Send,
   Film,
   Music2,
   Radio,
   PawPrint,
   Download,
   ShoppingBag,
+  User,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -45,10 +47,7 @@ const NAV = [
   { to: "/notifications", label: "Notifications", icon: Bell, testId: "nav-notifications" },
 ];
 
-// Mobile bottom bar: Discover replaces Music (Music lives in the top-bar menu).
-const BOTTOM_NAV = ["/", "/videos", "/live", "/reels", "/discover"].map((to) =>
-  NAV.find((n) => n.to === to),
-);
+// Mobile bottom bar is rendered explicitly below (Home / Discover / +FAB / Reels / Profile).
 
 function Brand() {
   return (
@@ -60,8 +59,11 @@ function Brand() {
       />
       <div className="leading-tight">
         <div className="text-lg font-black tracking-tight">PostMePlex</div>
-        <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          For creators
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className="h-0.5 w-3 rounded-full bg-primary" />
+          <span className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-muted-foreground">
+            The home for creators
+          </span>
         </div>
       </div>
     </div>
@@ -188,7 +190,17 @@ export function AppShell({ children }) {
         {/* Mobile top bar */}
         <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/85 px-4 py-2.5 backdrop-blur md:hidden">
           <Brand />
-          {user ? (
+          <div className="flex items-center gap-1.5">
+            <NavLink to="/blogs" className="pmp-iconbtn" data-testid="topbar-icon-blogs" aria-label="Blogs">
+              <BookText size={19} />
+            </NavLink>
+            <NavLink to="/notifications" className="pmp-iconbtn" data-testid="topbar-icon-notifications" aria-label="Notifications">
+              <Bell size={19} />
+            </NavLink>
+            <NavLink to="/messages" className="pmp-iconbtn" data-testid="topbar-icon-messages" aria-label="Messages">
+              <Send size={18} />
+            </NavLink>
+            {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button data-testid="topbar-menu-trigger" className="rounded-full outline-none focus:ring-2 focus:ring-primary">
@@ -248,31 +260,57 @@ export function AppShell({ children }) {
               Sign in
             </Button>
           )}
+          </div>
         </div>
 
         <div className="mx-auto w-full max-w-[1180px] flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6">
           {children}
         </div>
 
-        {/* Mobile bottom nav */}
-        <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-border bg-card/95 py-1.5 backdrop-blur md:hidden">
-          {BOTTOM_NAV.map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.to === "/"}
-              className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[11px] font-medium ${
-                  isActive ? "text-primary" : "text-muted-foreground"
-                }`
-              }
-              data-testid={`bottom-${n.testId}`}
-            >
-              <n.icon size={20} />
-              {n.label}
+        {/* Mobile bottom nav — floating pill with gradient create FAB (mobile parity) */}
+        <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 flex justify-center px-4 pb-[max(env(safe-area-inset-bottom),8px)] md:hidden">
+          <nav className="pointer-events-auto flex w-full max-w-[480px] items-center justify-between rounded-3xl border border-white/10 bg-card/95 px-2.5 py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur">
+            <NavLink to="/" end className={({ isActive }) => `flex h-11 w-11 items-center justify-center rounded-2xl transition-colors ${isActive ? "border border-primary/35 bg-primary/20 text-primary" : "text-muted-foreground"}`} data-testid="bottom-nav-home" aria-label="Home">
+              <Home size={22} />
             </NavLink>
-          ))}
-        </nav>
+            <NavLink to="/discover" className={({ isActive }) => `flex h-11 w-11 items-center justify-center rounded-2xl transition-colors ${isActive ? "border border-primary/35 bg-primary/20 text-primary" : "text-muted-foreground"}`} data-testid="bottom-nav-discover" aria-label="Discover">
+              <Compass size={22} />
+            </NavLink>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  data-testid="bottom-nav-create"
+                  aria-label="Create"
+                  className="flex h-11 w-[52px] items-center justify-center rounded-2xl bg-gradient-to-br from-[#FF8C66] to-[#FF6B3D] text-background shadow-lg shadow-primary/50 transition-transform active:scale-95"
+                >
+                  <Plus size={26} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" side="top" className="mb-2 w-48">
+                <DropdownMenuLabel>Create</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem data-testid="create-menu-reel" onClick={() => navigate("/reels/new")}>
+                  <Film size={16} /> Post a reel
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="create-menu-video" onClick={() => navigate("/videos/new")}>
+                  <Video size={16} /> Upload a video
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="create-menu-blog" onClick={() => navigate("/blogs/new")}>
+                  <BookText size={16} /> Write a blog
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="create-menu-live" onClick={() => navigate("/live/new")}>
+                  <Radio size={16} /> Go live
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <NavLink to="/reels" className={({ isActive }) => `flex h-11 w-11 items-center justify-center rounded-2xl transition-colors ${isActive ? "border border-primary/35 bg-primary/20 text-primary" : "text-muted-foreground"}`} data-testid="bottom-nav-reels" aria-label="Reels">
+              <Film size={22} />
+            </NavLink>
+            <NavLink to="/profile" className={({ isActive }) => `flex h-11 w-11 items-center justify-center rounded-2xl transition-colors ${isActive ? "border border-primary/35 bg-primary/20 text-primary" : "text-muted-foreground"}`} data-testid="bottom-nav-profile" aria-label="Profile">
+              <User size={22} />
+            </NavLink>
+          </nav>
+        </div>
       </main>
     </div>
   );

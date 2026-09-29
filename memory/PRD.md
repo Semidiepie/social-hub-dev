@@ -3,6 +3,16 @@
 ## Overview
 **PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
+## Web → Mobile visual parity (phased) — Phase 1: shell + Home feed (2026-06, web only)
+- **Goal (user):** make the WEB app's GUI/look feel exactly like the mobile app, done in phases, while keeping ALL current web features.
+- **Phase 1 (done):** Reusable mobile-parity CSS kit added to `index.css` (`.pmp-iconbtn`, `.pmp-chip`/`.pmp-chip-active`, `.pmp-iconchip`, `.pmp-streamer`, `.pmp-kind`, `.pmp-statchip`, `.pmp-cap`/`.pmp-cap-bar`). Restyled:
+  - **AppShell mobile top bar:** brand mark + "PostMePlex" + orange-dash "THE HOME FOR CREATORS" tagline, rounded-square header icon buttons (blogs/notifications/messages) + avatar account menu.
+  - **AppShell mobile bottom nav:** floating pill (Home / Discover / gradient "+" FAB / Reels / Profile); the FAB opens a Create dropdown (reel/video/blog/live). Active tab = orange-tinted rounded square. Old flat bottom bar + `BOTTOM_NAV` removed.
+  - **Home PostCard:** orange-ring avatar, STREAMER pill, Featured label/toggle preserved, media in a rounded inset with floating like/comment stat chips, pill-shaped action chips (♥/💬 with counts) + share + bookmark, caption moved below actions with a left orange accent bar. Live ring, frames, edit/delete, inline comments all preserved.
+- **Remaining phases (backlog):** apply the same kit to ReelCard/VideoCard on Home, then Discover, Profile, Videos, Live, Reels, Blogs, Messages, Market, Pet, Settings, auth pages.
+- **Verified:** web lint clean; mobile-web screenshots confirm header, cards, and bottom nav match the mobile reference. Web-only change (mobile app already has this look).
+
+
 ## Feature — Live-everywhere + Admin content boosting + sidebar fix (2026-06, web + mobile) — iteration 40
 - **Live everywhere:** going live (`POST /api/live`) sets `users.is_live=true` + `live_stream_id`; `POST /api/live/{id}/stop` resets them. `is_live` added to author/peer serializers (feed, comments, discover, messages peer + `sender_is_live`). Web `Avatar` gained a `live` prop → red ring + "LIVE" pill (`data-testid avatar-live` / `avatar-live-pill`), wired on Home, CommentThread, Discover, Messages (conv list + chat header + message sender). Profile shows a red LIVE banner ("<NAME> IS LIVE NOW — WATCH", `profile-live-banner`) linking to the user's stream. Mobile: ProfileView LIVE banner, PostCard live pill, live-list Featured label.
 - **Follower live notifications:** on go-live, inserts a `type:"live"` in-app notification (`link=/live/{id}`) for every follower + fires Emergent push + web push (non-blocking).

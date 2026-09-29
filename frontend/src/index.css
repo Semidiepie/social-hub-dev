@@ -194,4 +194,71 @@ html, body {
 }
 .splash-overlay { animation: none; }
 .splash-logo { animation: splash-logo-in .7s cubic-bezier(.16,1,.3,1) both, splash-glow-pulse 2s ease-in-out .7s infinite; }
+
+/* ===== Mobile-parity UI kit (web) — mirrors /app/mobile design signatures ===== */
+/* Rounded-square icon button (header actions) */
+.pmp-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--elevated, #252936);
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  transition: background-color .18s ease, transform .12s ease, color .18s ease;
+}
+.pmp-iconbtn:hover { background: hsl(var(--secondary)); }
+.pmp-iconbtn:active { transform: scale(.94); }
+
+/* Pill-shaped action chip (like / comment with count) */
+.pmp-chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 6px 11px; border-radius: 9999px; min-width: 54px;
+  font-size: 12px; font-weight: 800;
+  background: var(--elevated, #252936);
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  transition: background-color .18s ease, border-color .18s ease, transform .12s ease;
+}
+.pmp-chip:hover { border-color: hsl(var(--primary) / .5); }
+.pmp-chip:active { transform: scale(.95); }
+.pmp-chip-active { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: #fff; }
+
+/* Icon-only round button (share / bookmark) */
+.pmp-iconchip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 9999px;
+  background: var(--elevated, #252936);
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  transition: background-color .18s ease, transform .12s ease;
+}
+.pmp-iconchip:hover { background: hsl(var(--secondary)); }
+.pmp-iconchip:active { transform: scale(.92); }
+
+/* STREAMER pill */
+.pmp-streamer {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: rgba(255,107,61,.08);
+  padding: 2px 7px; border-radius: 8px;
+  color: hsl(var(--primary)); font-size: 9px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+}
+/* Content-kind pill (VIDEO / REEL) */
+.pmp-kind {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(255,107,61,.15);
+  border: 1px solid rgba(255,107,61,.35);
+  padding: 4px 10px; border-radius: 9999px;
+  color: hsl(var(--primary)); font-size: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+}
+/* Floating stat chip over media */
+.pmp-statchip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: 9999px;
+  background: rgba(18,20,28,.72);
+  border: 1px solid rgba(255,255,255,.12);
+  color: #fff; font-size: 11px; font-weight: 800;
+}
+/* Caption with left orange accent bar */
+.pmp-cap { display: flex; align-items: flex-start; gap: 8px; }
+.pmp-cap-bar { width: 3px; align-self: stretch; min-height: 16px; border-radius: 2px; background: hsl(var(--primary)); flex: none; }
+
 .splash-text { animation: splash-text-in .55s cubic-bezier(.16,1,.3,1) .35s both; }
