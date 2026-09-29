@@ -25,6 +25,7 @@ import GoLivePage from "@/pages/GoLive";
 import LiveWatchPage from "@/pages/LiveWatch";
 import PetPage from "@/pages/Pet";
 import VideoUploadPage from "@/pages/VideoUpload";
+import VideosPage from "@/pages/Videos";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
 import NotificationsPage from "@/pages/Notifications";
@@ -88,6 +89,7 @@ export default function App() {
             <Route path="/blogs/:id/edit" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
 
             <Route path="/videos/new" element={<ProtectedRoute><VideoUploadPage /></ProtectedRoute>} />
+            <Route path="/videos" element={<VideosPage />} />
             <Route path="/videos/:id" element={<VideoWatchPage />} />
             <Route path="/reels" element={<ReelsFeedPage />} />
             <Route path="/reels/new" element={<ProtectedRoute><ReelUploadPage /></ProtectedRoute>} />

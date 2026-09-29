@@ -31,6 +31,7 @@ import {
 
 const NAV = [
   { to: "/", label: "Home", icon: Home, testId: "nav-home" },
+  { to: "/videos", label: "Videos", icon: Video, testId: "nav-videos" },
   { to: "/live", label: "Live", icon: Radio, testId: "nav-live" },
   { to: "/reels", label: "Reels", icon: Film, testId: "nav-reels" },
   { to: "/music", label: "Music", icon: Music2, testId: "nav-music" },
@@ -42,7 +43,7 @@ const NAV = [
 ];
 
 // Mobile bottom bar: Discover replaces Music (Music lives in the top-bar menu).
-const BOTTOM_NAV = ["/", "/live", "/reels", "/discover", "/blogs"].map((to) =>
+const BOTTOM_NAV = ["/", "/videos", "/live", "/reels", "/discover"].map((to) =>
   NAV.find((n) => n.to === to),
 );
 
@@ -205,6 +206,9 @@ export function AppShell({ children }) {
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-pet" onClick={() => navigate("/pet")}>
                   <PawPrint size={16} /> My Pet
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-blogs" onClick={() => navigate("/blogs")}>
+                  <BookText size={16} /> Blogs
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-settings" onClick={() => navigate("/settings")}>
                   <Settings size={16} /> Settings
