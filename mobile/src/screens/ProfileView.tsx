@@ -213,7 +213,7 @@ export default function ProfileView({ userId, isOwn = false }: Props) {
             <View style={styles.bioBlock}>
               <View style={styles.nameRow}>
                 <Text style={styles.displayName}>{profile.display_name}</Text>
-                {profile.is_verified && <Ionicons name="checkmark-circle" size={16} color={profile.remembering ? "#ef4444" : colors.primary} />}
+                {profile.is_verified && <Ionicons name="checkmark-circle" size={16} color={profile.verified_color || (profile.remembering ? "#ef4444" : colors.primary)} />}
                 {profile.remembering && (
                   <View style={styles.rememberingPill} testID="remembering-label">
                     <Text style={styles.rememberingText}>REMEMBERING</Text>

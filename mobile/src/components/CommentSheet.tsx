@@ -109,7 +109,7 @@ export function CommentSheet({ postId, visible, onClose, onPosted }: Props) {
                     <View style={{ flex: 1 }}>
                       <View style={styles.commentMetaRow}>
                         <Text style={styles.commentUser} numberOfLines={1}>{item.username}</Text>
-                        {item.is_verified && <Ionicons name="checkmark-circle" size={13} color={colors.primary} />}
+                        {item.is_verified && <Ionicons name="checkmark-circle" size={13} color={item.verified_color || colors.primary} />}
                         <Text style={styles.commentDot}>·</Text>
                         <Text style={styles.commentAgo}>{timeAgo(item.created_at)}</Text>
                       </View>

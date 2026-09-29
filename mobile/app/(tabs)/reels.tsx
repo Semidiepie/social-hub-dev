@@ -230,7 +230,7 @@ function ReelItem({ reel, active, height, width, tabBarSpace, onChange, onCommen
         <View style={styles.nameRow}>
           <Text style={styles.authorName}>@{reel.author?.username}</Text>
           {reel.author?.is_verified && (
-            <Ionicons name="checkmark-circle" size={15} color={colors.primary} />
+            <Ionicons name="checkmark-circle" size={15} color={reel.author?.verified_color || colors.primary} />
           )}
           {reel.author?.is_streamer && (
             <View style={styles.streamerPill}>

@@ -69,3 +69,12 @@ export function badgeCls(entity, base = "") {
   const red = !!entity?.remembering;
   return `${base} ${red ? "fill-red-500 text-background" : "fill-primary text-background"}`.trim();
 }
+
+// Admin-assigned custom verified-badge color. Returns an inline style that
+// recolors ONLY the badge body (the check-mark tick keeps its class color).
+// Inline `fill` overrides whatever fill class badgeCls set. Undefined when no
+// custom color, so the default brand/red styling applies.
+export function badgeStyle(entity) {
+  const color = entity?.verified_color;
+  return color ? { fill: color } : undefined;
+}

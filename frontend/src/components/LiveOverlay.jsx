@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Heart, Send, Gift, Eye, X, BadgeCheck, Share2 } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
-import { badgeCls } from "@/lib/format";
+import { badgeCls, badgeStyle } from "@/lib/format";
 
 function FloatingHearts({ floaters }) {
   return (
@@ -28,7 +28,7 @@ function ChatRow({ m }) {
       <Avatar src={m.avatar_url} size={24} className="mt-0.5 flex-shrink-0" />
       <div className="min-w-0 rounded-2xl bg-black/40 px-2.5 py-1.5">
         <span className="text-[11px] font-bold text-primary">{m.display_name || m.username}</span>
-        {m.is_verified && <BadgeCheck size={12} className={badgeCls(m, "ml-0.5 inline-block align-[-1px]")} />}{" "}
+        {m.is_verified && <BadgeCheck size={12} className={badgeCls(m, "ml-0.5 inline-block align-[-1px]")} style={badgeStyle(m)} />}{" "}
         {isGift ? (
           <span className="text-[13px] font-semibold text-amber-300">
             {m.text} <span className="text-base">{m.gift?.glyph}</span>
@@ -84,7 +84,10 @@ export function LiveOverlay({
         <div className="flex items-center gap-2 rounded-full bg-black/40 p-1 pr-3 backdrop-blur">
           <Avatar src={owner?.avatar_url} size={34} />
           <div className="leading-tight">
-            <div className="text-sm font-bold text-white">{owner?.display_name || owner?.username}</div>
+            <div className="flex items-center gap-1 text-sm font-bold text-white">
+              <span>{owner?.display_name || owner?.username}</span>
+              {owner?.is_verified && <BadgeCheck size={14} className={badgeCls(owner, "shrink-0")} style={badgeStyle(owner)} data-testid="live-owner-badge" />}
+            </div>
             <div className="text-[11px] text-white/70">{title}</div>
           </div>
         </div>

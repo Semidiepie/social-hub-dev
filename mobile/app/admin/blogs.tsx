@@ -153,7 +153,7 @@ export default function AdminBlogs() {
               <View style={{ flex: 1 }}>
                 <View style={styles.nameRow}>
                   <Text style={styles.name}>{item.display_name}</Text>
-                  {item.is_verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} />}
+                  {item.is_verified && <Ionicons name="checkmark-circle" size={14} color={item.verified_color || colors.primary} />}
                 </View>
                 <Text style={styles.username}>@{item.username}</Text>
               </View>

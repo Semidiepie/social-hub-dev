@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2, Search, BadgeCheck, Users } from "lucide-react";
+import { Loader2, Search, BadgeCheck, Users, Palette, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -17,6 +17,8 @@ export default function AdminVerifyPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
+  const [colorText, setColorText] = useState({});
+  const [colorBusyId, setColorBusyId] = useState(null);
 
   const load = useCallback(async (query) => {
     setLoading(true);
@@ -46,6 +48,26 @@ export default function AdminVerifyPage() {
       toast.error(e.message || "Failed");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const setColor = async (u, clear = false) => {
+    if (colorBusyId) return;
+    const description = clear ? "" : (colorText[u.id] || "").trim();
+    if (!clear && !description) {
+      toast.error("Describe a color first (e.g. “royal gold”)");
+      return;
+    }
+    setColorBusyId(u.id);
+    try {
+      const resp = await api.post(`/admin/users/${u.id}/verify-color`, { description });
+      setUsers((prev) => prev.map((x) => (x.id === resp.id ? { ...x, verified_color: resp.verified_color, is_verified: resp.is_verified } : x)));
+      setColorText((prev) => ({ ...prev, [u.id]: "" }));
+      toast.success(clear ? "Badge color reset to default" : `Badge color set to ${resp.verified_color}`);
+    } catch (e) {
+      toast.error(e.message || "Couldn't set color");
+    } finally {
+      setColorBusyId(null);
     }
   };
 
@@ -87,12 +109,13 @@ export default function AdminVerifyPage() {
         <div className="space-y-2" data-testid="admin-verify-list">
           {users.map((u) => (
             <Card key={u.id} data-testid={`admin-verify-row-${u.username}`}>
-              <CardContent className="flex items-center gap-3 p-3">
+              <CardContent className="flex flex-col gap-3 p-3">
+                <div className="flex items-center gap-3">
                 <Avatar src={u.avatar_url} size={44} />
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="flex items-center gap-1">
                     <span className="truncate font-semibold">{u.display_name}</span>
-                    {u.is_verified && <BadgeCheck size={15} className="shrink-0 text-primary" />}
+                    {u.is_verified && <BadgeCheck size={15} className="shrink-0 text-background fill-primary" style={u.verified_color ? { fill: u.verified_color } : undefined} data-testid={`admin-verify-badge-${u.username}`} />}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">@{u.username}</div>
                   {u.email && <div className="truncate text-[11px] text-muted-foreground/70">{u.email}</div>}
@@ -116,6 +139,45 @@ export default function AdminVerifyPage() {
                     "Verify"
                   )}
                 </Button>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-lg bg-secondary/40 p-2">
+                  <Palette size={16} className="shrink-0 text-muted-foreground" />
+                  <Input
+                    value={colorText[u.id] || ""}
+                    onChange={(e) => setColorText((p) => ({ ...p, [u.id]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") setColor(u); }}
+                    placeholder="Describe badge color — e.g. royal gold, ocean teal"
+                    className="h-9 flex-1 text-sm"
+                    data-testid={`admin-color-input-${u.username}`}
+                  />
+                  {u.verified_color && (
+                    <span className="flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium">
+                      <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: u.verified_color }} />
+                      {u.verified_color}
+                    </span>
+                  )}
+                  <Button
+                    onClick={() => setColor(u)}
+                    disabled={colorBusyId === u.id}
+                    variant="outline"
+                    className="h-9 shrink-0 gap-1 whitespace-nowrap border-primary text-primary hover:bg-primary/10"
+                    data-testid={`admin-color-set-${u.username}`}
+                  >
+                    {colorBusyId === u.id ? <Loader2 size={14} className="animate-spin" /> : "Set with Sage"}
+                  </Button>
+                  {u.verified_color && (
+                    <button
+                      onClick={() => setColor(u, true)}
+                      disabled={colorBusyId === u.id}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary"
+                      title="Reset to default color"
+                      data-testid={`admin-color-clear-${u.username}`}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}

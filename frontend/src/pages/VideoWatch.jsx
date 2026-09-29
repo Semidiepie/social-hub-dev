@@ -4,7 +4,7 @@ import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil } from "luci
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { formatDuration, formatNumber, timeAgo, userPath, videoPath, badgeCls, frameOf } from "@/lib/format";
+import { formatDuration, formatNumber, timeAgo, userPath, videoPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import CommentThread from "@/components/CommentThread";
 import { EditContentModal } from "@/components/EditContentModal";
@@ -134,7 +134,7 @@ export default function VideoWatchPage() {
                 <div>
                   <div className="flex items-center gap-1 font-semibold hover:text-primary">
                     {video.author.display_name}
-                    {video.author.is_verified && <BadgeCheck size={14} className={badgeCls(video.author)} />}
+                    {video.author.is_verified && <BadgeCheck size={14} className={badgeCls(video.author)} style={badgeStyle(video.author)} />}
                   </div>
                   <div className="text-xs text-muted-foreground">@{video.author.username}</div>
                 </div>

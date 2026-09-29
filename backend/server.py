@@ -33,6 +33,7 @@ JWT_TTL_MIN = 60 * 24 * 30  # 30 days
 
 PUSH_BASE_URL = "https://integrations.emergentagent.com"
 PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
 # Web Push (browser) — self-hosted VAPID. Independent of the Expo mobile push above.
 import base64 as _base64  # noqa: E402
@@ -123,6 +124,7 @@ class UserPublic(BaseModel):
     bio: str = ""
     avatar_url: str = ""
     is_verified: bool = False
+    verified_color: Optional[str] = None
     is_streamer: bool = False
     is_super_admin: bool = False
     is_official: bool = False
@@ -344,6 +346,7 @@ def user_to_public(u: dict) -> UserPublic:
         bio=u.get("bio", ""),
         avatar_url=avatar_or_default(u.get("avatar_url")),
         is_verified=u.get("is_verified", False),
+        verified_color=u.get("verified_color"),
         is_streamer=u.get("is_streamer", False),
         is_super_admin=u.get("is_super_admin", False),
         is_official=u.get("is_official", False),
@@ -578,6 +581,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
             "display_name": author["display_name"],
             "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
+            "verified_color": author.get("verified_color"),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
             "equipped_frame": author.get("equipped_frame"),
@@ -1243,6 +1247,7 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
             "display_name": author["display_name"],
             "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
+            "verified_color": author.get("verified_color"),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
             "equipped_frame": author.get("equipped_frame"),
@@ -1663,17 +1668,20 @@ async def list_comments(post_id: str):
     avatars: dict[str, str] = {}
     remembering: dict[str, bool] = {}
     frames: dict[str, dict] = {}
+    colors: dict[str, Optional[str]] = {}
     if user_ids:
-        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1}):
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "verified_color": 1}):
             verified[u["id"]] = bool(u.get("is_verified", False))
             avatars[u["id"]] = u.get("avatar_url") or ""
             remembering[u["id"]] = bool(u.get("remembering", False))
             frames[u["id"]] = {"equipped_frame": u.get("equipped_frame"), "frame_enabled": u.get("frame_enabled", True)}
+            colors[u["id"]] = u.get("verified_color")
     for c in rows:
         if isinstance(c.get("created_at"), datetime):
             c["created_at"] = c["created_at"].isoformat()
         c["is_verified"] = c.get("is_verified", verified.get(c.get("user_id"), False))
         c["remembering"] = remembering.get(c.get("user_id"), c.get("remembering", False))
+        c["verified_color"] = colors.get(c.get("user_id"), c.get("verified_color"))
         c["avatar_url"] = avatar_or_default(c.get("avatar_url") or avatars.get(c.get("user_id")))
         fr = frames.get(c.get("user_id"), {})
         c["equipped_frame"] = fr.get("equipped_frame")
@@ -1705,6 +1713,7 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
         "display_name": current["display_name"],
         "avatar_url": avatar_or_default(current.get("avatar_url")),
         "is_verified": bool(current.get("is_verified", False)),
+        "verified_color": current.get("verified_color"),
         "remembering": bool(current.get("remembering", False)),
         "equipped_frame": current.get("equipped_frame"),
         "frame_enabled": current.get("frame_enabled", True),
@@ -1959,6 +1968,58 @@ async def admin_toggle_verify(user_id: str, current: Annotated[dict, Depends(get
     new_val = not target.get("is_verified", False)
     await db.users.update_one({"id": user_id}, {"$set": {"is_verified": new_val}})
     return {"id": user_id, "is_verified": new_val}
+
+
+async def _color_from_description(desc: str) -> str:
+    """Use the Emergent LLM to turn a natural-language color (e.g. "royal gold")
+    into a single valid CSS hex code. Returns an uppercase #RRGGBB string."""
+    import re
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(503, "Color naming isn't configured")
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"badge-color-{uuid.uuid4()}",
+        system_message=(
+            "You convert a short color description into a single valid CSS hex color. "
+            "Reply with ONLY the hex code like #1DA1F2 — no words, no punctuation, no explanation."
+        ),
+    ).with_model("openai", "gpt-4o-mini")
+    try:
+        resp = await chat.send_message(UserMessage(text=f'Color description: "{desc}". Respond with only the hex code.'))
+    except Exception as e:
+        logger.warning(f"[verify-color] LLM error: {e}")
+        raise HTTPException(502, "Couldn't interpret that color right now — try again.")
+    m = re.search(r"#[0-9a-fA-F]{6}", resp or "")
+    if m:
+        return m.group(0).upper()
+    m3 = re.search(r"#([0-9a-fA-F]{3})\b", resp or "")
+    if m3:
+        return "#" + "".join(ch * 2 for ch in m3.group(1)).upper()
+    raise HTTPException(422, "Couldn't interpret that color — try describing it differently.")
+
+
+class VerifyColorBody(BaseModel):
+    """Admin sets a user's verified-badge color from a text description.
+    Empty description clears the custom color (back to default brand color)."""
+    description: str = Field(default="", max_length=100)
+
+
+@app.post("/api/admin/users/{user_id}/verify-color")
+async def admin_set_verify_color(user_id: str, body: VerifyColorBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_admin") and not current.get("is_super_admin"):
+        raise HTTPException(403, "Admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    desc = (body.description or "").strip()
+    if not desc:
+        await db.users.update_one({"id": user_id}, {"$set": {"verified_color": None}})
+        return {"id": user_id, "verified_color": None, "is_verified": bool(target.get("is_verified", False))}
+    color = await _color_from_description(desc)
+    # Setting a custom badge color auto-verifies the account.
+    await db.users.update_one({"id": user_id}, {"$set": {"verified_color": color, "is_verified": True}})
+    return {"id": user_id, "verified_color": color, "is_verified": True}
 
 
 @app.post("/api/remembering/apply")

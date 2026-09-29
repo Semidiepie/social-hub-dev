@@ -161,7 +161,7 @@ export default function NewMessage() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.nameRow}>
                     <Text style={styles.displayName}>{item.display_name}</Text>
-                    {item.is_verified && <Ionicons name="checkmark-circle" size={13} color={colors.primary} />}
+                    {item.is_verified && <Ionicons name="checkmark-circle" size={13} color={item.verified_color || colors.primary} />}
                   </View>
                   <Text style={styles.username}>@{item.username}</Text>
                 </View>

@@ -148,6 +148,7 @@ def build_router(ctx) -> APIRouter:
             "display_name": user.get("display_name", user["username"]),
             "avatar_url": _av(user.get("avatar_url")),
             "is_verified": user.get("is_verified", False),
+            "verified_color": user.get("verified_color"),
             "remembering": user.get("remembering", False),
             "equipped_frame": user.get("equipped_frame") if user.get("frame_enabled", True) else None,
             "agora_uid": agora_uid(uid),

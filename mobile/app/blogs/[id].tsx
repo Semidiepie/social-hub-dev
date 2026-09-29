@@ -176,7 +176,7 @@ export default function BlogReader() {
           <View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <Text style={styles.authorName}>{blog.author?.display_name}</Text>
-              {blog.author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} />}
+              {blog.author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={blog.author?.verified_color || colors.primary} />}
             </View>
             <Text style={styles.metaText}>
               @{blog.author?.username} · {blog.reading_time} min read · {blog.views} views

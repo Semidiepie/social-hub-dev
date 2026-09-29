@@ -50,6 +50,7 @@ def _member_public(m: dict) -> dict:
         "display_name": m["display_name"],
         "avatar_url": _av(m.get("avatar_url")),
         "is_verified": bool(m.get("is_verified", False)),
+        "verified_color": m.get("verified_color"),
         "remembering": bool(m.get("remembering", False)),
         "equipped_frame": m.get("equipped_frame"),
         "frame_enabled": m.get("frame_enabled", True),
@@ -165,7 +166,7 @@ def build_router(ctx) -> APIRouter:
         if sender_ids:
             async for u in db.users.find(
                 {"id": {"$in": sender_ids}},
-                {"_id": 0, "id": 1, "display_name": 1, "is_verified": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "avatar_url": 1},
+                {"_id": 0, "id": 1, "display_name": 1, "is_verified": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "avatar_url": 1, "verified_color": 1},
             ):
                 senders[u["id"]] = u
         for m in rows:
@@ -177,6 +178,7 @@ def build_router(ctx) -> APIRouter:
             u = senders.get(m.get("sender_id"), {})
             m["sender_display_name"] = m.get("sender_display_name") or u.get("display_name") or m.get("sender_username")
             m["sender_verified"] = bool(u.get("is_verified", m.get("sender_verified", False)))
+            m["sender_verified_color"] = u.get("verified_color", m.get("sender_verified_color"))
             m["sender_remembering"] = bool(u.get("remembering", m.get("sender_remembering", False)))
             m["sender_frame"] = u.get("equipped_frame") if u.get("frame_enabled", True) else None
             m["sender_avatar"] = _av(m.get("sender_avatar") or u.get("avatar_url"))
@@ -209,6 +211,7 @@ def build_router(ctx) -> APIRouter:
             "sender_display_name": current.get("display_name", current["username"]),
             "sender_avatar": _av(current.get("avatar_url")),
             "sender_verified": bool(current.get("is_verified", False)),
+            "sender_verified_color": current.get("verified_color"),
             "sender_remembering": bool(current.get("remembering", False)),
             "sender_frame": current.get("equipped_frame") if current.get("frame_enabled", True) else None,
             "text": body.text,

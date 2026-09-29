@@ -8,7 +8,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
-import { timeAgo, frameOf, badgeCls } from "@/lib/format";
+import { timeAgo, frameOf, badgeCls, badgeStyle } from "@/lib/format";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { SageChat, SAGE } from "@/components/SageChat";
 import { toast } from "sonner";
@@ -116,7 +116,7 @@ export default function MessagesPage() {
                       <span className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold">
                         {c.is_group && <Users size={13} className="shrink-0 text-muted-foreground" />}
                         <span className="truncate">{c.title}</span>
-                        {!c.is_group && c.peer?.is_verified && <BadgeCheck size={13} className={badgeCls(c.peer, "shrink-0")} />}
+                        {!c.is_group && c.peer?.is_verified && <BadgeCheck size={13} className={badgeCls(c.peer, "shrink-0")} style={badgeStyle(c.peer)} />}
                       </span>
                       {c.last_message?.created_at && (
                         <span className="text-[10px] text-muted-foreground">{timeAgo(c.last_message.created_at)}</span>
@@ -253,7 +253,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 truncate font-bold">
             <span className="truncate">{conv.title}</span>
-            {!conv.is_group && conv.peer?.is_verified && <BadgeCheck size={15} className={badgeCls(conv.peer, "shrink-0")} />}
+            {!conv.is_group && conv.peer?.is_verified && <BadgeCheck size={15} className={badgeCls(conv.peer, "shrink-0")} style={badgeStyle(conv.peer)} />}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
             {conv.is_group ? `${conv.members.length} members` : `@${conv.peer?.username || ""}`}
@@ -299,7 +299,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
                   {!mine && conv.is_group && (
                     <div className="mb-0.5 flex items-center gap-1 text-[11px] font-bold text-primary">
                       {m.sender_display_name || m.sender_username}
-                      {m.sender_verified && <BadgeCheck size={11} className={badgeCls({ remembering: m.sender_remembering }, "shrink-0")} />}
+                      {m.sender_verified && <BadgeCheck size={11} className={badgeCls({ remembering: m.sender_remembering }, "shrink-0")} style={badgeStyle({ verified_color: m.sender_verified_color })} />}
                     </div>
                   )}
                   <div className="whitespace-pre-wrap">{m.text}</div>
@@ -453,7 +453,7 @@ function NewChatDialog({ me, onClose, onCreated }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1 text-sm font-semibold">
                       {u.display_name}
-                      {u.is_verified && <BadgeCheck size={13} className={badgeCls(u, "shrink-0")} />}
+                      {u.is_verified && <BadgeCheck size={13} className={badgeCls(u, "shrink-0")} style={badgeStyle(u)} />}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">@{u.username}</div>
                   </div>
@@ -577,7 +577,7 @@ function GroupSettingsDialog({ conv, me, onClose, onChanged, onLeft }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1 text-sm font-semibold">
                   {u.display_name}
-                  {u.is_verified && <BadgeCheck size={12} className={badgeCls(u, "shrink-0")} />}
+                  {u.is_verified && <BadgeCheck size={12} className={badgeCls(u, "shrink-0")} style={badgeStyle(u)} />}
                   {u.id === conv.admin_id && <span className="rounded bg-primary/15 px-1.5 text-[10px] font-bold text-primary">Admin</span>}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">@{u.username}</div>
@@ -607,7 +607,7 @@ function GroupSettingsDialog({ conv, me, onClose, onChanged, onLeft }) {
                   className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-secondary/60" data-testid={`group-add-${u.id}`}>
                   <Avatar src={u.avatar_url} size={32} frame={frameOf(u)} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1 text-sm font-semibold">{u.display_name}{u.is_verified && <BadgeCheck size={12} className={badgeCls(u, "shrink-0")} />}</div>
+                    <div className="flex items-center gap-1 text-sm font-semibold">{u.display_name}{u.is_verified && <BadgeCheck size={12} className={badgeCls(u, "shrink-0")} style={badgeStyle(u)} />}</div>
                     <div className="truncate text-xs text-muted-foreground">@{u.username}</div>
                   </div>
                   <Plus size={16} className="text-primary" />

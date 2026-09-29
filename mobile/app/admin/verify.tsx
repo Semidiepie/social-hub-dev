@@ -112,7 +112,7 @@ export default function AdminVerify() {
                 <View style={styles.nameRow}>
                   <Text style={styles.displayName} numberOfLines={1}>{item.display_name}</Text>
                   {item.is_verified && (
-                    <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                    <Ionicons name="checkmark-circle" size={14} color={item.verified_color || colors.primary} />
                   )}
                 </View>
                 <Text style={styles.username} numberOfLines={1}>@{item.username}</Text>

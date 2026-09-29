@@ -46,7 +46,7 @@ export function ReelFeedCard({
               <Text style={styles.displayName} numberOfLines={1}>
                 {author?.display_name ?? "Unknown"}
               </Text>
-              {author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} />}
+              {author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={author?.verified_color || colors.primary} />}
             </View>
             <Text style={styles.subline} numberOfLines={1}>
               @{author?.username} · {timeAgo(post.created_at)}

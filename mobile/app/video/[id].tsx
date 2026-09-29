@@ -294,7 +294,7 @@ export default function WatchVideoScreen() {
                 <View style={styles.channelNameRow}>
                   <Text style={styles.channelDisplay}>{video.author.display_name}</Text>
                   {video.author.is_verified && (
-                    <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                    <Ionicons name="checkmark-circle" size={14} color={video.author.verified_color || colors.primary} />
                   )}
                 </View>
                 <Text style={styles.channelHandle}>@{video.author.username}</Text>

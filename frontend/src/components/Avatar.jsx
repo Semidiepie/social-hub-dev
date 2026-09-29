@@ -1,5 +1,5 @@
 import React from "react";
-import { AVATAR_FALLBACK, badgeCls } from "@/lib/format";
+import { AVATAR_FALLBACK, badgeCls, badgeStyle } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
 
 export function Avatar({ src, alt, size = 40, className = "", ring = false, frame = null }) {
@@ -35,7 +35,7 @@ export function UsernameLine({ user, className = "" }) {
     <span className={`inline-flex items-center gap-1 ${className}`}>
       <span className="font-semibold text-foreground">{user.display_name}</span>
       {user.is_verified && (
-        <BadgeCheck size={14} className={badgeCls(user)} data-testid="verified-badge" />
+        <BadgeCheck size={14} className={badgeCls(user)} style={badgeStyle(user)} data-testid="verified-badge" />
       )}
     </span>
   );

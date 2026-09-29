@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Heart, Loader2, MessageCircle, Volume2, VolumeX, BadgeCheck, X, Send, Trash2, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
-import { formatNumber, timeAgo, userPath, badgeCls, frameOf } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
@@ -187,7 +187,7 @@ export default function ReelWatchPage() {
               <Avatar src={reel.author.avatar_url} size={38} frame={frameOf(reel.author)} />
               <span className="flex items-center gap-1 font-bold text-white">
                 @{reel.author.username}
-                {reel.author.is_verified && <BadgeCheck size={14} className={reel.author.remembering ? "fill-red-500 text-white" : "fill-white text-black"} />}
+                {reel.author.is_verified && <BadgeCheck size={14} className={reel.author.remembering ? "fill-red-500 text-white" : "fill-white text-black"} style={badgeStyle(reel.author)} />}
               </span>
             </Link>
           )}

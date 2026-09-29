@@ -7,7 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { formatNumber, timeAgo, badgeCls } from "@/lib/format";
+import { formatNumber, timeAgo, badgeCls, badgeStyle } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { FollowListDialog } from "@/components/FollowListDialog";
 import { toast } from "sonner";
@@ -128,7 +128,7 @@ export default function ProfilePage() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <h1 className="text-xl font-black leading-tight tracking-tight sm:text-2xl">{target.display_name}</h1>
-                  {target.is_verified && <BadgeCheck size={20} className={`flex-shrink-0 ${badgeCls(target)}`} />}
+                  {target.is_verified && <BadgeCheck size={20} className={`flex-shrink-0 ${badgeCls(target)}`} style={badgeStyle(target)} />}
                   {target.is_official && (
                     <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary" data-testid="official-badge">
                       Official

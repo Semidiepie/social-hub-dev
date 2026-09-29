@@ -86,7 +86,7 @@ function VideoCard({ video, onPress }: { video: VideoItem; onPress: () => void }
               {video.author?.display_name ?? "Unknown"}
             </Text>
             {video.author?.is_verified && (
-              <Ionicons name="checkmark-circle" size={12} color={colors.primary} />
+              <Ionicons name="checkmark-circle" size={12} color={video.author?.verified_color || colors.primary} />
             )}
           </View>
           <Text style={styles.metaLine} numberOfLines={1}>

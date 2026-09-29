@@ -4,7 +4,7 @@ import { Phone, PhoneOff, Video, Mic, MicOff, VideoOff, BadgeCheck } from "lucid
 import { api, getToken } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
-import { frameOf, badgeCls } from "@/lib/format";
+import { frameOf, badgeCls, badgeStyle } from "@/lib/format";
 import { toast } from "sonner";
 
 const BASE_URL = process.env.REACT_APP_BACKEND_URL;
@@ -286,7 +286,7 @@ function CallUI({ call, peers, localVideoTrack, micOn, camOn, onAccept, onDeclin
           </div>
           <div className="flex items-center justify-center gap-1 text-xl font-black">
             {call.from?.display_name}
-            {call.from?.is_verified && <BadgeCheck size={18} className={badgeCls(call.from)} />}
+            {call.from?.is_verified && <BadgeCheck size={18} className={badgeCls(call.from)} style={badgeStyle(call.from)} />}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Incoming {isVideo ? "video" : "audio"} call{call.isGroup ? ` · ${call.title}` : ""}

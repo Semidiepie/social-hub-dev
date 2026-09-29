@@ -199,7 +199,7 @@ export default function StoryViewer() {
               <View style={styles.nameRow}>
                 <Text style={styles.username}>{data.user?.username}</Text>
                 {data.user?.is_verified && (
-                  <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                  <Ionicons name="checkmark-circle" size={14} color={data.user?.verified_color || colors.primary} />
                 )}
               </View>
               <Text style={styles.timestamp}>{timeAgo(current.created_at)}</Text>

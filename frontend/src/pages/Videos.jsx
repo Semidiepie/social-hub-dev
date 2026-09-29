@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { formatNumber, timeAgo, userPath, videoPath, badgeCls, formatDuration } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, videoPath, badgeCls, badgeStyle, formatDuration } from "@/lib/format";
 
 function Duration({ value }) {
   if (value === null || value === undefined || value === "") return null;
@@ -19,7 +19,7 @@ function Duration({ value }) {
 
 function ChannelBadge({ author }) {
   if (!author?.is_verified) return null;
-  return <BadgeCheck size={15} className={badgeCls(author, "shrink-0")} />;
+  return <BadgeCheck size={15} className={badgeCls(author, "shrink-0")} style={badgeStyle(author)} />;
 }
 
 function VideoCardSkeleton() {

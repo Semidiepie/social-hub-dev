@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { BadgeCheck } from "lucide-react";
-import { badgeCls } from "@/lib/format";
+import { badgeCls, badgeStyle } from "@/lib/format";
 
 function LiveCard({ s }) {
   return (
@@ -27,7 +27,7 @@ function LiveCard({ s }) {
       <div className="absolute inset-x-2 bottom-2">
         <div className="flex items-center gap-1 text-xs font-bold text-white">
           <span className="truncate">{s.owner?.display_name || s.owner?.username}</span>
-          {s.owner?.is_verified && <BadgeCheck size={13} className={badgeCls(s.owner)} />}
+          {s.owner?.is_verified && <BadgeCheck size={13} className={badgeCls(s.owner)} style={badgeStyle(s.owner)} />}
         </div>
         <div className="flex items-center justify-between">
           <div className="truncate text-[11px] text-white/70">{s.title}</div>

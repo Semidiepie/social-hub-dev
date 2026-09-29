@@ -6,7 +6,7 @@ import { Heart, Clock, Eye, ArrowLeft, Loader2, BadgeCheck, Pencil } from "lucid
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { timeAgo, formatNumber, userPath, badgeCls } from "@/lib/format";
+import { timeAgo, formatNumber, userPath, badgeCls, badgeStyle } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -92,7 +92,7 @@ export default function BlogReadPage() {
               <Link to={userPath(blog.author)} className="font-semibold hover:text-primary">
                 {blog.author.display_name}
               </Link>
-              {blog.author.is_verified && <BadgeCheck size={16} className={badgeCls(blog.author)} />}
+              {blog.author.is_verified && <BadgeCheck size={16} className={badgeCls(blog.author)} style={badgeStyle(blog.author)} />}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
               @{blog.author.username} · {timeAgo(blog.published_at || blog.created_at)}

@@ -129,7 +129,7 @@ export default function Settings() {
           <View style={{ flex: 1 }}>
             <View style={styles.nameRow}>
               <Text style={styles.displayName}>{user?.display_name}</Text>
-              {user?.is_verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} />}
+              {user?.is_verified && <Ionicons name="checkmark-circle" size={14} color={user?.verified_color || colors.primary} />}
             </View>
             <Text style={styles.username}>@{user?.username}</Text>
           </View>

@@ -4,7 +4,7 @@ import { Loader2, Send, Trash2, CornerDownRight, BadgeCheck } from "lucide-react
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
-import { timeAgo, userPath, badgeCls, frameOf } from "@/lib/format";
+import { timeAgo, userPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { toast } from "sonner";
 
 function normalize(type, c) {
@@ -39,7 +39,7 @@ function CommentRow({ c, isReply, onReply, onDelete, meId }) {
             <Link to={c.author ? userPath(c.author) : "#"} className="text-sm font-bold hover:underline">
               {c.author?.display_name || c.author?.username || "User"}
             </Link>
-            {c.author?.is_verified && <BadgeCheck size={13} className={badgeCls(c.author, "shrink-0")} />}
+            {c.author?.is_verified && <BadgeCheck size={13} className={badgeCls(c.author, "shrink-0")} style={badgeStyle(c.author)} />}
           </div>
           <p className="whitespace-pre-wrap break-words text-sm text-foreground">{c.text}</p>
         </div>

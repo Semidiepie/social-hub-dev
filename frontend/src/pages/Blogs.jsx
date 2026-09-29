@@ -4,7 +4,7 @@ import { Loader2, PenSquare, Clock, Heart, Eye, BadgeCheck } from "lucide-react"
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { timeAgo, formatNumber, badgeCls } from "@/lib/format";
+import { timeAgo, formatNumber, badgeCls, badgeStyle } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -112,7 +112,7 @@ function BlogCard({ blog }) {
               <span className="inline-flex items-center gap-1 font-semibold text-foreground">
                 {blog.author.display_name}
                 {blog.author.is_verified && (
-                  <BadgeCheck size={12} className={badgeCls(blog.author)} />
+                  <BadgeCheck size={12} className={badgeCls(blog.author)} style={badgeStyle(blog.author)} />
                 )}
               </span>
               <span>·</span>

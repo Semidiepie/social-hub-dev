@@ -231,7 +231,7 @@ export function BlogCard({ blog, onPress }: { blog: Blog; onPress?: () => void }
             {blog.author?.display_name || "Anonymous"}
           </Text>
           {blog.author?.is_verified && (
-            <Ionicons name="checkmark-circle" size={12} color={colors.primary} />
+            <Ionicons name="checkmark-circle" size={12} color={blog.author?.verified_color || colors.primary} />
           )}
           <Text style={styles.cardDot}>·</Text>
           <Text style={styles.cardMetaText}>{blog.reading_time} min</Text>

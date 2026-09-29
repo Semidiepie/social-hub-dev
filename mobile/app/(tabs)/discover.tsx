@@ -163,7 +163,7 @@ export default function Discover() {
                   <View style={{ flex: 1 }}>
                     <View style={styles.acctNameRow}>
                       <Text style={styles.acctName}>{u.display_name}</Text>
-                      {u.is_verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} />}
+                      {u.is_verified && <Ionicons name="checkmark-circle" size={14} color={u.verified_color || colors.primary} />}
                     </View>
                     <Text style={styles.acctMeta}>@{u.username} · {formatCount(u.followers)} followers</Text>
                   </View>
@@ -277,7 +277,7 @@ export default function Discover() {
               <View style={{ flex: 1 }}>
                 <View style={styles.acctNameRow}>
                   <Text style={styles.acctName}>{item.display_name}</Text>
-                  {item.is_verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} />}
+                  {item.is_verified && <Ionicons name="checkmark-circle" size={14} color={item.verified_color || colors.primary} />}
                 </View>
                 <Text style={styles.acctMeta}>
                   @{item.username} · {formatCount(item.followers)} followers

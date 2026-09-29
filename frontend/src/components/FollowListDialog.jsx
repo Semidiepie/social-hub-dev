@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { userPath, badgeCls } from "@/lib/format";
+import { userPath, badgeCls, badgeStyle } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -79,7 +79,7 @@ export function FollowListDialog({ open, onClose, userId, kind, title }) {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 truncate font-semibold">
                         {u.display_name}
-                        {u.is_verified && <BadgeCheck size={14} className={badgeCls(u, "shrink-0")} />}
+                        {u.is_verified && <BadgeCheck size={14} className={badgeCls(u, "shrink-0")} style={badgeStyle(u)} />}
                       </div>
                       <div className="truncate text-xs text-muted-foreground">@{u.username}</div>
                     </div>

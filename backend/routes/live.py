@@ -119,6 +119,7 @@ def build_router(ctx) -> APIRouter:
                 "display_name": s.get("owner_display_name"),
                 "avatar_url": _av(s.get("owner_avatar")),
                 "is_verified": s.get("owner_verified", False),
+                "verified_color": s.get("owner_verified_color"),
             },
             "created_at": s["created_at"].isoformat() if isinstance(s.get("created_at"), datetime) else s.get("created_at"),
         }
@@ -166,6 +167,7 @@ def build_router(ctx) -> APIRouter:
             "owner_display_name": current.get("display_name", current["username"]),
             "owner_avatar": _av(current.get("avatar_url")),
             "owner_verified": current.get("is_verified", False),
+            "owner_verified_color": current.get("verified_color"),
             "title": body.title,
             "mode": mode,
             "input_id": input_id,           # provider handle (never returned publicly)
@@ -239,6 +241,7 @@ def build_router(ctx) -> APIRouter:
             "display_name": user.get("display_name", user["username"]),
             "avatar_url": _av(user.get("avatar_url")),
             "is_verified": user.get("is_verified", False),
+            "verified_color": user.get("verified_color"),
             "remembering": user.get("remembering", False),
         }
         try:

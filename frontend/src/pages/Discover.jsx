@@ -6,7 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatNumber, timeAgo, userPath, videoPath, badgeCls } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, videoPath, badgeCls, badgeStyle } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -226,7 +226,7 @@ function UserCard({ user, onOpen }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1 truncate font-semibold">
           {user.display_name}
-          {user.is_verified && <BadgeCheck size={14} className={badgeCls(user)} />}
+          {user.is_verified && <BadgeCheck size={14} className={badgeCls(user)} style={badgeStyle(user)} />}
           {user.is_official && (
             <span className="ml-1 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-primary">
               Official
