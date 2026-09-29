@@ -82,6 +82,8 @@ def build_router(ctx) -> APIRouter:
                 "is_verified": author.get("is_verified", False),
                 "remembering": author.get("remembering", False),
                 "is_streamer": author.get("is_streamer", False),
+                "equipped_frame": author.get("equipped_frame"),
+                "frame_enabled": author.get("frame_enabled", True),
             } if author else None,
         }
 
@@ -284,6 +286,8 @@ def build_router(ctx) -> APIRouter:
                     "avatar_url": avatar_or_default(author.get("avatar_url")),
                     "is_verified": author.get("is_verified", False),
                     "remembering": author.get("remembering", False),
+                    "equipped_frame": author.get("equipped_frame"),
+                    "frame_enabled": author.get("frame_enabled", True),
                 } if author else None,
             })
         return out
@@ -351,6 +355,8 @@ def build_router(ctx) -> APIRouter:
                 "avatar_url": avatar_or_default(author.get("avatar_url")),
                 "is_verified": author.get("is_verified", False),
                 "remembering": author.get("remembering", False),
+                "equipped_frame": author.get("equipped_frame"),
+                "frame_enabled": author.get("frame_enabled", True),
             } if author else None,
         }
 

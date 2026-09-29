@@ -4,7 +4,7 @@ import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil } from "luci
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import { formatDuration, formatNumber, timeAgo, userPath, videoPath, badgeCls } from "@/lib/format";
+import { formatDuration, formatNumber, timeAgo, userPath, videoPath, badgeCls, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import CommentThread from "@/components/CommentThread";
 import { EditContentModal } from "@/components/EditContentModal";
@@ -130,7 +130,7 @@ export default function VideoWatchPage() {
           <div className="mt-3 flex flex-wrap items-center gap-3 border-y border-border py-3">
             {video.author && (
               <Link to={userPath(video.author)} className="flex items-center gap-3">
-                <Avatar src={video.author.avatar_url} size={40} />
+                <Avatar src={video.author.avatar_url} size={40} frame={frameOf(video.author)} />
                 <div>
                   <div className="flex items-center gap-1 font-semibold hover:text-primary">
                     {video.author.display_name}

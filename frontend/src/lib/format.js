@@ -56,6 +56,14 @@ export function videoPath(v) {
   return `/videos/${v?.id}`;
 }
 
+// Cosmetic profile frame to render around an author's avatar — only when the
+// user has one equipped AND frames enabled. Returns the frame id or null.
+export function frameOf(u) {
+  if (!u) return null;
+  const enabled = u.frame_enabled !== false; // default true
+  return enabled ? u.equipped_frame || null : null;
+}
+
 // Verified-badge color: RED for approved "Remembering" accounts, brand otherwise.
 export function badgeCls(entity, base = "") {
   const red = !!entity?.remembering;

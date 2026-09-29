@@ -4,7 +4,7 @@ import { Loader2, Send, Trash2, CornerDownRight, BadgeCheck } from "lucide-react
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
-import { timeAgo, userPath, badgeCls } from "@/lib/format";
+import { timeAgo, userPath, badgeCls, frameOf } from "@/lib/format";
 import { toast } from "sonner";
 
 function normalize(type, c) {
@@ -21,6 +21,8 @@ function normalize(type, c) {
       avatar_url: c.avatar_url,
       is_verified: c.is_verified,
       remembering: c.remembering,
+      equipped_frame: c.equipped_frame,
+      frame_enabled: c.frame_enabled,
     },
   };
 }
@@ -29,7 +31,7 @@ function CommentRow({ c, isReply, onReply, onDelete, meId }) {
   return (
     <div className={`flex gap-2.5 ${isReply ? "ml-9" : ""}`} data-testid={`comment-${c.id}`}>
       <Link to={c.author ? userPath(c.author) : "#"}>
-        <Avatar src={c.author?.avatar_url} size={isReply ? 28 : 34} />
+        <Avatar src={c.author?.avatar_url} size={isReply ? 28 : 34} frame={frameOf(c.author)} />
       </Link>
       <div className="min-w-0 flex-1">
         <div className="rounded-2xl bg-muted/60 px-3 py-2">
@@ -135,7 +137,7 @@ export default function CommentThread({ type, id, onCountChange, autoFocus }) {
           onSubmit={(e) => { e.preventDefault(); submit(text); setText(""); }}
           className="mb-4 flex items-center gap-2"
         >
-          <Avatar src={user.avatar_url} size={34} />
+          <Avatar src={user.avatar_url} size={34} frame={frameOf(user)} />
           <input
             ref={inputRef}
             value={text}
@@ -191,7 +193,7 @@ export default function CommentThread({ type, id, onCountChange, autoFocus }) {
                     onSubmit={(e) => { e.preventDefault(); submit(replyText, c.id); setReplyText(""); setReplyTo(null); }}
                     className="ml-11 flex items-center gap-2"
                   >
-                    <Avatar src={user.avatar_url} size={28} />
+                    <Avatar src={user.avatar_url} size={28} frame={frameOf(user)} />
                     <input
                       autoFocus
                       value={replyText}

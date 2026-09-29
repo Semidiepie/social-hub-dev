@@ -7,7 +7,7 @@ import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/PostComposer";
 import { EditContentModal } from "@/components/EditContentModal";
-import { timeAgo, formatNumber, userPath, videoPath, badgeCls } from "@/lib/format";
+import { timeAgo, formatNumber, userPath, videoPath, badgeCls, frameOf } from "@/lib/format";
 import { toast } from "sonner";
 
 function formatDuration(secs) {
@@ -165,7 +165,7 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
       <div className="flex items-center gap-3 px-4 pt-4">
         {post.author ? (
           <Link to={userPath(post.author)}>
-            <Avatar src={post.author.avatar_url} size={40} />
+            <Avatar src={post.author.avatar_url} size={40} frame={frameOf(post.author)} />
           </Link>
         ) : (
           <Avatar size={40} />
@@ -321,7 +321,7 @@ function PostComments({ postId, user, onCountChange }) {
   return (
     <section className="border-t border-border px-4 py-3" data-testid={`post-comments-${postId}`}>
       <form onSubmit={submit} className="flex items-center gap-2">
-        {user && <Avatar src={user.avatar_url} size={32} />}
+        {user && <Avatar src={user.avatar_url} size={32} frame={frameOf(user)} />}
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -352,7 +352,7 @@ function PostComments({ postId, user, onCountChange }) {
         <div className="mt-3 space-y-3">
           {comments.map((c) => (
             <div key={c.id} className="group flex items-start gap-2.5" data-testid={`post-comment-${c.id}`}>
-              <Avatar src={c.author?.avatar_url || c.avatar_url} size={32} />
+              <Avatar src={c.author?.avatar_url || c.avatar_url} size={32} frame={frameOf(c.author || c)} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1 text-sm">
                   <span className="font-semibold">
@@ -396,7 +396,7 @@ function VideoCard({ video, canManage, onDelete, onUpdated }) {
       <div className="flex items-center gap-3 px-4 pt-4">
         {video.author ? (
           <Link to={userPath(video.author)}>
-            <Avatar src={video.author.avatar_url} size={40} />
+            <Avatar src={video.author.avatar_url} size={40} frame={frameOf(video.author)} />
           </Link>
         ) : (
           <Avatar size={40} />
@@ -501,7 +501,7 @@ function ReelCard({ reel, canManage, onDelete, onUpdated }) {
       <div className="flex items-center gap-3 px-4 pt-4">
         {reel.author ? (
           <Link to={userPath(reel.author)}>
-            <Avatar src={reel.author.avatar_url} size={40} />
+            <Avatar src={reel.author.avatar_url} size={40} frame={frameOf(reel.author)} />
           </Link>
         ) : (
           <Avatar size={40} />

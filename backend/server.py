@@ -580,6 +580,8 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
             "is_verified": author.get("is_verified", False),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
+            "equipped_frame": author.get("equipped_frame"),
+            "frame_enabled": author.get("frame_enabled", True),
         } if author else None,
     }
 
@@ -1243,6 +1245,8 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
             "is_verified": author.get("is_verified", False),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
+            "equipped_frame": author.get("equipped_frame"),
+            "frame_enabled": author.get("frame_enabled", True),
         } if author else None,
     }
 
@@ -1658,17 +1662,22 @@ async def list_comments(post_id: str):
     verified: dict[str, bool] = {}
     avatars: dict[str, str] = {}
     remembering: dict[str, bool] = {}
+    frames: dict[str, dict] = {}
     if user_ids:
-        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1}):
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1}):
             verified[u["id"]] = bool(u.get("is_verified", False))
             avatars[u["id"]] = u.get("avatar_url") or ""
             remembering[u["id"]] = bool(u.get("remembering", False))
+            frames[u["id"]] = {"equipped_frame": u.get("equipped_frame"), "frame_enabled": u.get("frame_enabled", True)}
     for c in rows:
         if isinstance(c.get("created_at"), datetime):
             c["created_at"] = c["created_at"].isoformat()
         c["is_verified"] = c.get("is_verified", verified.get(c.get("user_id"), False))
         c["remembering"] = remembering.get(c.get("user_id"), c.get("remembering", False))
         c["avatar_url"] = avatar_or_default(c.get("avatar_url") or avatars.get(c.get("user_id")))
+        fr = frames.get(c.get("user_id"), {})
+        c["equipped_frame"] = fr.get("equipped_frame")
+        c["frame_enabled"] = fr.get("frame_enabled", True)
     return rows
 
 
@@ -1697,6 +1706,8 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
         "avatar_url": avatar_or_default(current.get("avatar_url")),
         "is_verified": bool(current.get("is_verified", False)),
         "remembering": bool(current.get("remembering", False)),
+        "equipped_frame": current.get("equipped_frame"),
+        "frame_enabled": current.get("frame_enabled", True),
         "text": body.text,
         "created_at": now(),
     }

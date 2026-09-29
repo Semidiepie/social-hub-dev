@@ -6,7 +6,7 @@ import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
-import { timeAgo, formatNumber, userPath, badgeCls } from "@/lib/format";
+import { timeAgo, formatNumber, userPath, badgeCls, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -81,7 +81,7 @@ export default function PostDetailPage() {
         <div className="flex items-center gap-3 px-4 pt-4">
           {post.author && (
             <button onClick={() => navigate(userPath(post.author))}>
-              <Avatar src={post.author.avatar_url} size={40} />
+              <Avatar src={post.author.avatar_url} size={40} frame={frameOf(post.author)} />
             </button>
           )}
           <div className="min-w-0 flex-1">

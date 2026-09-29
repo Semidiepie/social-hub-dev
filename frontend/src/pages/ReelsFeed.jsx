@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
-import { formatNumber, timeAgo, userPath, badgeCls } from "@/lib/format";
+import { formatNumber, timeAgo, userPath, badgeCls, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
@@ -279,7 +279,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
       <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-8 pt-16">
         {reel.author && (
           <Link to={userPath(reel.author)} className="flex items-center gap-2">
-            <Avatar src={reel.author.avatar_url} size={38} />
+            <Avatar src={reel.author.avatar_url} size={38} frame={frameOf(reel.author)} />
             <span className="flex items-center gap-1 font-bold text-white">
               @{reel.author.username}
               {reel.author.is_verified && <BadgeCheck size={14} className={reel.author.remembering ? "fill-red-500 text-white" : "fill-white text-black"} />}
