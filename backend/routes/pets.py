@@ -7,6 +7,7 @@ the resulting image is cached (uploaded to Cloudinary) so we never regenerate.
 
 Avoids `from __future__ import annotations` (breaks closure-local Depends).
 """
+import asyncio
 import base64
 import io
 import os
@@ -106,24 +107,28 @@ async def _sage_generate(prompt: str, reference_b64: Optional[str] = None) -> st
     return images[0]["data"]
 
 
-def _create_prompt(description: str) -> str:
+def _style_block() -> str:
     return (
-        f"A cute cartoon virtual pet: {description}. "
-        "Full body, sitting, friendly, big expressive eyes, vibrant colors, "
-        "mobile game mascot sticker style, centered, high quality. "
-        "Place the pet on a completely flat, solid, uniform pure magenta background "
-        "(exact hex #FF00FF). The background must be ONLY magenta — no gradient, no shadow, "
-        "no scenery, no other colors in the background."
+        "Rendered in a polished 3D Pixar / DreamWorks-style animated-movie look: "
+        "glossy soft-shaded surfaces, subsurface scattering, big glossy expressive "
+        "eyes with bright catchlights, rounded chunky friendly proportions, rosy "
+        "cheeks, warm cinematic studio lighting, soft ambient occlusion, ultra "
+        "high-quality 3D render, adorable mascot character, centered, full body. "
+        "Place the character on a completely flat, solid, uniform pure magenta "
+        "background (exact hex #FF00FF). The background must be ONLY magenta — no "
+        "gradient, no shadow, no scenery, no other colors in the background."
     )
+
+
+def _create_prompt(description: str) -> str:
+    return f"An adorable cute 3D cartoon virtual pet: {description}. {_style_block()}"
 
 
 def _style_prompt(style: str) -> str:
     return (
         f"Restyle this exact same pet character: {style}. "
-        "Keep the same species, colors, face and pose. Cartoon mascot sticker style, centered, high quality. "
-        "Place the pet on a completely flat, solid, uniform pure magenta background "
-        "(exact hex #FF00FF). The background must be ONLY magenta — no gradient, no shadow, "
-        "no scenery, no other colors in the background."
+        "Keep the same species, colors, face and pose. "
+        f"{_style_block()}"
     )
 
 
@@ -146,6 +151,10 @@ def build_router(ctx) -> APIRouter:
 
     def _settle(pet: dict) -> dict:
         """Apply time-based stat decay from `updated_at` to now (in memory)."""
+        if pet.get("is_dead"):
+            p = dict(pet)
+            p.update(hunger=0, happiness=0, cleanliness=0, health=0)
+            return p
         base = _to_dt(pet.get("updated_at")) or now()
         hours = max(0.0, (now() - base).total_seconds() / 3600.0)
         hunger = _clamp(pet["hunger"] - DECAY["hunger"] * hours)
@@ -159,6 +168,8 @@ def build_router(ctx) -> APIRouter:
         return pet
 
     def _mood(pet: dict) -> str:
+        if pet.get("is_dead"):
+            return "Passed away 🕊️"
         avg = (pet["hunger"] + pet["happiness"] + pet["cleanliness"] + pet["health"]) / 4
         if avg >= 80:
             return "Super happy!"
@@ -190,6 +201,8 @@ def build_router(ctx) -> APIRouter:
             "description": p.get("description"),
             "image_url": p.get("image_url"),
             "ai_styled": p.get("ai_styled", False),
+            "is_dead": bool(pet.get("is_dead")),
+            "died_at": pet["died_at"].isoformat() if isinstance(pet.get("died_at"), datetime) else pet.get("died_at"),
             "level": p["level"],
             "xp": p["xp"],
             "xp_to_level": XP_PER_LEVEL,
@@ -208,6 +221,17 @@ def build_router(ctx) -> APIRouter:
         pet = await db.pets.find_one({"owner_id": current["id"]}, {"_id": 0})
         if not pet:
             return {"pet": None}
+        # Persist death from neglect the moment we observe health at 0.
+        if not pet.get("is_dead"):
+            settled = _settle(pet)
+            if settled["health"] <= 0:
+                await db.pets.update_one(
+                    {"id": pet["id"]},
+                    {"$set": {"is_dead": True, "died_at": now(), "health": 0}},
+                )
+                pet["is_dead"] = True
+                pet["died_at"] = now()
+                pet["health"] = 0
         return {"pet": _public(pet)}
 
     @router.post("/api/pet")
@@ -246,6 +270,8 @@ def build_router(ctx) -> APIRouter:
         pet = await db.pets.find_one({"owner_id": current["id"]})
         if not pet:
             raise HTTPException(404, "No pet yet")
+        if pet.get("is_dead"):
+            raise HTTPException(410, "Your pet has passed away. Release it to adopt a new one.")
         last = _to_dt(pet.get(f"last_{action}"))
         if last:
             remaining = COOLDOWNS[action] - (now() - last).total_seconds()
@@ -302,6 +328,8 @@ def build_router(ctx) -> APIRouter:
         pet = await db.pets.find_one({"owner_id": current["id"]})
         if not pet:
             raise HTTPException(404, "No pet yet")
+        if pet.get("is_dead"):
+            raise HTTPException(410, "Your pet has passed away. Release it to adopt a new one.")
         reference_b64 = None
         if pet.get("image_url"):
             try:
@@ -323,4 +351,75 @@ def build_router(ctx) -> APIRouter:
         await db.pets.delete_one({"owner_id": current["id"]})
         return {"status": "deleted"}
 
+    async def _notify(user_id: str, title: str, body: str):
+        """Create an in-app notification + fire a browser Web Push (both best-effort)."""
+        try:
+            await db.notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "type": "pet",
+                "actor_id": user_id,
+                "actor_name": "Sage AI",
+                "actor_avatar": getattr(ctx, "default_avatar_url", ""),
+                "text": body,
+                "read": False,
+                "created_at": now(),
+            })
+        except Exception as e:
+            logger.warning(f"pet notify insert failed: {e}")
+        try:
+            await ctx.send_web_push(user_id, title, body, "/pet")
+        except Exception as e:
+            logger.warning(f"pet web push failed: {e}")
+
+    async def _scan_pets_once():
+        """Detect neglected pets → nudge the owner; detect dead pets → mark + notify."""
+        pets = await db.pets.find({}).to_list(2000)
+        for pet in pets:
+            try:
+                if pet.get("is_dead"):
+                    continue
+                settled = _settle(pet)
+                if settled["health"] <= 0:
+                    await db.pets.update_one(
+                        {"id": pet["id"]},
+                        {"$set": {"is_dead": True, "died_at": now(), "health": 0}},
+                    )
+                    await _notify(
+                        pet["owner_id"],
+                        f"{pet.get('name') or 'Your pet'} has passed away 🕊️",
+                        "Your pet didn't survive the neglect. Open Sage AI to adopt a new one.",
+                    )
+                    continue
+                needs_care = (
+                    settled["hunger"] < 30
+                    or settled["cleanliness"] < 30
+                    or settled["happiness"] < 30
+                    or settled["health"] < 40
+                )
+                if not needs_care:
+                    continue
+                last = _to_dt(pet.get("last_reminded_at"))
+                if last and (now() - last).total_seconds() < 8 * 3600:
+                    continue
+                await db.pets.update_one({"id": pet["id"]}, {"$set": {"last_reminded_at": now()}})
+                await _notify(
+                    pet["owner_id"],
+                    f"{pet.get('name') or 'Your pet'} needs you! 🐾",
+                    "Your pet is hungry, dirty or sad — care for it before it's too late.",
+                )
+            except Exception as e:
+                logger.warning(f"pet scan error for {pet.get('id')}: {e}")
+
+    async def pet_reminder_loop():
+        # small initial delay so startup isn't blocked
+        await asyncio.sleep(60)
+        while True:
+            try:
+                await _scan_pets_once()
+            except Exception as e:
+                logger.warning(f"pet_reminder_loop error: {e}")
+            await asyncio.sleep(30 * 60)  # every 30 minutes
+
+    router.pet_reminder_loop = pet_reminder_loop
     return router

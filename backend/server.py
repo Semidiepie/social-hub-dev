@@ -2340,4 +2340,11 @@ from routes.live import build_router as _build_live  # noqa: E402
 app.include_router(_build_live(route_ctx))
 
 from routes.pets import build_router as _build_pets  # noqa: E402
-app.include_router(_build_pets(route_ctx))
+_pets_router = _build_pets(route_ctx)
+app.include_router(_pets_router)
+
+
+@app.on_event("startup")
+async def _start_pet_reminders():
+    import asyncio
+    asyncio.create_task(_pets_router.pet_reminder_loop())

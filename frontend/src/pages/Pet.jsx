@@ -2,13 +2,15 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Star, Sparkles, Pencil, Gamepad2, Bath, Drumstick,
-  Loader2, Heart, Smile, Trash2, Check, X, Send, Wand2,
+  Loader2, Heart, Smile, Trash2, Check, X, Send, Wand2, Bell, HeartCrack,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { BadgeCheck } from "lucide-react";
+import { CatchGame, BubbleBath, FeedToss, InteractionModal } from "./pet/PetPlay";
+import { enableBrowserPush, isBrowserPushEnabled, pushSupported } from "@/lib/webpush";
 
 const STATS = [
   { key: "hunger", label: "Hunger", color: "#ef4444", Icon: Drumstick },
@@ -145,6 +147,31 @@ export default function PetPage() {
   const studioRef = useRef(null);
   const [cd, setCd] = useState({ play: 0, feed: 0, bath: 0 });
   const fetchedAt = useRef(Date.now());
+  const [interaction, setInteraction] = useState(null); // 'play' | 'feed' | 'bath'
+  const [hearts, setHearts] = useState([]);
+  const [reactAnim, setReactAnim] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(true);
+  const heartId = useRef(0);
+
+  useEffect(() => {
+    if (pushSupported()) isBrowserPushEnabled().then((v) => setPushEnabled(v));
+  }, []);
+
+  const enableReminders = async () => {
+    const ok = await enableBrowserPush();
+    setPushEnabled(ok);
+    toast[ok ? "success" : "error"](ok ? "Pet reminders on! 🔔" : "Enable notifications in your browser to get reminders.");
+  };
+
+  const petTap = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const id = ++heartId.current;
+    setHearts((h) => [...h, { id, x, r: Math.random() * 30 - 15 }]);
+    setTimeout(() => setHearts((h) => h.filter((x) => x.id !== id)), 1400);
+    setReactAnim(true);
+    setTimeout(() => setReactAnim(false), 500);
+  };
 
   const applyPet = useCallback((p) => {
     setPet(p);
@@ -186,11 +213,23 @@ export default function PetPage() {
     try {
       const { pet: p } = await api.post(`/pet/${action}`);
       applyPet(p);
+      setReactAnim(true);
+      setTimeout(() => setReactAnim(false), 700);
     } catch (e) {
       toast.error(e.message?.includes("cooldown") ? "Not ready yet — check back later!" : (e.message || "Action failed"));
     } finally {
       setBusy("");
     }
+  };
+
+  const startCare = (action) => {
+    if (cd[action] > 0 || busy || pet?.is_dead) return;
+    setInteraction(action);
+  };
+
+  const finishCare = async (action) => {
+    setInteraction(null);
+    await doCare(action);
   };
 
   const saveName = async () => {
@@ -276,6 +315,33 @@ export default function PetPage() {
     );
   }
 
+  if (pet.is_dead) {
+    return (
+      <div className="mx-auto max-w-md pb-10 text-emerald-50">
+        <button onClick={() => navigate(-1)} className="mb-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground" data-testid="pet-back">
+          <ArrowLeft size={18} /> Back
+        </button>
+        <div className="rounded-3xl border border-rose-900/50 bg-gradient-to-b from-slate-900/80 to-slate-950/90 p-8 text-center" data-testid="pet-dead-card">
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-900/40">
+            <HeartCrack size={32} className="text-rose-400" />
+          </span>
+          <img src={pet.image_url} alt={pet.name} className="mx-auto mt-4 h-40 w-40 object-contain opacity-40 grayscale" />
+          <h2 className="mt-3 text-2xl font-black text-white">{pet.name} has passed away</h2>
+          <p className="mt-2 text-sm text-emerald-200/70">
+            Your pet didn&apos;t survive the neglect. 🕊️ Release them to rest, then adopt a new companion — and remember to feed, play and bathe daily!
+          </p>
+          <Button
+            onClick={async () => { await api.del("/pet"); setPet(null); toast.success("You can adopt a new pet now"); }}
+            className="mt-6 w-full bg-emerald-500 font-bold text-emerald-950 hover:bg-emerald-400"
+            data-testid="pet-adopt-new-btn"
+          >
+            Release &amp; adopt a new pet
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const level = pet.level;
   const xpPct = Math.round((pet.xp / pet.xp_to_level) * 100);
 
@@ -287,6 +353,19 @@ export default function PetPage() {
         </button>
         <h1 className="text-2xl font-black">My {pet.stage} Pet</h1>
       </div>
+
+      {pushSupported() && !pushEnabled && (
+        <button
+          onClick={enableReminders}
+          data-testid="pet-enable-reminders"
+          className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-left transition-colors hover:bg-amber-500/20"
+        >
+          <Bell size={18} className="shrink-0 text-amber-400" />
+          <span className="text-sm text-amber-100">
+            <span className="font-bold">Turn on pet reminders</span> — get notified before your pet gets hungry, dirty or sick.
+          </span>
+        </button>
+      )}
 
       {/* Pet display card */}
       <div className="relative overflow-hidden rounded-3xl border border-emerald-800/50 bg-gradient-to-b from-emerald-800/50 to-emerald-950/80 p-5">
@@ -301,19 +380,37 @@ export default function PetPage() {
 
         <div className="relative mt-2 flex flex-col items-center">
           {pet.ai_styled && (
-            <span className="absolute right-0 top-0 flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white">
+            <span className="absolute right-0 top-0 z-10 flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white">
               <Sparkles size={11} /> AI Styled
             </span>
           )}
-          <img
-            src={pet.image_url}
-            alt={pet.name}
-            data-testid="pet-image"
-            className="h-56 w-56 object-contain drop-shadow-2xl sm:h-64 sm:w-64"
-          />
+          <button
+            onClick={petTap}
+            className="relative cursor-pointer select-none focus:outline-none"
+            data-testid="pet-pet-tap"
+            aria-label="Pet your pet"
+          >
+            <img
+              src={pet.image_url}
+              alt={pet.name}
+              data-testid="pet-image"
+              draggable={false}
+              className={`h-72 w-72 object-contain drop-shadow-2xl sm:h-80 sm:w-80 ${reactAnim ? "animate-pet-bounce" : "animate-pet-idle"}`}
+            />
+            {hearts.map((h) => (
+              <span
+                key={h.id}
+                className="pointer-events-none absolute bottom-1/2 animate-pet-heart text-3xl"
+                style={{ left: `${h.x}%`, "--r": `${h.r}deg` }}
+              >
+                ❤️
+              </span>
+            ))}
+          </button>
           <span className="mt-1 rounded-full bg-emerald-950/80 px-4 py-2 text-base font-bold text-white" data-testid="pet-mood">
             {pet.mood}
           </span>
+          <span className="mt-1 text-xs text-emerald-200/50">Tap your pet to pet it 💚</span>
         </div>
 
         <div className="mt-4">
@@ -362,20 +459,20 @@ export default function PetPage() {
       <div className="mt-5 rounded-3xl border border-emerald-800/50 bg-emerald-900/30 p-6">
         <div className="mb-5 text-center text-sm font-black uppercase tracking-widest text-emerald-200/80">Care Zone</div>
         <div className="flex items-end justify-around">
-          <CareButton testId="pet-play-btn" label="Play" sub={fmtCd(cd.play)} Icon={Gamepad2} ready={cd.play <= 0} busy={busy === "play"} onClick={() => doCare("play")} />
-          <CareButton testId="pet-feed-btn" label="Feed" sub={fmtCd(cd.feed)} Icon={Drumstick} ready={cd.feed <= 0} busy={busy === "feed"} onClick={() => doCare("feed")} highlight />
-          <CareButton testId="pet-bath-btn" label="Bath" sub={fmtCd(cd.bath)} Icon={Bath} ready={cd.bath <= 0} busy={busy === "bath"} onClick={() => doCare("bath")} />
+          <CareButton testId="pet-play-btn" label="Play" sub={fmtCd(cd.play)} Icon={Gamepad2} ready={cd.play <= 0} busy={busy === "play"} onClick={() => startCare("play")} />
+          <CareButton testId="pet-feed-btn" label="Feed" sub={fmtCd(cd.feed)} Icon={Drumstick} ready={cd.feed <= 0} busy={busy === "feed"} onClick={() => startCare("feed")} highlight />
+          <CareButton testId="pet-bath-btn" label="Bath" sub={fmtCd(cd.bath)} Icon={Bath} ready={cd.bath <= 0} busy={busy === "bath"} onClick={() => startCare("bath")} />
         </div>
       </div>
 
       {/* Play game (bonus play) */}
       <Button
-        onClick={() => doCare("play")}
+        onClick={() => startCare("play")}
         disabled={cd.play > 0 || busy === "play"}
         data-testid="pet-playgame-btn"
         className="mt-4 h-14 w-full gap-2 bg-emerald-500 text-base font-bold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
       >
-        <Gamepad2 size={20} /> {cd.play > 0 ? `Play Game (${fmtCd(cd.play)})` : "Play Game"}
+        <Gamepad2 size={20} /> {cd.play > 0 ? `Play Game (${fmtCd(cd.play)})` : "Play the Treat-Catch game"}
       </Button>
 
       {/* Sage AI Studio — live restyle chat */}
@@ -466,6 +563,22 @@ export default function PetPage() {
           </Button>
         )}
       </div>
+
+      {interaction === "play" && (
+        <InteractionModal title="🎮 Treat-Catch" onClose={() => setInteraction(null)}>
+          <CatchGame petImage={pet.image_url} onCancel={() => setInteraction(null)} onDone={() => finishCare("play")} />
+        </InteractionModal>
+      )}
+      {interaction === "feed" && (
+        <InteractionModal title="🍽️ Feeding time" onClose={() => setInteraction(null)}>
+          <FeedToss petImage={pet.image_url} onCancel={() => setInteraction(null)} onDone={() => finishCare("feed")} />
+        </InteractionModal>
+      )}
+      {interaction === "bath" && (
+        <InteractionModal title="🛁 Bath time" onClose={() => setInteraction(null)}>
+          <BubbleBath petImage={pet.image_url} onCancel={() => setInteraction(null)} onDone={() => finishCare("bath")} />
+        </InteractionModal>
+      )}
     </div>
   );
 }
