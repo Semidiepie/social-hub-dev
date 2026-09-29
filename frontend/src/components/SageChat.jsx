@@ -10,6 +10,24 @@ import { toast } from "sonner";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
+// iOS/Safari require audio to be "unlocked" inside a real user gesture, otherwise
+// programmatic playback is silently blocked. Call this from the tap that starts a call.
+function unlockSageAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC && !window.__sageAC) window.__sageAC = new AC();
+    if (window.__sageAC && window.__sageAC.state === "suspended") window.__sageAC.resume();
+    if (!window.__sageAudioEl) window.__sageAudioEl = new Audio();
+    const el = window.__sageAudioEl;
+    el.muted = true;
+    const p = el.play();
+    if (p && p.then) p.then(() => { el.pause(); el.currentTime = 0; el.muted = false; }).catch(() => { el.muted = false; });
+    else { el.pause(); el.muted = false; }
+  } catch {
+    /* noop */
+  }
+}
+
 export const SAGE = {
   id: "sage-ai",
   username: "sage",
@@ -83,7 +101,7 @@ export function SageChat({ onBack }) {
   };
 
   return (
-    <section className="flex flex-col rounded-2xl border border-border bg-card">
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
       <header className="flex items-center gap-3 border-b border-border p-3">
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden"><ArrowLeft size={18} /></button>
         <Avatar src={SAGE.avatar_url} size={38} />
@@ -95,7 +113,7 @@ export function SageChat({ onBack }) {
           <div className="text-[11px] text-muted-foreground">Your AI companion · always here to listen</div>
         </div>
         {voiceEnabled && (
-          <button onClick={() => setInCall(true)} title="Talk to Sage" aria-label="Voice call Sage"
+          <button onClick={() => { unlockSageAudio(); setInCall(true); }} title="Talk to Sage" aria-label="Voice call Sage"
             className="flex h-9 w-9 items-center justify-center rounded-full text-green-500 hover:bg-green-500/10" data-testid="sage-call-btn">
             <Phone size={18} />
           </button>
@@ -111,7 +129,7 @@ export function SageChat({ onBack }) {
         Sage is an AI companion here to listen — not a substitute for professional help.
       </div>
 
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto p-4" style={{ minHeight: 320 }}>
+      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : messages.length === 0 ? (
@@ -148,7 +166,7 @@ export function SageChat({ onBack }) {
             <p className="text-sm font-semibold">Would it help to talk it out loud?</p>
             <p className="mt-1 text-xs text-muted-foreground">Sage can call you right now and just listen.</p>
             <div className="mt-3 flex justify-center gap-3">
-              <button onClick={() => { setOfferCall(false); setInCall(true); }}
+              <button onClick={() => { unlockSageAudio(); setOfferCall(false); setInCall(true); }}
                 className="flex items-center gap-1.5 rounded-full bg-green-500 px-4 py-1.5 text-sm font-bold text-white" data-testid="sage-accept-call">
                 <Phone size={15} /> Talk to Sage
               </button>
@@ -202,15 +220,19 @@ function SageCall({ onEnd, onCrisis }) {
   const setBusy = (b) => { busyRef.current = b; };
 
   const playAudio = useCallback((url) => new Promise((resolve) => {
-    const audio = new Audio(url);
+    if (!window.__sageAudioEl) window.__sageAudioEl = new Audio();
+    const audio = window.__sageAudioEl;
+    audio.onended = null; audio.onerror = null;
     audio.muted = !speakerRef.current;
+    audio.src = url;
     audioRef.current = audio;
     setStatus("speaking");
     setBusy(true);
-    const finish = () => { audioRef.current = null; resolve(); };
+    const finish = () => resolve();
     audio.onended = finish;
     audio.onerror = finish;
-    audio.play().catch(finish);
+    const p = audio.play();
+    if (p && p.catch) p.catch(finish);
   }), []);
 
   const sendUtterance = useCallback(async (blob, mime) => {
@@ -311,7 +333,9 @@ function SageCall({ onEnd, onCrisis }) {
         if (endedRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         const AC = window.AudioContext || window.webkitAudioContext;
-        const ac = new AC();
+        const ac = window.__sageAC || new AC();
+        window.__sageAC = ac;
+        if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
         acRef.current = ac;
         const source = ac.createMediaStreamSource(stream);
         const analyser = ac.createAnalyser();
@@ -334,7 +358,7 @@ function SageCall({ onEnd, onCrisis }) {
       cancelAnimationFrame(rafRef.current);
       try { audioRef.current?.pause(); } catch { /* noop */ }
       try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
-      try { acRef.current?.close(); } catch { /* noop */ }
+      try { acRef.current?.suspend(); } catch { /* noop */ }
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

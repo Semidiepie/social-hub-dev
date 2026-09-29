@@ -59,7 +59,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="grid gap-0 md:grid-cols-[320px_1fr]" style={{ height: "calc(100dvh - 88px)" }}>
+    <div className="grid gap-0 md:grid-cols-[320px_1fr] h-[calc(100dvh-140px)] md:h-[calc(100dvh-112px)]">
       <aside className={`rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <h1 className="text-xl font-black">Messages</h1>
@@ -244,7 +244,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   }
 
   return (
-    <section className="flex flex-col rounded-2xl border border-border bg-card">
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
       <header className="flex items-center gap-3 border-b border-border p-3">
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden">
           <ArrowLeft size={18} />
@@ -275,7 +275,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
         )}
       </header>
 
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto p-4" style={{ minHeight: 300 }}>
+      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : messages.length === 0 ? (
