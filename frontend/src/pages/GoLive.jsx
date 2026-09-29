@@ -83,7 +83,7 @@ export default function GoLivePage() {
   // Pre-live setup screen
   if (!stream) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-5">
+      <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center gap-6 px-5">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Go Live</h1>
           <p className="mt-1 text-sm text-muted-foreground">Broadcast to your community in real time.</p>
@@ -116,7 +116,7 @@ export default function GoLivePage() {
 
   // Broadcasting screen
   return (
-    <div className="relative mx-auto h-screen max-w-md overflow-hidden bg-black">
+    <div className="fixed inset-x-0 top-0 z-40 mx-auto h-[100dvh] max-w-md overflow-hidden bg-black">
       <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" data-testid="golive-preview" />
       {demo && (
         <div className="absolute left-1/2 top-16 z-20 flex w-[92%] -translate-x-1/2 items-start gap-2 rounded-xl bg-amber-500/90 px-3 py-2 text-xs font-semibold text-black" data-testid="golive-demo-banner">

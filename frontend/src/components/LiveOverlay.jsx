@@ -80,7 +80,7 @@ export function LiveOverlay({
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between">
       {/* Top bar */}
-      <div className="pointer-events-auto flex items-start justify-between gap-2 bg-gradient-to-b from-black/60 to-transparent p-3">
+      <div className="pointer-events-auto flex items-start justify-between gap-2 bg-gradient-to-b from-black/60 to-transparent p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-2 rounded-full bg-black/40 p-1 pr-3 backdrop-blur">
           <Avatar src={owner?.avatar_url} size={34} />
           <div className="leading-tight">
@@ -124,7 +124,7 @@ export function LiveOverlay({
       <FloatingHearts floaters={floaters} />
 
       {/* Bottom: chat + composer */}
-      <div className="pointer-events-auto bg-gradient-to-t from-black/70 to-transparent p-3 pt-10">
+      <div className="pointer-events-auto bg-gradient-to-t from-black/70 to-transparent p-3 pt-10 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div
           ref={scrollRef}
           className="mb-2 flex max-h-56 flex-col gap-1.5 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"

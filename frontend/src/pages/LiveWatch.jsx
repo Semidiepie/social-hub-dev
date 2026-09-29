@@ -67,7 +67,7 @@ export default function LiveWatchPage() {
 
   if (loading || !stream) {
     return (
-      <div className="flex h-screen items-center justify-center bg-black">
+      <div className="fixed inset-x-0 top-0 z-40 flex h-[100dvh] items-center justify-center bg-black">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -76,7 +76,7 @@ export default function LiveWatchPage() {
   const hasVideo = !!(stream.whep_url || stream.hls_url);
 
   return (
-    <div className="relative mx-auto h-screen max-w-md overflow-hidden bg-black" data-testid="live-watch">
+    <div className="fixed inset-x-0 top-0 z-40 mx-auto h-[100dvh] max-w-md overflow-hidden bg-black" data-testid="live-watch">
       {hasVideo ? (
         <video ref={videoRef} autoPlay playsInline className="h-full w-full object-cover" data-testid="live-video" />
       ) : (
