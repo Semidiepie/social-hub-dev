@@ -35,6 +35,7 @@ import AdminResetPinsPage from "@/pages/AdminResetPins";
 import AdminVerifyPage from "@/pages/AdminVerify";
 import AdminRememberingPage from "@/pages/AdminRemembering";
 import AdminBlogsPage from "@/pages/AdminBlogs";
+import AdminAnnouncePage from "@/pages/AdminAnnounce";
 
 /**
  * Shell wrapper that mounts the sidebar/topbar/bottom-nav for authenticated
@@ -131,6 +132,10 @@ export default function App() {
             <Route
               path="/admin/blogs"
               element={<ProtectedRoute><AdminBlogsPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/admin/announce"
+              element={<ProtectedRoute><AdminAnnouncePage /></ProtectedRoute>}
             />
 
             <Route path="/music" element={<MusicPage />} />

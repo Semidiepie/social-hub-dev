@@ -1969,6 +1969,50 @@ async def admin_set_reset_pin(
     return {"id": user_id, "has_reset_pin": True}
 
 
+class BroadcastBody(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+    body: str = Field(min_length=1, max_length=200)
+    url: str = "/"
+
+
+@app.post("/api/admin/broadcast")
+async def admin_broadcast(body: BroadcastBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Super-admin: announce a new live update to everyone — an in-app notification
+    for ALL users + a browser Web Push to every push-subscribed user."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Super admin only")
+
+    # 1) In-app notification for every user (so non-push users see it next visit).
+    user_ids = await db.users.distinct("id")
+    if user_ids:
+        docs = [{
+            "id": str(uuid.uuid4()),
+            "user_id": uid,
+            "type": "update",
+            "actor_id": current["id"],
+            "actor_name": "PostMePlex",
+            "actor_avatar": DEFAULT_AVATAR_URL,
+            "text": body.body,
+            "read": False,
+            "created_at": now(),
+        } for uid in user_ids]
+        await db.notifications.insert_many(docs)
+
+    # 2) Web Push to every push-subscribed user (deduped).
+    sub_user_ids = await db.push_subscriptions.distinct("user_id")
+    pushed = 0
+    for uid in sub_user_ids:
+        try:
+            await send_web_push(uid, body.title, body.body, body.url)
+            pushed += 1
+        except Exception as e:
+            logger.warning(f"[broadcast] push failed for {uid}: {e}")
+
+    logger.info(f"[broadcast] '{body.title}' → {len(user_ids)} in-app, {pushed} push-subscribed users")
+    return {"notified_users": len(user_ids), "pushed_users": pushed}
+
+
+
 
 # ============================================================
 # Routes — Music (Semidiepie songs)

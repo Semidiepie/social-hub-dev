@@ -79,6 +79,11 @@
 - Referral loop: `RegisterBody.ref` (inviter username). On signup the new member auto-follows the inviter + gets a "joined from your invite and followed you" notification, so sharing directly grows real followers. Verified: semidiepie 5→7 across invited signups.
 - App.js captures `?ref=` on load; AuthContext.register sends it and clears it after.
 
+### Admin "Announce update" broadcast (web push to all) — iteration 45, June 2026
+- Super-admin-triggered broadcast so the founder can notify everyone right after a Publish/deploy. `POST /api/admin/broadcast {title, body, url}` (super-admin only → 403 otherwise): inserts a `type:"update"` in-app notification for **all users** (so non-push users see it next visit) + fires a browser **Web Push** to **every push-subscribed user** (`send_web_push`). Returns `{notified_users, pushed_users}`.
+- Web: new `/admin/announce` page (`AdminAnnounce.jsx`, super-admin-guarded) with title/message fields, a live preview, and a "Send to all users" button (prefilled "PostMePlex just got an update! ⚡"). Added an "Announce update" tab to `AdminTabs`. `Notifications.jsx` renders `type:"update"` with a Megaphone icon and routes to `/`.
+- Chosen approach = manual admin button (not auto-on-deploy) to avoid spamming users on ordinary backend/preview restarts. Verified: broadcast 200 (12 in-app), non-admin 403, notification appears with correct type; test announcements cleaned up. Web push only reaches users who enabled browser notifications (browser requirement).
+
 ### Growth pack: shareable link previews (branded OG cards) + SEO landing pages + invite counter — iteration 44, June 2026
 - **Backend `routes/share.py`** serves public, crawler-friendly landing pages with Open Graph + Twitter Card meta for **reels / profiles / pets**, so shared links show a rich preview on IG/TikTok/X/WhatsApp/iMessage and are Google-indexable. Humans are JS-redirected into the app carrying the sharer's `?ref=` (feeds the referral loop).
   - Endpoints: `GET /api/share/{reel/{id}|u/{handle}|pet/{handle}}` (HTML) + `.../card.png` (image).
