@@ -3,6 +3,13 @@
 ## Overview
 **PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
+## Recent Fix — Sage voice-call "Connecting…" hang (2026-06, web)
+- **Symptom:** Tapping Sage's voice call left the screen stuck on "Connecting…" with the mic disabled (reported on preview/web).
+- **Root cause:** `SageChat.jsx` `SageCall` greeting `useEffect` — React StrictMode double-mounts in dev/preview; the first cleanup set `endedRef.current = true` and the second mount never reset it, so the greeting handler hit `if (endedRef.current) return` and never advanced. Backend `/api/sage/voice-turn` was returning 200 the whole time (not a backend/audio issue).
+- **Fix:** reset `endedRef.current = false` at the top of the greeting effect on every (re)mount; also hardened `playAudio` with an 8s watchdog so an iOS Safari data-URL stall can't hang the UI.
+- **Verified in preview:** Connecting… → Sage is speaking… (greeting audio plays) → "Tap the mic and talk" (mic enabled). Push-to-talk interaction intact. Web-only change.
+
+
 ## Tech Stack
 - **Mobile:** Expo SDK 54 + Expo Router (file-based), React Native 0.81, expo-video, expo-image-picker, expo-notifications, react-native-reanimated, react-native-agora 1.15+ (audio livestream).
 - **Web (NEW iteration 20, June 2026):** React 19 + CRA (react-scripts 5) + Craco, React Router 7, Tailwind + Shadcn UI, sonner toasts, react-markdown for blog reader.
@@ -84,6 +91,10 @@
 - Backend: cosmetic fields on user + `UserPublic` (`equipped_frame`, `active_theme`, `frame_enabled`, `theme_enabled`); `POST /api/market/cosmetics` (allowlist-validated, `""` = unequip). Verified: equip persists, invalid id → 400.
 - Frontend: `lib/cosmetics.js` catalog, `Avatar` gains a `frame` prop (frame shown on the shell top-bar/sidebar avatar + Profile header via `frame_enabled`/`equipped_frame`), `components/ThemeLayer.jsx` (mounted globally, applies theme vars + particles, respects `theme_enabled`), `pages/Market.jsx`, CSS keyframes in `index.css`. **Settings** → new Cosmetics card with on/off toggles for frame + theme. Nav: **Market** added to sidebar + mobile top-bar menu; route `/market` (protected).
 - Manual theme selection (no auto-by-date), all free. Verified via screenshot (frames render, Neon equipped state, Fall leaves falling, sidebar avatar framed). Founder demo cosmetics reset to none. Web-only (mobile later). **Update (iteration 50): animated frames now render on EVERY author avatar** — feed post/reel/video cards, PostDetail, ReelWatch, ReelsFeed, VideoWatch, and all comment/reply rows (posts + videos) + the comment composer. Backend author serializers (`serialize_post`, `serialize_video_for_feed`, video `serialize_video`, post `list_comments`/`create_comment`, video comment list/create) now include `equipped_frame` + `frame_enabled`; frontend `frameOf(u)` helper in `lib/format.js` gates rendering. Verified via API (feed authors carry frame keys) + lint.
+
+### Sage voice call — reverted to push-to-talk (web) — iteration 56, June 2026
+- Per user request, reverted the Sage voice call from auto-talk (VAD) back to the **original push-to-talk**: tap the mic to talk, tap again (Square) to send → STT → Sage reply + voice. Removed the AnalyserNode/VAD loop and shared AudioContext.
+- **Kept the fixes:** iOS audio unlock (`unlockSageAudio` on the start-call tap + reused `window.__sageAudioEl` for reliable playback), Speaker on/off toggle, `100dvh` fullscreen call screen, and the Messages/chat layout fix (input pinned, list scrolls). Green filled Sage badge retained.
 
 ### Sage voice call v2 — auto-talk (VAD), speaker mode, fullscreen (web) — iteration 54–55, June 2026
 - **iteration 55 fixes:** (1) Message input was pushed off-screen by the earlier fullscreen height — fixed with responsive `h-[calc(100dvh-140px)] md:h-[calc(100dvh-112px)]` on the Messages grid + `min-h-0`/scroll on chat sections & lists (input now pinned + visible, list scrolls). Applied to ChatPane + SageChat. (2) iOS/Safari audio: added `unlockSageAudio()` fired inside the call-start tap (resumes a shared `AudioContext` + primes a reused `Audio` element) so playback isn't silently blocked AND the VAD analyser gets real data (was reading zeros on a suspended context → "Sage not answering"). `playAudio` reuses the unlocked element; the shared AC is suspended (not closed) on teardown. (3) Sage badge → filled green (`fill-green-500 text-background`) to match other verified badges.
