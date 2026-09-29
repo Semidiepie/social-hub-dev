@@ -7,6 +7,7 @@ import { CallProvider } from "@/context/CallContext";
 import { PlayerBar } from "@/components/PlayerBar";
 import { AppShell } from "@/components/AppShell";
 import InstallAppPrompt from "@/components/InstallAppPrompt";
+import SplashScreen from "@/components/SplashScreen";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useNotificationBadge } from "@/hooks/useNotificationBadge";
 import { captureRef } from "@/lib/share";
@@ -66,6 +67,7 @@ export default function App() {
   React.useEffect(() => { captureRef(); }, []);
   return (
     <BrowserRouter>
+      <SplashScreen />
       <AuthProvider>
         <PlayerProvider>
           <CallProvider>
