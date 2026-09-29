@@ -51,6 +51,7 @@ def _member_public(m: dict) -> dict:
         "avatar_url": _av(m.get("avatar_url")),
         "is_verified": bool(m.get("is_verified", False)),
         "verified_color": m.get("verified_color"),
+        "is_live": bool(m.get("is_live", False)),
         "remembering": bool(m.get("remembering", False)),
         "equipped_frame": m.get("equipped_frame"),
         "frame_enabled": m.get("frame_enabled", True),
@@ -166,7 +167,7 @@ def build_router(ctx) -> APIRouter:
         if sender_ids:
             async for u in db.users.find(
                 {"id": {"$in": sender_ids}},
-                {"_id": 0, "id": 1, "display_name": 1, "is_verified": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "avatar_url": 1, "verified_color": 1},
+                {"_id": 0, "id": 1, "display_name": 1, "is_verified": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "avatar_url": 1, "verified_color": 1, "is_live": 1},
             ):
                 senders[u["id"]] = u
         for m in rows:
@@ -181,6 +182,7 @@ def build_router(ctx) -> APIRouter:
             m["sender_verified_color"] = u.get("verified_color", m.get("sender_verified_color"))
             m["sender_remembering"] = bool(u.get("remembering", m.get("sender_remembering", False)))
             m["sender_frame"] = u.get("equipped_frame") if u.get("frame_enabled", True) else None
+            m["sender_is_live"] = bool(u.get("is_live", False))
             m["sender_avatar"] = _av(m.get("sender_avatar") or u.get("avatar_url"))
         last_id = rows[-1]["id"] if rows else None
         set_doc: dict = {f"unread.{current['id']}": 0}

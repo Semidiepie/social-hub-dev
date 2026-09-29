@@ -125,6 +125,8 @@ class UserPublic(BaseModel):
     avatar_url: str = ""
     is_verified: bool = False
     verified_color: Optional[str] = None
+    is_live: bool = False
+    live_stream_id: Optional[str] = None
     is_streamer: bool = False
     is_super_admin: bool = False
     is_official: bool = False
@@ -347,6 +349,8 @@ def user_to_public(u: dict) -> UserPublic:
         avatar_url=avatar_or_default(u.get("avatar_url")),
         is_verified=u.get("is_verified", False),
         verified_color=u.get("verified_color"),
+        is_live=u.get("is_live", False),
+        live_stream_id=u.get("live_stream_id"),
         is_streamer=u.get("is_streamer", False),
         is_super_admin=u.get("is_super_admin", False),
         is_official=u.get("is_official", False),
@@ -573,6 +577,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
         "likes": post.get("likes", 0),
         "comments_count": post.get("comments_count", 0),
         "views": post.get("views", 0),
+        "featured": bool(post.get("featured", False)),
         "created_at": post["created_at"].isoformat() if isinstance(post["created_at"], datetime) else post["created_at"],
         "liked_by_me": liked_by_me,
         "author": {
@@ -582,6 +587,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
             "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
             "verified_color": author.get("verified_color"),
+            "is_live": author.get("is_live", False),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
             "equipped_frame": author.get("equipped_frame"),
@@ -1239,6 +1245,7 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
         "likes": v.get("likes", 0),
         "comments_count": v.get("comments_count", 0),
         "views": v.get("views", 0),
+        "featured": bool(v.get("featured", False)),
         "created_at": v["created_at"].isoformat() if isinstance(v["created_at"], datetime) else v["created_at"],
         "liked_by_me": liked_by_me,
         "author": {
@@ -1248,6 +1255,7 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
             "avatar_url": avatar_or_default(author.get("avatar_url")),
             "is_verified": author.get("is_verified", False),
             "verified_color": author.get("verified_color"),
+            "is_live": author.get("is_live", False),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
             "equipped_frame": author.get("equipped_frame"),
@@ -1276,8 +1284,9 @@ async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
     items = [await serialize_post(p, viewer_id) for p in post_rows]
     items += [await serialize_post(r, viewer_id) for r in reel_rows]
     items += [await serialize_video_for_feed(v, viewer_id) for v in video_rows]
-    # Interleave all streams chronologically (newest first).
+    # Interleave all streams chronologically (newest first), then float featured to the top.
     items.sort(key=lambda x: x["created_at"], reverse=True)
+    items.sort(key=lambda x: not x.get("featured", False))
     return items[:80]
 
 
@@ -1496,7 +1505,9 @@ async def discover(filter: Literal["top", "accounts", "tags"] = "top",
     if blocked_list:
         post_q["author_id"] = {"$nin": blocked_list}
     rows = await db.posts.find(post_q, {"_id": 0}).sort("likes", -1).limit(60).to_list(60)
-    return {"type": "top", "items": [await serialize_post(p, viewer_id) for p in rows]}
+    items = [await serialize_post(p, viewer_id) for p in rows]
+    items.sort(key=lambda x: not x.get("featured", False))
+    return {"type": "top", "items": items}
 
 
 @app.get("/api/reels")
@@ -1669,19 +1680,22 @@ async def list_comments(post_id: str):
     remembering: dict[str, bool] = {}
     frames: dict[str, dict] = {}
     colors: dict[str, Optional[str]] = {}
+    lives: dict[str, bool] = {}
     if user_ids:
-        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "verified_color": 1}):
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "verified_color": 1, "is_live": 1}):
             verified[u["id"]] = bool(u.get("is_verified", False))
             avatars[u["id"]] = u.get("avatar_url") or ""
             remembering[u["id"]] = bool(u.get("remembering", False))
             frames[u["id"]] = {"equipped_frame": u.get("equipped_frame"), "frame_enabled": u.get("frame_enabled", True)}
             colors[u["id"]] = u.get("verified_color")
+            lives[u["id"]] = bool(u.get("is_live", False))
     for c in rows:
         if isinstance(c.get("created_at"), datetime):
             c["created_at"] = c["created_at"].isoformat()
         c["is_verified"] = c.get("is_verified", verified.get(c.get("user_id"), False))
         c["remembering"] = remembering.get(c.get("user_id"), c.get("remembering", False))
         c["verified_color"] = colors.get(c.get("user_id"), c.get("verified_color"))
+        c["is_live"] = lives.get(c.get("user_id"), False)
         c["avatar_url"] = avatar_or_default(c.get("avatar_url") or avatars.get(c.get("user_id")))
         fr = frames.get(c.get("user_id"), {})
         c["equipped_frame"] = fr.get("equipped_frame")
@@ -2020,6 +2034,27 @@ async def admin_set_verify_color(user_id: str, body: VerifyColorBody, current: A
     # Setting a custom badge color auto-verifies the account.
     await db.users.update_one({"id": user_id}, {"$set": {"verified_color": color, "is_verified": True}})
     return {"id": user_id, "verified_color": color, "is_verified": True}
+
+
+class FeatureBody(BaseModel):
+    """Admin boosts a piece of content. `type` picks the collection; `featured`
+    toggles the boost + "Featured" label and floats it to the top."""
+    type: Literal["post", "reel", "video", "live"]
+    id: str
+    featured: bool = True
+
+
+@app.post("/api/admin/feature")
+async def admin_feature_content(body: FeatureBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_admin") and not current.get("is_super_admin"):
+        raise HTTPException(403, "Admin only")
+    coll = db.videos if body.type == "video" else (db.live_streams if body.type == "live" else db.posts)
+    doc = await coll.find_one({"id": body.id})
+    if not doc:
+        raise HTTPException(404, "Content not found")
+    patch = {"featured": bool(body.featured), "featured_at": now() if body.featured else None}
+    await coll.update_one({"id": body.id}, {"$set": patch})
+    return {"id": body.id, "type": body.type, "featured": bool(body.featured)}
 
 
 @app.post("/api/remembering/apply")

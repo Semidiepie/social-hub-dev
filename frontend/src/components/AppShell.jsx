@@ -77,7 +77,7 @@ export function AppShell({ children }) {
       {/* Sidebar */}
       <aside className="sticky top-0 hidden h-screen w-[260px] flex-shrink-0 border-r border-border bg-card/40 backdrop-blur md:flex md:flex-col">
         <Brand />
-        <nav className="mt-2 flex flex-1 flex-col gap-1 px-3">
+        <nav className="mt-2 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3">
           {NAV.map((n) => (
             <NavLink
               key={n.to}

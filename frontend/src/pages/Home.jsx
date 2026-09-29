@@ -7,6 +7,7 @@ import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/PostComposer";
 import { EditContentModal } from "@/components/EditContentModal";
+import { FeaturedBadge, FeatureToggle } from "@/components/FeaturedControls";
 import { timeAgo, formatNumber, userPath, videoPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -157,6 +158,7 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
   const [showComments, setShowComments] = useState(false);
   const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
   const [editing, setEditing] = useState(false);
+  const [featured, setFeatured] = useState(!!post.featured);
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -165,17 +167,21 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
       <div className="flex items-center gap-3 px-4 pt-4">
         {post.author ? (
           <Link to={userPath(post.author)}>
-            <Avatar src={post.author.avatar_url} size={40} frame={frameOf(post.author)} />
+            <Avatar src={post.author.avatar_url} size={40} frame={frameOf(post.author)} live={post.author?.is_live} />
           </Link>
         ) : (
           <Avatar size={40} />
         )}
         <div className="min-w-0 flex-1">
-          <UsernameLine user={post.author} className="text-sm" />
+          <div className="flex items-center gap-2">
+            <UsernameLine user={post.author} className="text-sm" />
+            <FeaturedBadge show={featured} />
+          </div>
           <div className="text-xs text-muted-foreground">
             @{post.author?.username} · {timeAgo(post.created_at)}
           </div>
         </div>
+        <FeatureToggle type={post.type === "reel" ? "reel" : "post"} id={post.id} featured={featured} onChange={setFeatured} />
         {post.game_tag && (
           <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
             #{post.game_tag}
@@ -388,6 +394,7 @@ function PostComments({ postId, user, onCountChange }) {
 function VideoCard({ video, canManage, onDelete, onUpdated }) {
   const duration = formatDuration(video.duration);
   const [editing, setEditing] = useState(false);
+  const [featured, setFeatured] = useState(!!video.featured);
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -396,17 +403,21 @@ function VideoCard({ video, canManage, onDelete, onUpdated }) {
       <div className="flex items-center gap-3 px-4 pt-4">
         {video.author ? (
           <Link to={userPath(video.author)}>
-            <Avatar src={video.author.avatar_url} size={40} frame={frameOf(video.author)} />
+            <Avatar src={video.author.avatar_url} size={40} frame={frameOf(video.author)} live={video.author?.is_live} />
           </Link>
         ) : (
           <Avatar size={40} />
         )}
         <div className="min-w-0 flex-1">
-          <UsernameLine user={video.author} className="text-sm" />
+          <div className="flex items-center gap-2">
+            <UsernameLine user={video.author} className="text-sm" />
+            <FeaturedBadge show={featured} />
+          </div>
           <div className="text-xs text-muted-foreground">
             @{video.author?.username} · {timeAgo(video.created_at)}
           </div>
         </div>
+        <FeatureToggle type="video" id={video.id} featured={featured} onChange={setFeatured} />
         <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
           Video
         </span>
@@ -493,6 +504,7 @@ function VideoCard({ video, canManage, onDelete, onUpdated }) {
 
 function ReelCard({ reel, canManage, onDelete, onUpdated }) {
   const [editing, setEditing] = useState(false);
+  const [featured, setFeatured] = useState(!!reel.featured);
   return (
     <article
       className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -501,17 +513,21 @@ function ReelCard({ reel, canManage, onDelete, onUpdated }) {
       <div className="flex items-center gap-3 px-4 pt-4">
         {reel.author ? (
           <Link to={userPath(reel.author)}>
-            <Avatar src={reel.author.avatar_url} size={40} frame={frameOf(reel.author)} />
+            <Avatar src={reel.author.avatar_url} size={40} frame={frameOf(reel.author)} live={reel.author?.is_live} />
           </Link>
         ) : (
           <Avatar size={40} />
         )}
         <div className="min-w-0 flex-1">
-          <UsernameLine user={reel.author} className="text-sm" />
+          <div className="flex items-center gap-2">
+            <UsernameLine user={reel.author} className="text-sm" />
+            <FeaturedBadge show={featured} />
+          </div>
           <div className="text-xs text-muted-foreground">
             @{reel.author?.username} · {timeAgo(reel.created_at)}
           </div>
         </div>
+        <FeatureToggle type="reel" id={reel.id} featured={featured} onChange={setFeatured} />
         <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
           Reel
         </span>

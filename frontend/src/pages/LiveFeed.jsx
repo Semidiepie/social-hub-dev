@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { BadgeCheck } from "lucide-react";
 import { badgeCls, badgeStyle } from "@/lib/format";
+import { FeaturedBadge, FeatureToggle } from "@/components/FeaturedControls";
 
 function LiveCard({ s }) {
+  const [featured, setFeatured] = useState(!!s.featured);
   return (
     <Link
       to={`/live/${s.id}`}
@@ -21,6 +23,7 @@ function LiveCard({ s }) {
       <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> Live
       </span>
+      {featured && <FeaturedBadge show className="absolute left-2 top-8" />}
       <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white">
         <Eye size={11} /> {s.viewer_count}
       </span>
@@ -32,6 +35,9 @@ function LiveCard({ s }) {
         <div className="flex items-center justify-between">
           <div className="truncate text-[11px] text-white/70">{s.title}</div>
           <span className="flex flex-shrink-0 items-center gap-0.5 text-[10px] text-white/70"><Heart size={10} className="fill-rose-500 text-rose-500" /> {s.hearts}</span>
+        </div>
+        <div className="mt-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <FeatureToggle type="live" id={s.id} featured={featured} onChange={setFeatured} />
         </div>
       </div>
     </Link>

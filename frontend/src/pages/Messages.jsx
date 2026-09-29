@@ -110,7 +110,7 @@ export default function MessagesPage() {
                   }`}
                   data-testid={`conv-${c.id}`}
                 >
-                  <Avatar src={c.avatar_url} size={44} frame={c.is_group ? null : frameOf(c.peer)} />
+                  <Avatar src={c.avatar_url} size={44} frame={c.is_group ? null : frameOf(c.peer)} live={!c.is_group && c.peer?.is_live} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between">
                       <span className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold">
@@ -249,7 +249,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden">
           <ArrowLeft size={18} />
         </button>
-        <Avatar src={conv.avatar_url} size={36} frame={conv.is_group ? null : frameOf(conv.peer)} />
+        <Avatar src={conv.avatar_url} size={36} frame={conv.is_group ? null : frameOf(conv.peer)} live={!conv.is_group && conv.peer?.is_live} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 truncate font-bold">
             <span className="truncate">{conv.title}</span>
@@ -286,7 +286,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
             return (
               <div key={m.id} className={`group flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
                 {!mine && conv.is_group && (
-                  <Avatar src={m.sender_avatar} size={28} frame={m.sender_frame} className="mb-4" />
+                  <Avatar src={m.sender_avatar} size={28} frame={m.sender_frame} live={m.sender_is_live} className="mb-4" />
                 )}
                 {mine && (
                   <button onClick={() => deleteMessage(m.id)} title="Delete message" aria-label="Delete message"

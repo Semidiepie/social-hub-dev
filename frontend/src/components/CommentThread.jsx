@@ -31,7 +31,7 @@ function CommentRow({ c, isReply, onReply, onDelete, meId }) {
   return (
     <div className={`flex gap-2.5 ${isReply ? "ml-9" : ""}`} data-testid={`comment-${c.id}`}>
       <Link to={c.author ? userPath(c.author) : "#"}>
-        <Avatar src={c.author?.avatar_url} size={isReply ? 28 : 34} frame={frameOf(c.author)} />
+        <Avatar src={c.author?.avatar_url} size={isReply ? 28 : 34} frame={frameOf(c.author)} live={c.author?.is_live} />
       </Link>
       <div className="min-w-0 flex-1">
         <div className="rounded-2xl bg-muted/60 px-3 py-2">

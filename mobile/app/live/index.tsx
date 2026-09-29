@@ -11,6 +11,7 @@ interface LiveStream {
   title: string;
   viewer_count: number;
   hearts: number;
+  featured?: boolean;
   owner: { username: string; display_name: string; avatar_url: string; is_verified: boolean };
 }
 
@@ -71,6 +72,12 @@ export default function LiveFeedScreen() {
                 <Image source={{ uri: item.owner.avatar_url }} style={styles.cardAvatar} />
               </View>
               <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>
+              {item.featured && (
+                <View style={{ position: "absolute", left: 8, top: 34, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: colors.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999 }} testID="featured-label">
+                  <Ionicons name="star" size={9} color="#fff" />
+                  <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>Featured</Text>
+                </View>
+              )}
               <View style={styles.viewerPill}><Ionicons name="eye" size={11} color="#fff" /><Text style={styles.viewerText}>{item.viewer_count}</Text></View>
               <View style={styles.cardFooter}>
                 <Text style={styles.cardOwner} numberOfLines={1}>{item.owner.display_name || item.owner.username}</Text>

@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 40 — LIVE indicators + admin Feature toggle + follower live notifications verified. Backend pytest 10/10 green in test_iteration40_live_featured.py: /api/admin/feature 403 non-admin + 404 missing + toggle for post/reel/live + featured-first sort on /api/feed, /api/discover, /api/live; POST /api/live sets user.is_live=true+live_stream_id AND creates 'live' notifications for followers (link=/live/{id}); POST /api/live/{id}/stop resets is_live=false; is_live serialized in feed authors, comment authors, discover accounts, and messages peer (member_ids conversation payload). WEB UI verified end-to-end at 1920x1080 and short 1280x600 viewports: (a) sidebar-profile-link / sidebar-logout / sidebar-settings / sidebar-admin all remain in viewport at 1280x600 with the middle nav scrolling — footer pinning works; (b) admin (semidiepie) sees 21 feature-toggle-* controls on Home + 1 on /live, clicking flips Featured↔Feature and re-fetches; (c) non-admin sees ZERO feature-toggle-* buttons AND no sidebar-admin link, but featured-label pills still render as expected; (d) profile /semidiepie renders profile-live-banner ('SEMIDIEPIE IS LIVE NOW — WATCH') and the header Avatar has the red LIVE ring+pill when the user is live; (e) Home has 15 avatar-live rings when semidiepie (author of many posts) is live. MOBILE Expo web preview is BLOCKED by a preview-infra CORS bug (see backend_issues.critical) — every API call from https://social-hub-dev-4.expo.preview.emergentagent.com is preflight-rejected because an upstream (Cloudflare) proxy rewrites the browser's Origin header to https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud before it reaches Starlette, so the reflected access-control-allow-origin never matches the browser's actual origin. Mobile source code was reviewed and the testIDs (profile-live-banner in ProfileView.tsx:216, featured-label in app/live/index.tsx:76 and PostCard.tsx:137, is_live pill in PostCard.tsx:124) are all correctly wired, but cannot be exercised via web preview until the CORS rewrite is fixed.",
+  "platforms_tested": ["web", "mobile-code-review-only"],
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "OPTIONS /api/*", "issue": "Preview-infra CORS: Cloudflare/ingress rewrites Origin header for requests from https://social-hub-dev-4.expo.preview.emergentagent.com to https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud before hitting Starlette. Starlette (allow_origins=['*'] + allow_credentials=True) then reflects that rewritten origin, so the browser rejects the response (ACAO mismatch). Result: mobile Expo web preview cannot make ANY authenticated API call (login, live, feature). Verified with curl -H 'Origin: https://social-hub-dev-4.expo.preview.emergentagent.com' -> ACAO comes back as the cluster-12 host. Real mobile devices using native fetch are unaffected (no CORS on native).", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [
+        {"flow": "All API-backed flows on Expo web preview", "issue": "Blocked by preview-infra CORS Origin rewrite (see backend_issues.critical). Same code will work on native (Expo Go / real build).", "affected_testIDs": ["login-form", "profile-live-banner", "featured-label"]}
+      ],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [
+    {"flow": "Full flow parity", "platform": "mobile", "issue": "Mobile testing skipped due to preview-infra CORS rewrite — cannot compare mobile behavior end-to-end against web. Code review shows all relevant testIDs (profile-live-banner, featured-label, LIVE pill on PostCard) are wired identically to web.", "expected": "Same LIVE ring + Featured label + banner on mobile as web", "actual": "Not testable via Expo web preview until CORS is fixed"}
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration40_live_featured.py",
+    "/app/test_reports/pytest/iteration40_live_featured.xml"
+  ],
+  "action_items": [
+    "Fix the Cloudflare/ingress rule that rewrites the Origin header for expo.preview.emergentagent.com subdomains (or, as a workaround for testing, echo the browser's Origin without rewriting). This blocks 100% of mobile-preview UI verification.",
+    "Optional: lock down Starlette CORSMiddleware allow_origins=['*'] + allow_credentials=True — this combination causes Starlette to reflect whatever Origin arrives, so an upstream rewrite bug (like the current one) is impossible to detect at the backend. Explicit allow_origins for preview + prod hosts would be safer."
+  ],
+  "critical_code_review_comments": [
+    "server.py:105 CORSMiddleware still has allow_origins=['*'] + allow_credentials=True (pre-existing since iter 39). Reflecting arbitrary Origins with credentials enabled is a hardening gap and, in this preview environment, enables the current Origin-rewrite bug to surface silently.",
+    "routes/live.py:191 Fetches ALL followers with to_list(100000) then inserts one notification doc per follower in a serial loop; for a large creator this is O(N) Mongo writes on the request path. Consider bulk_insert / background task.",
+    "server.py:1287,1509 featured-first sort is applied on a limited page (60 posts) — a featured post outside that window will NOT be surfaced. If featured items are rare this may be fine, but consider a separate query for featured items unioned into the top of the page."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration40_live_featured.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10)",
+    "frontend": "web 100% for the exercised flows (admin feature toggle, non-admin hiding, sidebar pinning at 1280x600, profile LIVE banner, Home avatar-live ring); mobile 0% executable due to preview CORS bug (code review clean)"
+  },
+  "test_credentials": "Founder semidiepie / PIN 7455 (admin). Scratch test_* accounts registered via /api/auth/register with pin 1234 — auto-purged on backend restart.",
+  "seed_data_creation": "~4 test_* users + 5 test_* posts/reels + 3 short-lived live streams (all stopped at end of each test). Everything test_* will be swept on next backend restart per the purge rule.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature bundle (LIVE indicators + admin Feature + follower live notify) is green on backend + web. Mobile UI testing via Expo web preview is BLOCKED by an upstream Origin-rewrite bug (Cloudflare rewrites expo.preview.emergentagent.com -> cluster-12.preview.emergentcf.cloud before it reaches the app, so the reflected access-control-allow-origin never matches). All mobile testIDs are correctly wired in code (ProfileView.tsx:216, PostCard.tsx:124/137, app/live/index.tsx:76) — pick up mobile testing again once the CORS rewrite is resolved or run against a native build. Backend regression test test_iteration40_live_featured.py is safe to rerun (creates & cleans up its own state).",
+  "rca of the issue": "Mobile-preview CORS block RCA: preflight OPTIONS from browser origin https://social-hub-dev-4.expo.preview.emergentagent.com is intercepted by Cloudflare (cf-ray header confirms edge) which forwards it to backend with Origin rewritten to https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud. Starlette CORSMiddleware with allow_origins=['*']+allow_credentials=True reflects the received Origin verbatim, so ACAO=cluster-12... The browser compares ACAO to its own origin (expo.preview...) and rejects. Reproduction: curl -X OPTIONS -H 'Origin: https://social-hub-dev-4.expo.preview.emergentagent.com' -H 'Access-Control-Request-Method: POST' https://social-hub-dev-4.preview.emergentagent.com/api/auth/login-pin returns access-control-allow-origin: https://social-hub-dev-4.cluster-12.preview.emergentcf.cloud. Same call with any other Origin (e.g. foo.example.com) is echoed back correctly, confirming the rewrite only fires for the expo subdomain."
+}

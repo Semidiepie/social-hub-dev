@@ -2,12 +2,12 @@ import React from "react";
 import { AVATAR_FALLBACK, badgeCls, badgeStyle } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
 
-export function Avatar({ src, alt, size = 40, className = "", ring = false, frame = null }) {
+export function Avatar({ src, alt, size = 40, className = "", ring = false, frame = null, live = false }) {
   const inner = (
     <div
       className={`inline-flex items-center justify-center overflow-hidden rounded-full bg-secondary ${
         ring ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
-      } ${frame ? "relative z-10" : ""} ${className}`}
+      } ${live ? "ring-2 ring-red-500 ring-offset-2 ring-offset-background" : ""} ${frame ? "relative z-10" : ""} ${className}`}
       style={{ width: size, height: size }}
     >
       <img
@@ -20,11 +20,23 @@ export function Avatar({ src, alt, size = 40, className = "", ring = false, fram
       />
     </div>
   );
-  if (!frame) return inner;
-  return (
+  const core = !frame ? inner : (
     <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <span className={`pmp-frame pmp-frame-${frame}`} aria-hidden />
       {inner}
+    </span>
+  );
+  if (!live) return core;
+  return (
+    <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }} data-testid="avatar-live">
+      {core}
+      <span
+        className="absolute -bottom-1 left-1/2 z-20 -translate-x-1/2 rounded bg-red-500 px-1 font-black uppercase leading-none text-white"
+        style={{ fontSize: Math.max(7, Math.round(size * 0.2)), paddingTop: 2, paddingBottom: 2 }}
+        data-testid="avatar-live-pill"
+      >
+        LIVE
+      </span>
     </span>
   );
 }

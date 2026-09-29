@@ -210,6 +210,19 @@ export default function ProfileView({ userId, isOwn = false }: Props) {
               </View>
             </View>
 
+            {profile.is_live && (
+              <TouchableOpacity
+                onPress={() => router.push(`/live/${profile.live_stream_id || ""}`)}
+                testID="profile-live-banner"
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#ef4444", marginHorizontal: 16, marginBottom: 12, paddingVertical: 12, borderRadius: 16 }}
+              >
+                <Ionicons name="radio" size={16} color="#fff" />
+                <Text style={{ color: "#fff", fontWeight: "900", textTransform: "uppercase", fontSize: 13 }}>
+                  {profile.display_name} is live — Watch
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.bioBlock}>
               <View style={styles.nameRow}>
                 <Text style={styles.displayName}>{profile.display_name}</Text>

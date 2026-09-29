@@ -117,8 +117,15 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
           onPress={() => author && router.push(`/profile/${author.id}`)}
           testID={`post-author-${post.id}`}
         >
-          <View style={styles.avatarRing}>
-            <Image source={{ uri: author?.avatar_url || FALLBACK_AVATAR }} style={styles.avatar} />
+          <View style={{ position: "relative" }}>
+            <View style={styles.avatarRing}>
+              <Image source={{ uri: author?.avatar_url || FALLBACK_AVATAR }} style={styles.avatar} />
+            </View>
+            {author?.is_live && (
+              <View style={{ position: "absolute", bottom: -4, alignSelf: "center", backgroundColor: "#ef4444", paddingHorizontal: 4, borderRadius: 3 }}>
+                <Text style={{ color: "#fff", fontSize: 7, fontWeight: "900" }}>LIVE</Text>
+              </View>
+            )}
           </View>
           <View style={{ flex: 1 }}>
             <View style={styles.nameRow}>
@@ -126,6 +133,12 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
                 {author?.display_name ?? "Unknown"}
               </Text>
               {author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={author?.verified_color || colors.primary} />}
+              {post.featured && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: colors.primary + "33", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999 }} testID="featured-label">
+                  <Ionicons name="star" size={9} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>Featured</Text>
+                </View>
+              )}
               {author?.is_streamer && (
                 <View style={styles.streamerPill}>
                   <Ionicons name="game-controller" size={9} color={colors.primary} />

@@ -222,7 +222,7 @@ function UserCard({ user, onOpen }) {
       className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/40"
       data-testid={`user-card-${user.id}`}
     >
-      <Avatar src={user.avatar_url} size={48} />
+      <Avatar src={user.avatar_url} size={48} live={user.is_live} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1 truncate font-semibold">
           {user.display_name}

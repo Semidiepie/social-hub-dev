@@ -99,6 +99,8 @@ def build_router(ctx) -> APIRouter:
     logger = ctx.logger
     get_current_user = ctx.get_current_user
     user_from_token = ctx.user_from_token
+    send_push = getattr(ctx, "send_push", None)
+    send_web_push = getattr(ctx, "send_web_push", None)
 
     router = APIRouter(tags=["live"])
 
@@ -113,6 +115,7 @@ def build_router(ctx) -> APIRouter:
             "hls_url": s.get("hls_url"),
             "viewer_count": hub.count(s["id"]) if s.get("status") == "live" else 0,
             "hearts": s.get("hearts", 0),
+            "featured": bool(s.get("featured", False)),
             "owner": {
                 "id": s.get("owner_id"),
                 "username": s.get("owner_username"),
@@ -131,6 +134,7 @@ def build_router(ctx) -> APIRouter:
     @router.get("/api/live")
     async def list_live(current: Annotated[dict, Depends(get_current_user)]):
         rows = await db.live_streams.find({"status": "live"}, {"_id": 0}).sort("created_at", -1).to_list(100)
+        rows.sort(key=lambda s: not s.get("featured", False))
         return [public_stream(s) for s in rows]
 
     @router.post("/api/live")
@@ -180,6 +184,37 @@ def build_router(ctx) -> APIRouter:
             "ended_at": None,
         }
         await db.live_streams.insert_one(doc)
+        # Mark the creator live everywhere (profile banner + avatar ring app-wide).
+        await db.users.update_one({"id": current["id"]}, {"$set": {"is_live": True, "live_stream_id": doc["id"]}})
+        # Notify followers that this creator just went live.
+        try:
+            frows = await db.follows.find({"followee_id": current["id"]}, {"_id": 0, "follower_id": 1}).to_list(100000)
+            follower_ids = [r["follower_id"] for r in frows]
+            for fid in follower_ids:
+                await db.notifications.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "user_id": fid,
+                    "type": "live",
+                    "actor_id": current["id"],
+                    "actor_name": current.get("display_name", current["username"]),
+                    "actor_avatar": _av(current.get("avatar_url")),
+                    "text": "is live now — tap to watch",
+                    "link": f"/live/{doc['id']}",
+                    "read": False,
+                    "created_at": now(),
+                })
+            if follower_ids and send_push:
+                await send_push(
+                    recipients=follower_ids,
+                    data={"title": f"{current.get('display_name', current['username'])} is live!",
+                          "message": "Tap to join the stream.", "action_url": f"/live/{doc['id']}"},
+                )
+            if follower_ids and send_web_push:
+                for fid in follower_ids:
+                    await send_web_push(fid, f"{current.get('display_name', current['username'])} is live!",
+                                        "Tap to join the stream.", f"/live/{doc['id']}")
+        except Exception as e:
+            logger.warning(f"live notify failed (non-blocking): {e}")
         out = public_stream(doc)
         out["whip_url"] = whip_url  # publish credential — only ever to the owner, at creation
         out["is_owner"] = True
@@ -216,6 +251,7 @@ def build_router(ctx) -> APIRouter:
             except Exception as e:
                 logger.warning(f"Cloudflare stop failed: {e}")
         await db.live_streams.update_one({"id": stream_id}, {"$set": {"status": "ended", "ended_at": now()}})
+        await db.users.update_one({"id": current["id"]}, {"$set": {"is_live": False, "live_stream_id": None}})
         await hub.broadcast(stream_id, {"type": "ended"})
         return {"status": "ended"}
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Loader2, MessageCircle, BadgeCheck, Settings as SettingsIcon, Play, Heart, Share2 } from "lucide-react";
+import { Loader2, MessageCircle, BadgeCheck, Settings as SettingsIcon, Play, Heart, Share2, Radio } from "lucide-react";
 import { api } from "@/lib/api";
 import { shareUrl, origin } from "@/lib/share";
 import { Avatar } from "@/components/Avatar";
@@ -120,9 +120,19 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-3xl" data-testid={`profile-${target.id}`}>
+      {target.is_live && (
+        <button
+          onClick={() => navigate(`/live/${target.live_stream_id || ""}`)}
+          data-testid="profile-live-banner"
+          className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-red-500 px-4 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-500/30 transition-transform hover:scale-[1.01]"
+        >
+          <Radio size={16} className="animate-pulse" />
+          {target.display_name} is live now — Watch
+        </button>
+      )}
       <header className="rounded-2xl border border-border bg-card p-5 sm:p-6">
         <div className="flex items-start gap-4 sm:gap-6">
-          <Avatar src={target.avatar_url} size={80} frame={target.frame_enabled ? target.equipped_frame : null} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
+          <Avatar src={target.avatar_url} size={80} frame={target.frame_enabled ? target.equipped_frame : null} live={target.is_live} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
               <div className="min-w-0">
