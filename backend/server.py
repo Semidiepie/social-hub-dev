@@ -2486,8 +2486,28 @@ app.include_router(_build_calls(route_ctx))
 from routes.sage import build_router as _build_sage  # noqa: E402
 app.include_router(_build_sage(route_ctx))
 
+from routes.keyhealth import build_router as _build_keyhealth, check_and_alert as _keyhealth_check  # noqa: E402
+app.include_router(_build_keyhealth(route_ctx))
+
 
 @app.on_event("startup")
 async def _start_pet_reminders():
     import asyncio
     asyncio.create_task(_pets_router.pet_reminder_loop())
+
+
+@app.on_event("startup")
+async def _start_key_health_monitor():
+    import asyncio
+
+    async def _loop():
+        # Small delay so the app finishes booting before the first probe.
+        await asyncio.sleep(30)
+        while True:
+            try:
+                await _keyhealth_check(db, send_web_push, DEFAULT_AVATAR_URL)
+            except Exception as e:
+                logger.warning(f"[keyhealth] periodic check failed: {e}")
+            await asyncio.sleep(6 * 3600)  # every 6 hours
+
+    asyncio.create_task(_loop())

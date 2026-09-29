@@ -89,7 +89,20 @@ def build_router(ctx) -> APIRouter:
     db = ctx.db
     logger = ctx.logger
     get_current_user = ctx.get_current_user
+    send_web_push = ctx.send_web_push
+    default_avatar = ctx.default_avatar_url
     router = APIRouter(tags=["sage"])
+
+    async def _flag_elevenlabs(err: Exception):
+        """If a live ElevenLabs call fails on auth/quota, alert the admin right away."""
+        s = str(err).lower()
+        if any(k in s for k in ["401", "unauthorized", "invalid api key", "quota", "invalid_api_key", "403"]):
+            try:
+                from routes.keyhealth import report_issue
+                await report_issue(db, send_web_push, default_avatar, "elevenlabs",
+                                   "ElevenLabs (Sage voice)", "Live call rejected the key — update it.")
+            except Exception:
+                pass
 
     async def _reply(user_id: str, user_text: str, spoken: bool) -> str:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -128,6 +141,7 @@ def build_router(ctx) -> APIRouter:
             audio = await asyncio.to_thread(_synth)
         except Exception as e:
             logger.warning(f"sage tts error: {e}")
+            await _flag_elevenlabs(e)
             raise HTTPException(502, "Couldn't generate Sage's voice")
         return "data:audio/mpeg;base64," + base64.b64encode(audio).decode()
 
@@ -212,6 +226,7 @@ def build_router(ctx) -> APIRouter:
             text = await asyncio.to_thread(_transcribe)
         except Exception as e:
             logger.warning(f"sage stt error: {e}")
+            await _flag_elevenlabs(e)
             raise HTTPException(502, "Couldn't understand the audio")
         return {"text": (text or "").strip()}
 

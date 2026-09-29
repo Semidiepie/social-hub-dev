@@ -41,6 +41,7 @@ import AdminVerifyPage from "@/pages/AdminVerify";
 import AdminRememberingPage from "@/pages/AdminRemembering";
 import AdminBlogsPage from "@/pages/AdminBlogs";
 import AdminAnnouncePage from "@/pages/AdminAnnounce";
+import AdminKeysPage from "@/pages/AdminKeys";
 
 /**
  * Shell wrapper that mounts the sidebar/topbar/bottom-nav for authenticated
@@ -144,6 +145,10 @@ export default function App() {
             <Route
               path="/admin/announce"
               element={<ProtectedRoute><AdminAnnouncePage /></ProtectedRoute>}
+            />
+            <Route
+              path="/admin/keys"
+              element={<ProtectedRoute><AdminKeysPage /></ProtectedRoute>}
             />
 
             <Route path="/music" element={<MusicPage />} />
