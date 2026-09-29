@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  Loader2, Send, MessageSquare, ArrowLeft, Trash2, Phone, Video, BadgeCheck,
-  Plus, Users, Settings as SettingsIcon, X, Check, UserPlus, LogOut, Search, ImagePlus,
+import { Loader2, Send, MessageSquare, ArrowLeft, Trash2, Phone, Video, BadgeCheck,
+  Plus, Users, Settings as SettingsIcon, X, Check, UserPlus, LogOut, Search, ImagePlus, Sparkles,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
@@ -11,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { timeAgo, frameOf, badgeCls } from "@/lib/format";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { SageChat, SAGE } from "@/components/SageChat";
 import { toast } from "sonner";
 
 export default function MessagesPage() {
@@ -73,12 +73,34 @@ export default function MessagesPage() {
         </div>
         {loading ? (
           <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-        ) : conversations.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            No conversations yet. Tap <b>New</b> to start a chat or group.
-          </div>
         ) : (
           <ul className="max-h-[calc(100vh-220px)] overflow-y-auto">
+            <li>
+              <button
+                onClick={() => navigate("/messages/sage")}
+                className={`flex w-full items-center gap-3 border-b border-border/60 px-4 py-3 text-left hover:bg-secondary/50 ${
+                  convId === "sage" ? "bg-secondary/70" : ""
+                }`}
+                data-testid="conv-sage"
+              >
+                <div className="relative">
+                  <Avatar src={SAGE.avatar_url} size={44} />
+                  <Sparkles size={12} className="absolute -bottom-0.5 -right-0.5 rounded-full bg-card p-0.5 text-green-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1 text-sm font-semibold">
+                    Sage AI
+                    <BadgeCheck size={14} className="shrink-0 text-green-500" />
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">Your AI companion · always here to listen</div>
+                </div>
+              </button>
+            </li>
+            {conversations.length === 0 && (
+              <li className="p-6 text-center text-xs text-muted-foreground">
+                No other conversations yet. Tap <b>New</b> to start a chat or group.
+              </li>
+            )}
             {conversations.map((c) => (
               <li key={c.id} className="group relative">
                 <button
@@ -125,7 +147,9 @@ export default function MessagesPage() {
         )}
       </aside>
 
-      {convId ? (
+      {convId === "sage" ? (
+        <SageChat onBack={() => navigate("/messages")} />
+      ) : convId ? (
         <ChatPane conv={active} me={user} onBack={() => navigate("/messages")} onChanged={loadConversations} onGone={() => navigate("/messages")} />
       ) : (
         <div className="hidden items-center justify-center rounded-2xl border border-border bg-card/60 p-10 text-center md:flex">

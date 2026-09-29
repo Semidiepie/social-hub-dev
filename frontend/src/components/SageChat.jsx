@@ -1,0 +1,299 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft, Send, Loader2, Phone, PhoneOff, BadgeCheck, Mic, Square, ShieldAlert, Trash2,
+} from "lucide-react";
+import { api, getToken } from "@/lib/api";
+import { Avatar } from "@/components/Avatar";
+import { Button } from "@/components/ui/button";
+import { timeAgo } from "@/lib/format";
+import { toast } from "sonner";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+export const SAGE = {
+  id: "sage-ai",
+  username: "sage",
+  display_name: "Sage AI",
+  avatar_url:
+    "https://static.prod-images.emergentagent.com/jobs/b5df4b25-c0c9-4030-b339-bee284051703/images/ba4cc2b9f675a2341e865b0c9b6433a07d2c2db012be5eaa27ab98af2e7aaabb.jpeg",
+};
+
+function CrisisBanner() {
+  return (
+    <div className="flex items-start gap-2 border-b border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200" data-testid="sage-crisis-banner">
+      <ShieldAlert size={16} className="mt-0.5 shrink-0 text-red-400" />
+      <div>
+        <b>If you're in crisis, you deserve real support right now.</b> In the US, call or text <b>988</b> (Suicide &amp; Crisis Lifeline),
+        or contact your local emergency services. You are not alone.
+      </div>
+    </div>
+  );
+}
+
+export function SageChat({ onBack }) {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [offerCall, setOfferCall] = useState(false);
+  const [crisis, setCrisis] = useState(false);
+  const [inCall, setInCall] = useState(false);
+  const listRef = useRef(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get("/sage/thread");
+      setMessages(r.messages);
+      setVoiceEnabled(r.voice_enabled);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages, sending, offerCall]);
+
+  const send = async (e) => {
+    e.preventDefault();
+    if (!text.trim() || sending) return;
+    const draft = text.trim();
+    setText("");
+    setOfferCall(false);
+    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", text: draft, created_at: new Date().toISOString() }]);
+    setSending(true);
+    try {
+      const r = await api.post("/sage/send", { text: draft });
+      setMessages((m) => [...m, r.message]);
+      if (r.crisis) setCrisis(true);
+      if (r.offer_call && voiceEnabled) setOfferCall(true);
+    } catch (err) {
+      toast.error(err.message || "Sage couldn't respond");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const clearThread = async () => {
+    if (!window.confirm("Clear your conversation with Sage?")) return;
+    try { await api.del("/sage/thread"); setMessages([]); setCrisis(false); setOfferCall(false); toast.success("Conversation cleared"); }
+    catch (err) { toast.error(err.message || "Failed"); }
+  };
+
+  return (
+    <section className="flex flex-col rounded-2xl border border-border bg-card">
+      <header className="flex items-center gap-3 border-b border-border p-3">
+        <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden"><ArrowLeft size={18} /></button>
+        <Avatar src={SAGE.avatar_url} size={38} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 font-bold">
+            {SAGE.display_name}
+            <BadgeCheck size={15} className="text-green-500" data-testid="sage-badge" />
+          </div>
+          <div className="text-[11px] text-muted-foreground">Your AI companion · always here to listen</div>
+        </div>
+        {voiceEnabled && (
+          <button onClick={() => setInCall(true)} title="Talk to Sage" aria-label="Voice call Sage"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-green-500 hover:bg-green-500/10" data-testid="sage-call-btn">
+            <Phone size={18} />
+          </button>
+        )}
+        <button onClick={clearThread} title="Clear chat" aria-label="Clear chat"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary" data-testid="sage-clear-btn">
+          <Trash2 size={16} />
+        </button>
+      </header>
+
+      {crisis && <CrisisBanner />}
+      <div className="border-b border-border bg-secondary/40 px-4 py-2 text-[11px] text-muted-foreground">
+        Sage is an AI companion here to listen — not a substitute for professional help.
+      </div>
+
+      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto p-4" style={{ minHeight: 320 }}>
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+        ) : messages.length === 0 ? (
+          <div className="mx-auto mt-8 max-w-md text-center">
+            <Avatar src={SAGE.avatar_url} size={72} className="mx-auto" />
+            <h3 className="mt-3 text-lg font-black">Hi, I'm Sage 🌿</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              I'm here whenever you want to talk — about anything, big or small. Nothing you say is too much.
+            </p>
+          </div>
+        ) : (
+          messages.map((m) => {
+            const mine = m.role === "user";
+            return (
+              <div key={m.id} className={`flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
+                {!mine && <Avatar src={SAGE.avatar_url} size={28} className="mb-4" />}
+                <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"}`} data-testid={`sage-msg-${m.role}`}>
+                  <div className="whitespace-pre-wrap">{m.text}</div>
+                  <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {sending && (
+          <div className="flex items-end gap-2">
+            <Avatar src={SAGE.avatar_url} size={28} />
+            <div className="rounded-2xl bg-secondary px-3 py-2 text-sm text-muted-foreground">Sage is typing…</div>
+          </div>
+        )}
+
+        {offerCall && (
+          <div className="mx-auto max-w-sm rounded-2xl border border-green-500/40 bg-green-500/10 p-4 text-center" data-testid="sage-offer-call">
+            <p className="text-sm font-semibold">Would it help to talk it out loud?</p>
+            <p className="mt-1 text-xs text-muted-foreground">Sage can call you right now and just listen.</p>
+            <div className="mt-3 flex justify-center gap-3">
+              <button onClick={() => { setOfferCall(false); setInCall(true); }}
+                className="flex items-center gap-1.5 rounded-full bg-green-500 px-4 py-1.5 text-sm font-bold text-white" data-testid="sage-accept-call">
+                <Phone size={15} /> Talk to Sage
+              </button>
+              <button onClick={() => setOfferCall(false)} className="rounded-full bg-secondary px-4 py-1.5 text-sm font-semibold" data-testid="sage-decline-call">
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell Sage what's on your mind…"
+          className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="sage-input" />
+        <Button type="submit" disabled={sending || !text.trim()} className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="sage-send">
+          {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+        </Button>
+      </form>
+
+      {inCall && <SageCall onEnd={() => { setInCall(false); load(); }} onCrisis={() => setCrisis(true)} />}
+    </section>
+  );
+}
+
+function SageCall({ onEnd, onCrisis }) {
+  const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
+  const [caption, setCaption] = useState("");
+  const audioRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const endedRef = useRef(false);
+
+  const playAudio = useCallback((url) => new Promise((resolve) => {
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setStatus("speaking");
+    audio.onended = () => { if (!endedRef.current) setStatus("idle"); resolve(); };
+    audio.onerror = () => { if (!endedRef.current) setStatus("idle"); resolve(); };
+    audio.play().catch(() => { setStatus("idle"); resolve(); });
+  }), []);
+
+  // opening greeting
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.post("/sage/voice-turn", { greeting: true });
+        if (endedRef.current) return;
+        setCaption(r.reply);
+        await playAudio(r.audio_url);
+      } catch (e) {
+        if (!endedRef.current) { toast.error("Couldn't start the voice call"); onEnd(); }
+      }
+    })();
+    return () => { endedRef.current = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const rec = new MediaRecorder(stream);
+      recorderRef.current = rec;
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
+      rec.start();
+      setStatus("recording");
+    } catch {
+      toast.error("Allow microphone access to talk with Sage");
+    }
+  };
+
+  const stopRecordingAndSend = async () => {
+    const rec = recorderRef.current;
+    if (!rec) return;
+    setStatus("thinking");
+    const done = new Promise((res) => { rec.onstop = res; });
+    rec.stop();
+    await done;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+    try {
+      const fd = new FormData();
+      fd.append("audio", blob, "speech.webm");
+      const sttRes = await fetch(`${BACKEND_URL}/api/sage/stt`, {
+        method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd,
+      });
+      if (!sttRes.ok) throw new Error("stt");
+      const { text } = await sttRes.json();
+      if (!text) { toast("I didn't catch that — try again"); setStatus("idle"); return; }
+      const r = await api.post("/sage/voice-turn", { text });
+      if (endedRef.current) return;
+      if (r.crisis) onCrisis();
+      setCaption(r.reply);
+      await playAudio(r.audio_url);
+    } catch {
+      if (!endedRef.current) { toast.error("Something went wrong — let's try again"); setStatus("idle"); }
+    }
+  };
+
+  const hangUp = () => {
+    endedRef.current = true;
+    try { audioRef.current?.pause(); } catch { /* noop */ }
+    try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    onEnd();
+  };
+
+  const recording = status === "recording";
+  const busy = status === "connecting" || status === "thinking" || status === "speaking";
+  const statusText = {
+    connecting: "Connecting…", idle: "Tap the mic and talk", recording: "Listening… tap to send",
+    thinking: "Sage is thinking…", speaking: "Sage is speaking…",
+  }[status];
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-neutral-950 px-6 text-center" data-testid="sage-call-screen">
+      <div className={`relative flex h-40 w-40 items-center justify-center rounded-full ${status === "speaking" ? "animate-pulse" : ""}`}>
+        <div className="absolute inset-0 rounded-full bg-green-500/20 blur-xl" />
+        <Avatar src={SAGE.avatar_url} size={140} />
+      </div>
+      <div className="mt-6 flex items-center justify-center gap-1 text-2xl font-black text-white">
+        Sage AI <BadgeCheck size={20} className="text-green-500" />
+      </div>
+      <div className="mt-1 text-sm text-white/60">{statusText}</div>
+      {caption && <p className="mt-6 max-w-md text-sm leading-relaxed text-white/80" data-testid="sage-caption">“{caption}”</p>}
+
+      <div className="mt-10 flex items-center gap-8">
+        <button
+          onClick={recording ? stopRecordingAndSend : startRecording}
+          disabled={busy}
+          className={`flex h-20 w-20 items-center justify-center rounded-full transition-colors ${recording ? "bg-white text-black" : "bg-green-500 text-white"} disabled:opacity-40`}
+          data-testid="sage-mic-btn"
+        >
+          {recording ? <Square size={26} /> : <Mic size={30} />}
+        </button>
+      </div>
+
+      <button onClick={hangUp} className="mt-10 flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white" data-testid="sage-hangup">
+        <PhoneOff size={24} />
+      </button>
+      <p className="mt-6 max-w-xs text-[11px] text-white/40">
+        Sage is an AI companion, not a substitute for professional help. In a crisis, call or text 988 (US) or your local emergency services.
+      </p>
+    </div>
+  );
+}

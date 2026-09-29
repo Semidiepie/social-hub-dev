@@ -125,3 +125,4 @@ zipp==4.1.0
 py-vapid==1.9.4
 pywebpush==2.5.0
 agora_token_builder==1.0.0
+elevenlabs==2.59.0

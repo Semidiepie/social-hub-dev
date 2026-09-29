@@ -2483,6 +2483,9 @@ app.include_router(_build_share(route_ctx))
 from routes.calls import build_router as _build_calls  # noqa: E402
 app.include_router(_build_calls(route_ctx))
 
+from routes.sage import build_router as _build_sage  # noqa: E402
+app.include_router(_build_sage(route_ctx))
+
 
 @app.on_event("startup")
 async def _start_pet_reminders():
