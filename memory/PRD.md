@@ -73,6 +73,15 @@
 - Every new signup auto-follows the official accounts (`_follow_official`, standard official/system-account onboarding — real follows). Idempotent backfill `ensure_official_follows()` on startup makes existing members follow them and reconciles counts.
 - Web: "OFFICIAL" badge on Profile header + Discover account rows. Verified end-to-end (official profile shows badge + real follower count; auto-follow 5→6 on new signup).
 
+### Invite / Share system + referral growth loop — iteration 40, June 2026
+- `lib/share.js` (web): `shareUrl()` (native share sheet + clipboard fallback), `captureRef()`/`getRef()`/`clearRef()` persist an inbound `?ref=` across navigation.
+- Profile: own profile has an **Invite** button (copies `origin/?ref=<username>`); other profiles have a **Share** button (`origin/@username`).
+- Referral loop: `RegisterBody.ref` (inviter username). On signup the new member auto-follows the inviter + gets a "joined from your invite and followed you" notification, so sharing directly grows real followers. Verified: semidiepie 5→7 across invited signups.
+- App.js captures `?ref=` on load; AuthContext.register sends it and clears it after.
+
+### Message web push — iteration 40, June 2026
+- New DMs now also fire a browser Web Push (`send_web_push`) to each recipient, matching follow/like/comment coverage (previously DMs only sent mobile Expo push). `send_web_push` exposed via route_ctx to `routes/messages.py`. All interactive notification types (follow, like, comment, message) now push to both mobile + web. Verified DM send path runs the web-push call without error (actual delivery requires the recipient to have granted browser notifications + VAPID configured, which it is).
+
 ### Stories (mobile-only in v1 web)
 - 24-hour ephemeral image/video stories with view tracking.
 

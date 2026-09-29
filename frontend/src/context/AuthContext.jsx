@@ -84,10 +84,12 @@ export function AuthProvider({ children }) {
   }, []);
 
   const register = useCallback(async (payload) => {
-    const resp = await api.post("/auth/register", payload, false);
+    const ref = (() => { try { return localStorage.getItem("postmeplex.ref") || undefined; } catch { return undefined; } })();
+    const resp = await api.post("/auth/register", { ...payload, ref }, false);
     setToken(resp.access_token);
     setUser(resp.user);
     rememberAccount(resp.user);
+    try { localStorage.removeItem("postmeplex.ref"); } catch { /* ignore */ }
     return resp.user;
   }, []);
 

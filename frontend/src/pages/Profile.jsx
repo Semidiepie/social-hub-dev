@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Loader2, MessageCircle, BadgeCheck, Settings as SettingsIcon, Play, Heart } from "lucide-react";
+import { Loader2, MessageCircle, BadgeCheck, Settings as SettingsIcon, Play, Heart, Share2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { shareUrl, origin } from "@/lib/share";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -137,9 +138,24 @@ export default function ProfilePage() {
               </div>
               <div className="flex flex-shrink-0 gap-2">
                 {isSelf ? (
-                  <Button onClick={() => navigate("/settings")} variant="outline" className="flex-1 gap-2 sm:flex-none" data-testid="profile-settings-btn">
-                    <SettingsIcon size={16} /> Edit profile
-                  </Button>
+                  <>
+                    <Button onClick={() => navigate("/settings")} variant="outline" className="flex-1 gap-2 sm:flex-none" data-testid="profile-settings-btn">
+                      <SettingsIcon size={16} /> Edit profile
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        shareUrl(
+                          `${origin()}/?ref=${target.username}`,
+                          `Join me on PostMePlex`,
+                          "Invite link copied — share it to grow your followers!",
+                        )
+                      }
+                      className="flex-1 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 sm:flex-none"
+                      data-testid="profile-invite-btn"
+                    >
+                      <Share2 size={16} /> Invite
+                    </Button>
+                  </>
                 ) : (
                   <>
                     <Button
@@ -157,6 +173,14 @@ export default function ProfilePage() {
                     </Button>
                     <Button variant="outline" onClick={startDM} className="flex-1 gap-2 sm:flex-none" data-testid="profile-message-btn">
                       <MessageCircle size={16} /> Message
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => shareUrl(`${origin()}/@${target.username}`, `${target.display_name} on PostMePlex`, "Profile link copied!")}
+                      className="gap-2"
+                      data-testid="profile-share-btn"
+                    >
+                      <Share2 size={16} />
                     </Button>
                   </>
                 )}

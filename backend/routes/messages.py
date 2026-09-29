@@ -74,6 +74,7 @@ def build_router(ctx) -> APIRouter:
     logger = ctx.logger
     get_current_user = ctx.get_current_user
     send_push = ctx.send_push
+    send_web_push = getattr(ctx, "send_web_push", None)
 
     router = APIRouter(tags=["messages"])
 
@@ -200,6 +201,15 @@ def build_router(ctx) -> APIRouter:
                     "action_url": f"/messages/{conv_id}",
                 },
             )
+            # Also fire a browser (web app) push for each recipient.
+            if send_web_push:
+                for r in recipients:
+                    await send_web_push(
+                        r,
+                        f"New message from {current['display_name']}",
+                        preview[:140],
+                        f"/messages/{conv_id}",
+                    )
         except Exception as e:
             logger.warning(f"DM push failed: {e}")
         return {**msg, "created_at": msg["created_at"].isoformat()}

@@ -139,6 +139,7 @@ class RegisterBody(BaseModel):
     password: str = Field(min_length=6)
     display_name: str = Field(min_length=1, max_length=40)
     pin: str = Field(pattern=r"^\d{4}$")
+    ref: Optional[str] = None  # username of the inviter (referral link)
 
 
 class LoginBody(BaseModel):
@@ -605,6 +606,30 @@ async def register(body: RegisterBody):
     }
     await db.users.insert_one(doc)
     await _follow_official(user_id)
+    # Referral growth loop: if they joined via someone's invite link, the new
+    # member follows the inviter so sharing directly grows real followers.
+    if body.ref:
+        inviter = await db.users.find_one({"username": body.ref.lower().strip()})
+        if inviter and inviter["id"] != user_id:
+            await db.follows.insert_one({
+                "id": str(uuid.uuid4()),
+                "follower_id": user_id,
+                "followee_id": inviter["id"],
+                "created_at": now(),
+            })
+            await db.users.update_one({"id": inviter["id"]}, {"$inc": {"followers": 1}})
+            await db.users.update_one({"id": user_id}, {"$inc": {"following": 1}})
+            await db.notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": inviter["id"],
+                "type": "follow",
+                "actor_id": user_id,
+                "actor_name": body.display_name,
+                "actor_avatar": avatar_or_default(doc.get("avatar_url")),
+                "text": "joined from your invite and followed you",
+                "read": False,
+                "created_at": now(),
+            })
     doc = await db.users.find_one({"id": user_id}, {"_id": 0})
     try:
         await send_push(
@@ -2299,6 +2324,7 @@ route_ctx = SimpleNamespace(
     avatar_or_default=avatar_or_default,
     default_avatar_url=DEFAULT_AVATAR_URL,
     send_push=send_push,
+    send_web_push=send_web_push,
 )
 
 from routes.rooms_blogs import build_router as _build_rooms_blogs  # noqa: E402

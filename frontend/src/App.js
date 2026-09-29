@@ -7,6 +7,7 @@ import { PlayerBar } from "@/components/PlayerBar";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useNotificationBadge } from "@/hooks/useNotificationBadge";
+import { captureRef } from "@/lib/share";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import HomePage from "@/pages/Home";
@@ -54,6 +55,7 @@ function Shell({ children }) {
 }
 
 export default function App() {
+  React.useEffect(() => { captureRef(); }, []);
   return (
     <BrowserRouter>
       <AuthProvider>
