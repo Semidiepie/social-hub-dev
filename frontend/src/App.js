@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
 import { PlayerProvider } from "@/context/PlayerContext";
+import { CallProvider } from "@/context/CallContext";
 import { PlayerBar } from "@/components/PlayerBar";
 import { AppShell } from "@/components/AppShell";
 import InstallAppPrompt from "@/components/InstallAppPrompt";
@@ -66,6 +67,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <PlayerProvider>
+          <CallProvider>
           <Toaster
             theme="dark"
             position="top-right"
@@ -163,6 +165,7 @@ export default function App() {
           <PlayerBar />
           <InstallAppPrompt />
           <ThemeLayer />
+          </CallProvider>
         </PlayerProvider>
       </AuthProvider>
     </BrowserRouter>

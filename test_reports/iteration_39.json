@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 39 — Messaging feature bundle (mutual-follow 1:1 gate, group CRUD, message/preview enrichment, WebRTC signaling, public frame) verified end-to-end on backend + web UI. Backend pytest: 16/16 passed in test_iteration39_chats_calls.py covering (a) POST /api/conversations 403 when non-mutual (both zero + one-way), 200 when mutual, existing 1:1 returned without re-checking gate, group create (name) exempt from gate + admin_id=creator; (b) group PATCH rename 200 for admin / 403 for member / 400 on 1:1 conv, POST /members admin-only add, DELETE /members admin remove + self-leave, admin handoff on admin-leave, auto-delete when <2 remain; (c) send_message + list_messages include sender_verified/remembering/frame/display_name; conv_preview exposes is_group/admin_id/members[with cosmetic fields]/peer for 1:1; (d) WebSocket /api/rtc/ws full handshake: ready -> invite -> call_invite+call_started -> accept -> call_peers+peer_joined -> offer relayed -> bye -> peer_left; (e) GET /api/users/{id} publicly exposes equipped_frame + frame_enabled. Web UI (/messages) verified: New button opens dialog with Direct/Group tabs (data-testid new-chat-tab-dm/new-chat-tab-group), attempting a DM with a non-mutual user (semidiepie) fires the sonner toast 'You can only message people who follow you back.', starting a DM with a mutual user opens chat with call-audio-btn + call-video-btn + chat-input + chat-send visible and message renders after send, group create with name+2 members opens the group and group-settings-btn is present, group settings dialog opens with 3 members, rename (group-rename-input + group-rename-save) works, group-remove-{uid} removes a member and group-add-{uid} re-adds them, tapping call-audio-btn opens the full call-screen overlay (Ringing… + Waiting for others to join…) with call-toggle-mic + call-hangup buttons — outgoing call flow reaches the signaling layer as expected (headless can't validate actual audio/video media, per review-request note).",
+  "platforms_tested": ["web"],
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "Messages new-chat modal", "issues": ["Modal has no Escape-to-close handler; only backdrop click / X icon dismiss. Minor UX nit — not blocking."]}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration39_chats_calls.py",
+    "/app/test_reports/pytest/iteration39_chats_calls.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/messages.py:conv_preview always sets admin_id=created_by even for 1:1 chats. Harmless (UI only reads it on is_group), but semantically admin_id on a DM is meaningless; consider setting it to None when !is_group.",
+    "routes/messages.py add_members / remove_member / update_conversation use `is_group = len(member_ids) > 2 or bool(name)`. A group of 2 that was created with a name works, but if the last member is removed leaving exactly 2 named members, the group is auto-deleted (correct at len<2). Consistent, just call out.",
+    "routes/calls.py `invite` handler does NOT gate on mutual-follow — a caller in an existing conv can still ring, which is intended (only NEW 1:1 needs the gate). Good.",
+    "routes/calls.py `accept` / `offer` / `answer` / `ice` relay does not validate that both users are members of the same conversation for the given call_id. A malicious client that guessed a call_id could join a room. Consider tracking conv_id per call_id on invite and enforcing membership on accept.",
+    "routes/messages.py send_message stores sender_frame at write-time; list_messages then re-overlays it from the sender's current cosmetics. If a user changes their equipped_frame later, historical rows re-render with the NEW frame — which is the intended live-cosmetic behavior but worth noting.",
+    "Messages.jsx Modal uses onClick on the backdrop for close but has no keydown handler for Escape. Minor UX polish.",
+    "Messages.jsx polls /api/conversations every 8s and /api/conversations/{id}/messages every 4s. WebSocket-driven realtime would be nicer given /api/rtc/ws already exists per-user.",
+    "CORSMiddleware allow_origins=['*'] + allow_credentials=True (pre-existing from earlier iterations) — unchanged, still worth locking down."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration39_chats_calls.py"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16)",
+    "frontend": "web 100% for the exercised flows (login, new-chat DM, mutual gate error toast, group create, group rename, member add/remove, call-screen overlay on audio-call trigger)"
+  },
+  "test_credentials": "Founder semidiepie / PIN 7455 (used in mutual-gate negative test). Scratch users test_* / pin 1234 auto-purged on backend restart per /app/memory/test_credentials.md.",
+  "seed_data_creation": "Created ~9 test_* users across pytest + UI runs and a few conversations (1:1 + groups). All will be swept on next backend restart by the auto-purge for test_* accounts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 39 messaging bundle is green on backend + web UI. Actual WebRTC audio/video media transport can NOT be validated headlessly (needs two real browsers + mic/cam) — this run only validates the signaling handshake (server-side) and that the client-side call-screen overlay renders with mic/hangup controls after tapping call-audio-btn. If a future run wants to validate the group-mesh path, the `test_ws_call_signaling_handshake` pattern in test_iteration39_chats_calls.py can be extended by opening a 3rd WS and asserting call_peers grows. Regression file is safe to rerun. The Modal-Escape-close nit and the routes/calls.py membership-on-accept hardening (see critical_code_review_comments) are worth picking up if the main agent wants extra polish, but are not required for the feature as specified.",
+  "rca of the issue": ""
+}

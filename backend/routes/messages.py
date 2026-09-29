@@ -22,6 +22,7 @@ def _av(url: Optional[str]) -> str:
 class CreateConversationBody(BaseModel):
     member_ids: list[str]
     name: Optional[str] = None  # group name; if None → 1:1
+    avatar_url: Optional[str] = None  # group photo (groups only)
 
 
 class SendMessageBody(BaseModel):
@@ -33,14 +34,39 @@ class ReactionBody(BaseModel):
     emoji: str = Field(min_length=1, max_length=8)
 
 
+class UpdateConversationBody(BaseModel):
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+class AddMembersBody(BaseModel):
+    member_ids: list[str]
+
+
+def _member_public(m: dict) -> dict:
+    return {
+        "id": m["id"],
+        "username": m["username"],
+        "display_name": m["display_name"],
+        "avatar_url": _av(m.get("avatar_url")),
+        "is_verified": bool(m.get("is_verified", False)),
+        "remembering": bool(m.get("remembering", False)),
+        "equipped_frame": m.get("equipped_frame"),
+        "frame_enabled": m.get("frame_enabled", True),
+    }
+
+
 def conv_preview(c: dict, my_id: str, members_by_id: dict) -> dict:
     other_ids = [m for m in c["member_ids"] if m != my_id]
     is_group = len(c["member_ids"]) > 2 or bool(c.get("name"))
+    members = [_member_public(members_by_id[i]) for i in c["member_ids"] if i in members_by_id]
+    peer = None
     if is_group:
         title = c.get("name") or "Squad chat"
-        avatar = next((members_by_id[i]["avatar_url"] for i in other_ids if i in members_by_id and members_by_id[i].get("avatar_url")), "")
+        avatar = c.get("avatar_url") or next((members_by_id[i].get("avatar_url") for i in other_ids if i in members_by_id and members_by_id[i].get("avatar_url")), "")
     else:
         other = members_by_id.get(other_ids[0]) if other_ids else None
+        peer = _member_public(other) if other else None
         title = other["display_name"] if other else "Unknown"
         avatar = other.get("avatar_url", "") if other else ""
     last = c.get("last_message") or {}
@@ -50,16 +76,10 @@ def conv_preview(c: dict, my_id: str, members_by_id: dict) -> dict:
         "is_group": is_group,
         "title": title,
         "avatar_url": _av(avatar),
+        "admin_id": c.get("created_by"),
         "member_ids": c["member_ids"],
-        "members": [
-            {
-                "id": m["id"],
-                "username": m["username"],
-                "display_name": m["display_name"],
-                "avatar_url": _av(m.get("avatar_url")),
-            }
-            for m in (members_by_id[i] for i in c["member_ids"] if i in members_by_id)
-        ],
+        "members": members,
+        "peer": peer,
         "last_message": last,
         "unread": unread,
         "updated_at": c["updated_at"].isoformat() if isinstance(c.get("updated_at"), datetime) else c.get("updated_at"),
@@ -108,10 +128,18 @@ def build_router(ctx) -> APIRouter:
                     {"id": {"$in": members}}, {"_id": 0, "password_hash": 0}
                 ).to_list(10)
                 return conv_preview(existing, current["id"], {m["id"]: m for m in members_raw})
+            # Mutual-follow gate: you can only START a new 1:1 chat with someone
+            # who follows you back (both directions). Existing chats + groups exempt.
+            other_id = next(m for m in members if m != current["id"])
+            i_follow = await db.follows.find_one({"follower_id": current["id"], "followee_id": other_id})
+            they_follow = await db.follows.find_one({"follower_id": other_id, "followee_id": current["id"]})
+            if not (i_follow and they_follow):
+                raise HTTPException(403, "You can only message people who follow you back.")
         doc = {
             "id": str(uuid.uuid4()),
             "member_ids": members,
             "name": body.name,
+            "avatar_url": body.avatar_url if is_group else None,
             "created_by": current["id"],
             "created_at": now(),
             "updated_at": now(),
@@ -121,7 +149,7 @@ def build_router(ctx) -> APIRouter:
         await db.conversations.insert_one(doc)
         members_raw = await db.users.find(
             {"id": {"$in": members}}, {"_id": 0, "password_hash": 0}
-        ).to_list(10)
+        ).to_list(50)
         return conv_preview(doc, current["id"], {m["id"]: m for m in members_raw})
 
     @router.get("/api/conversations/{conv_id}/messages")
@@ -132,12 +160,26 @@ def build_router(ctx) -> APIRouter:
         rows = await db.messages.find(
             {"conversation_id": conv_id}, {"_id": 0}
         ).sort("created_at", 1).to_list(500)
+        sender_ids = list({m.get("sender_id") for m in rows if m.get("sender_id")})
+        senders: dict = {}
+        if sender_ids:
+            async for u in db.users.find(
+                {"id": {"$in": sender_ids}},
+                {"_id": 0, "id": 1, "display_name": 1, "is_verified": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "avatar_url": 1},
+            ):
+                senders[u["id"]] = u
         for m in rows:
             if isinstance(m.get("created_at"), datetime):
                 m["created_at"] = m["created_at"].isoformat()
             m.setdefault("image_url", None)
             m.setdefault("reactions", [])
             m.setdefault("read_by", [])
+            u = senders.get(m.get("sender_id"), {})
+            m["sender_display_name"] = m.get("sender_display_name") or u.get("display_name") or m.get("sender_username")
+            m["sender_verified"] = bool(u.get("is_verified", m.get("sender_verified", False)))
+            m["sender_remembering"] = bool(u.get("remembering", m.get("sender_remembering", False)))
+            m["sender_frame"] = u.get("equipped_frame") if u.get("frame_enabled", True) else None
+            m["sender_avatar"] = _av(m.get("sender_avatar") or u.get("avatar_url"))
         last_id = rows[-1]["id"] if rows else None
         set_doc: dict = {f"unread.{current['id']}": 0}
         if last_id:
@@ -164,7 +206,11 @@ def build_router(ctx) -> APIRouter:
             "conversation_id": conv_id,
             "sender_id": current["id"],
             "sender_username": current["username"],
+            "sender_display_name": current.get("display_name", current["username"]),
             "sender_avatar": _av(current.get("avatar_url")),
+            "sender_verified": bool(current.get("is_verified", False)),
+            "sender_remembering": bool(current.get("remembering", False)),
+            "sender_frame": current.get("equipped_frame") if current.get("frame_enabled", True) else None,
             "text": body.text,
             "image_url": body.image_url,
             "reactions": [],
@@ -310,5 +356,84 @@ def build_router(ctx) -> APIRouter:
                 {"id": conv_id}, {"$addToSet": {"hidden_for": current["id"]}}
             )
         return {"status": "deleted"}
+
+    @router.patch("/api/conversations/{conv_id}")
+    async def update_conversation(conv_id: str, body: UpdateConversationBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Rename a group or change its photo. Admin (creator) only, groups only."""
+        c = await db.conversations.find_one({"id": conv_id})
+        if not c or current["id"] not in c["member_ids"]:
+            raise HTTPException(404, "Conversation not found")
+        is_group = len(c["member_ids"]) > 2 or bool(c.get("name"))
+        if not is_group:
+            raise HTTPException(400, "Only group chats can be edited")
+        if c.get("created_by") != current["id"]:
+            raise HTTPException(403, "Only the group admin can edit this group")
+        patch: dict = {}
+        if body.name is not None:
+            name = body.name.strip()[:60]
+            if not name:
+                raise HTTPException(400, "Group name cannot be empty")
+            patch["name"] = name
+        if body.avatar_url is not None:
+            patch["avatar_url"] = body.avatar_url or None
+        if patch:
+            await db.conversations.update_one({"id": conv_id}, {"$set": patch})
+        c = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
+        members_raw = await db.users.find({"id": {"$in": c["member_ids"]}}, {"_id": 0, "password_hash": 0}).to_list(50)
+        return conv_preview(c, current["id"], {m["id"]: m for m in members_raw})
+
+    @router.post("/api/conversations/{conv_id}/members")
+    async def add_members(conv_id: str, body: AddMembersBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Add members to a group. Admin (creator) only."""
+        c = await db.conversations.find_one({"id": conv_id})
+        if not c or current["id"] not in c["member_ids"]:
+            raise HTTPException(404, "Conversation not found")
+        is_group = len(c["member_ids"]) > 2 or bool(c.get("name"))
+        if not is_group:
+            raise HTTPException(400, "Only group chats can have members added")
+        if c.get("created_by") != current["id"]:
+            raise HTTPException(403, "Only the group admin can add members")
+        to_add = [m for m in set(body.member_ids) if m not in c["member_ids"]]
+        if to_add:
+            valid = await db.users.count_documents({"id": {"$in": to_add}})
+            if valid != len(to_add):
+                raise HTTPException(400, "Invalid member ids")
+            await db.conversations.update_one(
+                {"id": conv_id},
+                {"$addToSet": {"member_ids": {"$each": to_add}}, "$set": {"updated_at": now()}},
+            )
+            for m in to_add:
+                await db.conversations.update_one({"id": conv_id}, {"$set": {f"unread.{m}": 0}})
+        c = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
+        members_raw = await db.users.find({"id": {"$in": c["member_ids"]}}, {"_id": 0, "password_hash": 0}).to_list(50)
+        return conv_preview(c, current["id"], {m["id"]: m for m in members_raw})
+
+    @router.delete("/api/conversations/{conv_id}/members/{user_id}")
+    async def remove_member(conv_id: str, user_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        """Remove a member (admin only) or leave the group yourself."""
+        c = await db.conversations.find_one({"id": conv_id})
+        if not c or current["id"] not in c["member_ids"]:
+            raise HTTPException(404, "Conversation not found")
+        is_group = len(c["member_ids"]) > 2 or bool(c.get("name"))
+        if not is_group:
+            raise HTTPException(400, "Not a group chat")
+        is_self = user_id == current["id"]
+        if not is_self and c.get("created_by") != current["id"]:
+            raise HTTPException(403, "Only the group admin can remove members")
+        if user_id not in c["member_ids"]:
+            raise HTTPException(404, "Member not in group")
+        await db.conversations.update_one(
+            {"id": conv_id},
+            {"$pull": {"member_ids": user_id}, "$unset": {f"unread.{user_id}": ""}, "$set": {"updated_at": now()}},
+        )
+        remaining = [m for m in c["member_ids"] if m != user_id]
+        if len(remaining) < 2:
+            await db.conversations.delete_one({"id": conv_id})
+            await db.messages.delete_many({"conversation_id": conv_id})
+            return {"status": "removed", "deleted": True}
+        # If the admin left, hand admin to the next remaining member.
+        if user_id == c.get("created_by"):
+            await db.conversations.update_one({"id": conv_id}, {"$set": {"created_by": remaining[0]}})
+        return {"status": "removed", "deleted": False}
 
     return router
