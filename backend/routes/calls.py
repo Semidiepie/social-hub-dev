@@ -1,28 +1,49 @@
-"""Audio / video call signaling relay (WebRTC).
+"""Audio / video call signaling relay (WebRTC) + Agora token service.
 
-A single personal WebSocket per user (`/api/rtc/ws?token=JWT`) is used to:
-  * deliver incoming-call invites anywhere in the app,
-  * relay WebRTC signaling (offer / answer / ICE) between conversation members,
-  * coordinate a mesh call "room" so group calls connect everyone to everyone.
-
-No third-party media provider is used — the browsers connect peer-to-peer over
-WebRTC using public STUN servers. (A TURN server would be needed for strict
-NATs in production; STUN covers most networks.)
+A single personal WebSocket per user (`/api/rtc/ws?token=JWT`) delivers
+incoming-call invites and coordinates a call "room" (who is ringing / joined).
+The actual audio/video MEDIA is carried by **Agora** (agora-rtc-sdk-ng on the
+web client) — reliable SFU, no TURN needed. `POST /api/rtc/agora-token` mints a
+short-lived RTC token (App ID + App Certificate from env) for the call channel.
 
 NOTE: intentionally NO `from __future__ import annotations` (postponed
 annotations break closure-local `Depends` in these routers).
 """
+import hashlib
+import os
+import time
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
+
+try:
+    from agora_token_builder import RtcTokenBuilder
+except Exception:  # pragma: no cover - import guard
+    RtcTokenBuilder = None
+
+AGORA_APP_ID = os.environ.get("AGORA_APP_ID", "")
+AGORA_APP_CERTIFICATE = os.environ.get("AGORA_APP_CERTIFICATE", "")
+AGORA_TOKEN_TTL = 3600  # 1 hour
+_ROLE_PUBLISHER = 1
 
 _DEFAULT_AVATAR = ""
 
 
 def _av(url: Optional[str]) -> str:
     return url or _DEFAULT_AVATAR
+
+
+def agora_uid(user_id: str) -> int:
+    """Deterministic uint32 Agora UID derived from our user id, so the token
+    UID and the signaling-advertised UID always match for a given user."""
+    return int(hashlib.md5(user_id.encode()).hexdigest(), 16) % 2_000_000_000 + 1
+
+
+class AgoraTokenBody(BaseModel):
+    channel: str = Field(min_length=1, max_length=64)
 
 
 class RtcHub:
@@ -93,8 +114,22 @@ def build_router(ctx) -> APIRouter:
     db = ctx.db
     logger = ctx.logger
     user_from_token = ctx.user_from_token
+    get_current_user = ctx.get_current_user
 
     router = APIRouter(tags=["calls"])
+
+    @router.post("/api/rtc/agora-token")
+    async def agora_token(body: AgoraTokenBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Mint a short-lived Agora RTC publisher token for a call channel.
+        The UID is derived from the authenticated user (never client-supplied)."""
+        if not (AGORA_APP_ID and AGORA_APP_CERTIFICATE and RtcTokenBuilder):
+            raise HTTPException(503, "Calling is not configured")
+        uid = agora_uid(current["id"])
+        expire_at = int(time.time()) + AGORA_TOKEN_TTL
+        token = RtcTokenBuilder.buildTokenWithUid(
+            AGORA_APP_ID, AGORA_APP_CERTIFICATE, body.channel, uid, _ROLE_PUBLISHER, expire_at
+        )
+        return {"app_id": AGORA_APP_ID, "channel": body.channel, "uid": uid, "token": token, "expires_in": AGORA_TOKEN_TTL}
 
     @router.websocket("/api/rtc/ws")
     async def rtc_socket(websocket: WebSocket):
@@ -115,6 +150,7 @@ def build_router(ctx) -> APIRouter:
             "is_verified": user.get("is_verified", False),
             "remembering": user.get("remembering", False),
             "equipped_frame": user.get("equipped_frame") if user.get("frame_enabled", True) else None,
+            "agora_uid": agora_uid(uid),
         }
         active_calls: set[str] = set()
         try:

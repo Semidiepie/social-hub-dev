@@ -1,16 +1,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import AgoraRTC from "agora-rtc-sdk-ng";
 import { Phone, PhoneOff, Video, Mic, MicOff, VideoOff, BadgeCheck } from "lucide-react";
-import { getToken } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
 import { frameOf, badgeCls } from "@/lib/format";
 import { toast } from "sonner";
 
 const BASE_URL = process.env.REACT_APP_BACKEND_URL;
-const ICE = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-];
 
 const CallContext = createContext(null);
 export const useCall = () => useContext(CallContext);
@@ -24,13 +21,15 @@ function wsUrl() {
 export function CallProvider({ children }) {
   const { user } = useAuth();
   const wsRef = useRef(null);
-  const pcsRef = useRef(new Map()); // remoteId -> RTCPeerConnection
-  const localStreamRef = useRef(null);
-  const callRef = useRef(null); // mirror of call for handlers
+  const clientRef = useRef(null);        // Agora client
+  const localTracksRef = useRef([]);     // [micTrack, camTrack?]
+  const userMapRef = useRef({});         // agora_uid -> user info (from signaling)
+  const callRef = useRef(null);
 
   const [connected, setConnected] = useState(false);
   const [call, setCall] = useState(null); // { callId, convId, media, status, from, isGroup, title }
-  const [peers, setPeers] = useState({}); // remoteId -> { info, stream }
+  const [peers, setPeers] = useState({}); // agoraUid -> { info, videoTrack, hasVideo }
+  const [localVideoTrack, setLocalVideoTrack] = useState(null);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
 
@@ -41,50 +40,72 @@ export function CallProvider({ children }) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
   }, []);
 
+  const leaveAgora = useCallback(async () => {
+    localTracksRef.current.forEach((t) => { try { t.stop(); t.close(); } catch { /* noop */ } });
+    localTracksRef.current = [];
+    setLocalVideoTrack(null);
+    const client = clientRef.current;
+    if (client) { try { await client.leave(); } catch { /* noop */ } clientRef.current = null; }
+  }, []);
+
   const cleanup = useCallback(() => {
-    pcsRef.current.forEach((pc) => { try { pc.close(); } catch { /* noop */ } });
-    pcsRef.current.clear();
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
-    }
+    leaveAgora();
     setPeers({});
     setCall(null);
     setMicOn(true);
     setCamOn(true);
-  }, []);
+  }, [leaveAgora]);
 
-  const getLocalStream = useCallback(async (media) => {
-    if (localStreamRef.current) return localStreamRef.current;
-    const constraints = { audio: true, video: media === "video" };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    localStreamRef.current = stream;
-    return stream;
-  }, []);
-
-  const attachPeerStream = useCallback((remoteId, stream, info) => {
-    setPeers((prev) => ({ ...prev, [remoteId]: { info: info || prev[remoteId]?.info, stream } }));
-  }, []);
-
-  const createPeer = useCallback(async (remoteId, info, initiator) => {
-    if (pcsRef.current.has(remoteId)) return pcsRef.current.get(remoteId);
-    const pc = new RTCPeerConnection({ iceServers: ICE });
-    pcsRef.current.set(remoteId, pc);
-    const cur = callRef.current;
-    const local = await getLocalStream(cur?.media || "audio");
-    local.getTracks().forEach((track) => pc.addTrack(track, local));
-    pc.onicecandidate = (e) => {
-      if (e.candidate) send({ type: "ice", call_id: cur?.callId, to: remoteId, candidate: e.candidate });
-    };
-    pc.ontrack = (e) => attachPeerStream(remoteId, e.streams[0], info);
-    setPeers((prev) => ({ ...prev, [remoteId]: { info: info || prev[remoteId]?.info, stream: prev[remoteId]?.stream } }));
-    if (initiator) {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      send({ type: "offer", call_id: cur?.callId, to: remoteId, sdp: pc.localDescription });
+  const joinAgora = useCallback(async (channel, media) => {
+    let data;
+    try {
+      data = await api.post("/rtc/agora-token", { channel });
+    } catch {
+      toast.error("Calling isn't available right now");
+      throw new Error("token");
     }
-    return pc;
-  }, [attachPeerStream, getLocalStream, send]);
+    const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+    clientRef.current = client;
+
+    client.on("user-published", async (u, mediaType) => {
+      await client.subscribe(u, mediaType);
+      if (mediaType === "audio") { try { u.audioTrack.play(); } catch { /* noop */ } }
+      setPeers((prev) => ({
+        ...prev,
+        [u.uid]: {
+          info: userMapRef.current[u.uid] || prev[u.uid]?.info,
+          videoTrack: mediaType === "video" ? u.videoTrack : prev[u.uid]?.videoTrack,
+          hasVideo: mediaType === "video" ? true : prev[u.uid]?.hasVideo,
+        },
+      }));
+      setCall((c) => (c && c.status !== "active" ? { ...c, status: "active" } : c));
+    });
+    client.on("user-unpublished", (u, mediaType) => {
+      if (mediaType === "video") {
+        setPeers((prev) => (prev[u.uid] ? { ...prev, [u.uid]: { ...prev[u.uid], videoTrack: null, hasVideo: false } } : prev));
+      }
+    });
+    client.on("user-left", (u) => {
+      setPeers((prev) => { const n = { ...prev }; delete n[u.uid]; return n; });
+      const cur = callRef.current;
+      if (cur && !cur.isGroup) { toast("Call ended"); cleanup(); }
+    });
+    client.on("token-privilege-will-expire", async () => {
+      try { const fresh = await api.post("/rtc/agora-token", { channel }); await client.renewToken(fresh.token); } catch { /* noop */ }
+    });
+
+    await client.join(data.app_id, channel, data.token, data.uid);
+    const mic = await AgoraRTC.createMicrophoneAudioTrack();
+    const tracks = [mic];
+    let cam = null;
+    if (media === "video") {
+      cam = await AgoraRTC.createCameraVideoTrack();
+      tracks.push(cam);
+      setLocalVideoTrack(cam);
+    }
+    localTracksRef.current = tracks;
+    await client.publish(tracks);
+  }, [cleanup]);
 
   // ---- Incoming signaling ----
   const handleMessage = useCallback(async (m) => {
@@ -92,41 +113,16 @@ export function CallProvider({ children }) {
     switch (m.type) {
       case "call_invite": {
         if (cur) { send({ type: "busy", call_id: m.call_id, to: m.from?.id }); return; }
+        if (m.from?.agora_uid) userMapRef.current[m.from.agora_uid] = m.from;
         setCall({ callId: m.call_id, convId: m.conv_id, media: m.media, status: "incoming", from: m.from, isGroup: m.is_group, title: m.conv_title });
         break;
       }
       case "call_started":
         setCall((c) => (c ? { ...c, ringing: m.ringing } : c));
         break;
-      case "call_peers": {
-        // I just accepted — I'm the new joiner; initiate to each existing peer.
-        for (const pid of m.peers || []) {
-          await createPeer(pid, null, true);
-        }
-        break;
-      }
       case "peer_joined": {
-        setCall((c) => (c && c.status !== "active" ? { ...c, status: "active" } : c));
-        setPeers((prev) => ({ ...prev, [m.from.id]: { info: m.from, stream: prev[m.from.id]?.stream } }));
-        break;
-      }
-      case "offer": {
-        const pc = await createPeer(m.from, null, false);
-        await pc.setRemoteDescription(new RTCSessionDescription(m.sdp));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        send({ type: "answer", call_id: m.call_id, to: m.from, sdp: pc.localDescription });
-        setCall((c) => (c && c.status !== "active" ? { ...c, status: "active" } : c));
-        break;
-      }
-      case "answer": {
-        const pc = pcsRef.current.get(m.from);
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(m.sdp));
-        break;
-      }
-      case "ice": {
-        const pc = pcsRef.current.get(m.from);
-        if (pc && m.candidate) { try { await pc.addIceCandidate(new RTCIceCandidate(m.candidate)); } catch { /* noop */ } }
+        if (m.from?.agora_uid) userMapRef.current[m.from.agora_uid] = m.from;
+        setCall((c) => (c && c.status === "outgoing" ? { ...c, status: "ringing_joined" } : c));
         break;
       }
       case "decline":
@@ -139,18 +135,14 @@ export function CallProvider({ children }) {
         break;
       }
       case "peer_left": {
-        const pc = pcsRef.current.get(m.from);
-        if (pc) { try { pc.close(); } catch { /* noop */ } pcsRef.current.delete(m.from); }
-        setPeers((prev) => { const n = { ...prev }; delete n[m.from]; return n; });
-        // In a 1:1 call, the other leaving ends it.
-        const c2 = callRef.current;
-        if (c2 && !c2.isGroup) { toast("Call ended"); cleanup(); }
+        const cur2 = callRef.current;
+        if (cur2 && !cur2.isGroup) { toast("Call ended"); cleanup(); }
         break;
       }
       default:
         break;
     }
-  }, [cleanup, createPeer, send]);
+  }, [cleanup, send]);
 
   // ---- Socket lifecycle ----
   useEffect(() => {
@@ -189,30 +181,29 @@ export function CallProvider({ children }) {
     if (callRef.current) { toast("You're already in a call"); return; }
     if (!navigator.mediaDevices?.getUserMedia) { toast.error("Calls aren't supported in this browser"); return; }
     const callId = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random()}`;
+    setCall({ callId, convId: conv.id, media, status: "outgoing", isGroup: conv.is_group, title: conv.title });
     try {
-      await getLocalStream(media);
+      await joinAgora(callId, media);
     } catch {
-      toast.error("Allow microphone/camera access to start a call");
+      cleanup();
+      toast.error("Couldn't start the call — allow mic/camera access");
       return;
     }
-    setCall({ callId, convId: conv.id, media, status: "outgoing", isGroup: conv.is_group, title: conv.title });
     send({ type: "invite", conv_id: conv.id, call_id: callId, media });
-  }, [getLocalStream, send]);
+  }, [joinAgora, cleanup, send]);
 
   const acceptCall = useCallback(async () => {
     const cur = callRef.current;
     if (!cur) return;
+    send({ type: "accept", call_id: cur.callId });
+    setCall((c) => ({ ...c, status: "active" }));
     try {
-      await getLocalStream(cur.media);
+      await joinAgora(cur.callId, cur.media);
     } catch {
-      toast.error("Allow microphone/camera access to answer");
       send({ type: "decline", call_id: cur.callId, to: cur.from?.id });
       cleanup();
-      return;
     }
-    setCall((c) => ({ ...c, status: "active" }));
-    send({ type: "accept", call_id: cur.callId });
-  }, [cleanup, getLocalStream, send]);
+  }, [joinAgora, cleanup, send]);
 
   const declineCall = useCallback(() => {
     const cur = callRef.current;
@@ -224,24 +215,24 @@ export function CallProvider({ children }) {
   const hangUp = useCallback(() => {
     const cur = callRef.current;
     if (!cur) return;
-    if (cur.status === "outgoing") send({ type: "cancel", call_id: cur.callId });
+    if (cur.status === "outgoing" || cur.status === "ringing_joined") send({ type: "cancel", call_id: cur.callId });
     else send({ type: "bye", call_id: cur.callId });
     cleanup();
   }, [cleanup, send]);
 
-  const toggleMic = useCallback(() => {
-    const s = localStreamRef.current;
-    if (!s) return;
+  const toggleMic = useCallback(async () => {
+    const t = localTracksRef.current[0];
+    if (!t) return;
     const on = !micOn;
-    s.getAudioTracks().forEach((t) => { t.enabled = on; });
+    await t.setEnabled(on);
     setMicOn(on);
   }, [micOn]);
 
-  const toggleCam = useCallback(() => {
-    const s = localStreamRef.current;
-    if (!s) return;
+  const toggleCam = useCallback(async () => {
+    const t = localTracksRef.current[1];
+    if (!t) return;
     const on = !camOn;
-    s.getVideoTracks().forEach((t) => { t.enabled = on; });
+    await t.setEnabled(on);
     setCamOn(on);
   }, [camOn]);
 
@@ -252,7 +243,7 @@ export function CallProvider({ children }) {
         <CallUI
           call={call}
           peers={peers}
-          localStream={localStreamRef.current}
+          localVideoTrack={localVideoTrack}
           micOn={micOn}
           camOn={camOn}
           onAccept={acceptCall}
@@ -266,28 +257,26 @@ export function CallProvider({ children }) {
   );
 }
 
-function MediaTile({ stream, muted, label, avatar, frame, isVideo }) {
+function AgoraTile({ videoTrack, label, avatar, frame }) {
   const ref = useRef(null);
   useEffect(() => {
-    if (ref.current && stream) ref.current.srcObject = stream;
-  }, [stream]);
-  const hasVideo = isVideo && stream && stream.getVideoTracks && stream.getVideoTracks().some((t) => t.enabled);
+    const el = ref.current;
+    if (videoTrack && el) { try { videoTrack.play(el); } catch { /* noop */ } }
+    return () => { if (videoTrack) { try { videoTrack.stop(); } catch { /* noop */ } } };
+  }, [videoTrack]);
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-2xl bg-black">
-      <video ref={ref} autoPlay playsInline muted={muted} className={`h-full w-full object-cover ${hasVideo ? "" : "hidden"}`} />
-      {!hasVideo && <Avatar src={avatar} size={96} frame={frame} />}
-      {label && (
-        <span className="absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-0.5 text-xs font-semibold text-white">{label}</span>
-      )}
+      <div ref={ref} className={`h-full w-full ${videoTrack ? "" : "hidden"}`} />
+      {!videoTrack && <Avatar src={avatar} size={96} frame={frame} />}
+      {label && <span className="absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-0.5 text-xs font-semibold text-white">{label}</span>}
     </div>
   );
 }
 
-function CallUI({ call, peers, localStream, micOn, camOn, onAccept, onDecline, onHangUp, onToggleMic, onToggleCam }) {
+function CallUI({ call, peers, localVideoTrack, micOn, camOn, onAccept, onDecline, onHangUp, onToggleMic, onToggleCam }) {
   const isVideo = call.media === "video";
   const peerList = Object.values(peers);
 
-  // Incoming ring screen
   if (call.status === "incoming") {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm" data-testid="incoming-call">
@@ -317,29 +306,25 @@ function CallUI({ call, peers, localStream, micOn, camOn, onAccept, onDecline, o
     );
   }
 
-  // Outgoing / active call screen
+  const ringing = call.status === "outgoing" || call.status === "ringing_joined";
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-neutral-950" data-testid="call-screen">
       <div className="flex items-center justify-between px-4 py-3 text-white">
         <div className="font-bold">{call.title || "Call"}</div>
-        <div className="text-xs text-white/70">
-          {call.status === "outgoing" ? "Ringing…" : (isVideo ? "Video call" : "Audio call")}
-        </div>
+        <div className="text-xs text-white/70">{ringing ? "Ringing…" : (isVideo ? "Video call" : "Audio call")}</div>
       </div>
 
       <div className="grid flex-1 grid-cols-1 gap-2 overflow-hidden p-3 sm:grid-cols-2">
         {peerList.length === 0 ? (
           <div className="col-span-full flex items-center justify-center text-white/70">
-            {call.status === "outgoing" ? "Waiting for others to join…" : "Connecting…"}
+            {ringing ? "Waiting for others to join…" : "Connecting…"}
           </div>
         ) : (
           peerList.map((p, i) => (
-            <MediaTile
-              key={p.info?.id || i}
-              stream={p.stream}
-              muted={false}
-              isVideo={isVideo}
-              label={p.info?.display_name}
+            <AgoraTile
+              key={i}
+              videoTrack={p.hasVideo ? p.videoTrack : null}
+              label={p.info?.display_name || "Guest"}
               avatar={p.info?.avatar_url}
               frame={frameOf(p.info)}
             />
@@ -347,14 +332,12 @@ function CallUI({ call, peers, localStream, micOn, camOn, onAccept, onDecline, o
         )}
       </div>
 
-      {/* Local preview */}
-      {isVideo && localStream && (
-        <div className="pointer-events-none absolute bottom-24 right-4 h-40 w-28 overflow-hidden rounded-xl border border-white/20 shadow-lg">
-          <MediaTile stream={localStream} muted isVideo label="You" />
+      {isVideo && localVideoTrack && (
+        <div className="absolute bottom-24 right-4 h-40 w-28 overflow-hidden rounded-xl border border-white/20 shadow-lg">
+          <AgoraTile videoTrack={camOn ? localVideoTrack : null} label="You" />
         </div>
       )}
 
-      {/* Controls */}
       <div className="flex items-center justify-center gap-6 py-6">
         <button onClick={onToggleMic} className={`flex h-14 w-14 items-center justify-center rounded-full ${micOn ? "bg-white/15 text-white" : "bg-white text-black"}`} data-testid="call-toggle-mic">
           {micOn ? <Mic size={22} /> : <MicOff size={22} />}
