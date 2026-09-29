@@ -12,6 +12,15 @@ import { useAuth } from "@/context/AuthContext";
 import { FollowListDialog } from "@/components/FollowListDialog";
 import { toast } from "sonner";
 
+// Referral "Connector" tiers — honest social proof from real invited signups.
+function connectorTier(n) {
+  n = n || 0;
+  if (n >= 10) return { icon: "🔗", label: "Super Connector" };
+  if (n >= 5) return { icon: "🔗", label: "Connector" };
+  if (n >= 1) return { icon: "🌱", label: "Inviter" };
+  return null;
+}
+
 export default function ProfilePage() {
   const { user: me } = useAuth();
   const { userId, handle } = useParams();
@@ -135,6 +144,14 @@ export default function ProfilePage() {
                   </span>
                 )}
                 <p className="mt-1 truncate text-sm text-muted-foreground">@{target.username}</p>
+                {connectorTier(target.invites_count) && (
+                  <span
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-bold text-primary"
+                    data-testid="profile-connector-badge"
+                  >
+                    {connectorTier(target.invites_count).icon} {connectorTier(target.invites_count).label}
+                  </span>
+                )}
               </div>
               <div className="flex flex-shrink-0 gap-2">
                 {isSelf ? (
@@ -145,7 +162,7 @@ export default function ProfilePage() {
                     <Button
                       onClick={() =>
                         shareUrl(
-                          `${origin()}/?ref=${target.username}`,
+                          `${origin()}/api/share/u/${target.username}`,
                           `Join me on PostMePlex`,
                           "Invite link copied — share it to grow your followers!",
                         )
@@ -176,7 +193,7 @@ export default function ProfilePage() {
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => shareUrl(`${origin()}/@${target.username}`, `${target.display_name} on PostMePlex`, "Profile link copied!")}
+                      onClick={() => shareUrl(`${origin()}/api/share/u/${target.username}`, `${target.display_name} on PostMePlex`, "Profile link copied!")}
                       className="gap-2"
                       data-testid="profile-share-btn"
                     >
@@ -201,6 +218,9 @@ export default function ProfilePage() {
                 onClick={() => setFollowList("following")}
                 testId="profile-following-stat"
               />
+              {target.invites_count > 0 && (
+                <Stat label="Invited" value={target.invites_count} testId="profile-invited-stat" />
+              )}
             </div>
           </div>
         </div>

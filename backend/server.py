@@ -131,6 +131,7 @@ class UserPublic(BaseModel):
     followers: int = 0
     following: int = 0
     posts_count: int = 0
+    invites_count: int = 0
 
 
 class RegisterBody(BaseModel):
@@ -346,6 +347,7 @@ def user_to_public(u: dict) -> UserPublic:
         followers=u.get("followers", 0),
         following=u.get("following", 0),
         posts_count=u.get("posts_count", 0),
+        invites_count=u.get("invites_count", 0),
     )
 
 
@@ -619,6 +621,7 @@ async def register(body: RegisterBody):
             })
             await db.users.update_one({"id": inviter["id"]}, {"$inc": {"followers": 1}})
             await db.users.update_one({"id": user_id}, {"$inc": {"following": 1}})
+            await db.users.update_one({"id": inviter["id"]}, {"$inc": {"invites_count": 1}})
             await db.notifications.insert_one({
                 "id": str(uuid.uuid4()),
                 "user_id": inviter["id"],
@@ -2342,6 +2345,9 @@ app.include_router(_build_live(route_ctx))
 from routes.pets import build_router as _build_pets  # noqa: E402
 _pets_router = _build_pets(route_ctx)
 app.include_router(_pets_router)
+
+from routes.share import build_router as _build_share  # noqa: E402
+app.include_router(_build_share(route_ctx))
 
 
 @app.on_event("startup")

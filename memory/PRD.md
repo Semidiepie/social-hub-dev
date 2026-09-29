@@ -79,6 +79,14 @@
 - Referral loop: `RegisterBody.ref` (inviter username). On signup the new member auto-follows the inviter + gets a "joined from your invite and followed you" notification, so sharing directly grows real followers. Verified: semidiepie 5→7 across invited signups.
 - App.js captures `?ref=` on load; AuthContext.register sends it and clears it after.
 
+### Growth pack: shareable link previews (branded OG cards) + SEO landing pages + invite counter — iteration 44, June 2026
+- **Backend `routes/share.py`** serves public, crawler-friendly landing pages with Open Graph + Twitter Card meta for **reels / profiles / pets**, so shared links show a rich preview on IG/TikTok/X/WhatsApp/iMessage and are Google-indexable. Humans are JS-redirected into the app carrying the sharer's `?ref=` (feeds the referral loop).
+  - Endpoints: `GET /api/share/{reel/{id}|u/{handle}|pet/{handle}}` (HTML) + `.../card.png` (image).
+  - **Auto-generated branded OG card** (1200×630, Pillow, no AI, free): dark #12141c + orange accent, PostMePlex lightning logo + wordmark, kind pill, title, subtitle, stats row, CTA. Reel card = thumbnail; **profile card = user's avatar**; pet card = pet image. Served on-the-fly with `Cache-Control`.
+- **Web share buttons** now point at the rich-preview URLs: reels feed `share`, Profile Invite + Share, and a new **Pet share button** (`pet-share-btn`).
+- **Invite counter (Phase 2):** `invites_count` added to `UserPublic` + incremented on each referred signup (`?ref=`). Profile shows an **"Invited N" stat** (`profile-invited-stat`) and a **Connector tier badge** (`profile-connector-badge`): 🌱 Inviter (1+), 🔗 Connector (5+), 🔗 Super Connector (10+) — honest social proof from real signups.
+- Verified: profile/reel/pet cards render (screenshots), OG/Twitter meta present, invite counter 0→1 on referred signup (founder counter reset to 0 after test). Web-only + universal share links; no mobile change needed.
+
 ### Reels tab full-screen (web) — iteration 43, June 2026
 - **`/reels` is now a full-screen immersive TikTok-style feed** (added to `isFullscreenRoute` in `App.js`, so it renders edge-to-edge outside the app shell). `ReelsFeed.jsx`: video changed from `object-contain` (letterboxed) to `object-cover` (fills), container `fixed inset-0` with a centered `max-w-[500px]` portrait column (fills the whole screen on mobile web). Top overlay bar = back-to-home + "For You" + create(+); right action rail = like / comment / share / mute; bottom = author + caption over a gradient. New `reels-feed-share-*` (copies reel link / native share) and `reels-close` testIDs.
 - Live (`/live/:id` watch, `/live/new` broadcast) were already full-screen routes with `object-cover` — no change needed; they already match the requested immersive layout. Verified reels full-screen via mobile-viewport screenshot.

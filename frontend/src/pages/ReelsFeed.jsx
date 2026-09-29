@@ -194,7 +194,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
   };
 
   const share = async () => {
-    const url = `${window.location.origin}/reels/${reel.id}`;
+    const url = `${window.location.origin}/api/share/reel/${reel.id}`;
     try {
       if (navigator.share) await navigator.share({ title: "Reel on PostMePlex", url });
       else { await navigator.clipboard.writeText(url); toast.success("Reel link copied!"); }

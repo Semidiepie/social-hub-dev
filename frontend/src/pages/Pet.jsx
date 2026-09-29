@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Star, Sparkles, Pencil, Gamepad2, Bath, Drumstick,
-  Loader2, Heart, Smile, Trash2, Check, X, Send, Wand2, Bell, HeartCrack,
+  Loader2, Heart, Smile, Trash2, Check, X, Send, Wand2, Bell, HeartCrack, Share2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -352,6 +352,20 @@ export default function PetPage() {
           <ArrowLeft size={20} />
         </button>
         <h1 className="text-2xl font-black">My {pet.stage} Pet</h1>
+        <button
+          onClick={async () => {
+            const url = `${window.location.origin}/api/share/pet/${user?.username}`;
+            try {
+              if (navigator.share) await navigator.share({ title: `Meet ${pet.name} 🐾`, url });
+              else { await navigator.clipboard.writeText(url); toast.success("Pet link copied — share it!"); }
+            } catch { /* cancelled */ }
+          }}
+          data-testid="pet-share-btn"
+          className="ml-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-900/60 text-emerald-100 hover:bg-emerald-800"
+          aria-label="Share pet"
+        >
+          <Share2 size={18} />
+        </button>
       </div>
 
       {pushSupported() && !pushEnabled && (
