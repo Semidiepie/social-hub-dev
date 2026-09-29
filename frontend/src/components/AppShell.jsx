@@ -219,6 +219,12 @@ export function AppShell({ children }) {
                 <DropdownMenuItem data-testid="topbar-menu-messages" onClick={() => navigate("/messages")}>
                   <MessageSquare size={16} /> Messages
                 </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-videos" onClick={() => navigate("/videos")}>
+                  <Video size={16} /> Videos
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-live" onClick={() => navigate("/live")}>
+                  <Radio size={16} /> Live
+                </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-music" onClick={() => navigate("/music")}>
                   <Music2 size={16} /> Music
                 </DropdownMenuItem>
