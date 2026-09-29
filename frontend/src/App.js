@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { PlayerProvider } from "@/context/PlayerContext";
 import { PlayerBar } from "@/components/PlayerBar";
 import { AppShell } from "@/components/AppShell";
+import InstallAppPrompt from "@/components/InstallAppPrompt";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useNotificationBadge } from "@/hooks/useNotificationBadge";
 import { captureRef } from "@/lib/share";
@@ -157,6 +158,7 @@ export default function App() {
           </Routes>
         </Shell>
           <PlayerBar />
+          <InstallAppPrompt />
         </PlayerProvider>
       </AuthProvider>
     </BrowserRouter>

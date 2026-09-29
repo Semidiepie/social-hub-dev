@@ -79,6 +79,12 @@
 - Referral loop: `RegisterBody.ref` (inviter username). On signup the new member auto-follows the inviter + gets a "joined from your invite and followed you" notification, so sharing directly grows real followers. Verified: semidiepie 5→7 across invited signups.
 - App.js captures `?ref=` on load; AuthContext.register sends it and clears it after.
 
+### "Install app" (Add to Home Screen) helper for mobile web + PWA manifest — iteration 47, June 2026
+- Added a real **PWA manifest** (`public/manifest.json`: name, standalone, theme #12141c, 192/512 icons) + linked it in `index.html` with apple-mobile-web-app metas — so "Add to Home Screen" installs a proper full-screen app.
+- New `components/InstallAppPrompt.jsx` (mounted globally in `App.js`): on **mobile web only** (hidden when already installed/standalone, or dismissed) shows a floating **"Get the app"** pill. Opening it shows an "Install PostMePlex" bottom-sheet with **iPhone (Safari)** and **Android (Chrome)** tabbed step-by-step instructions. If the browser fires `beforeinstallprompt` (Android/Chrome), a native **Install app** button appears and triggers the real install. Dismiss persists via localStorage.
+- Also added an **"Install app"** entry to the mobile top-bar menu (`topbar-menu-install`) that dispatches an `open-install-guide` event → always-available entry point.
+- Web-only; verified via mobile-viewport screenshot (pill + guide modal render). NOTE: this installs the PWA (no App Store), separate from the native iOS/Android builds via Emergent Publish.
+
 ### YouTube-style Videos hub (web) — iteration 46, June 2026
 - New `/videos` page (`pages/Videos.jsx`) — a dedicated YouTube-style long-form video hub in the PostMePlex theme (orange/dark). Header (title + search + Upload), horizontal **category chips** derived from real video categories, a **Featured hero** card (newest public video, play overlay, duration), and a responsive card grid (1/2/3 cols). Each card: 16:9 thumbnail + duration badge, channel avatar, title (2 lines), channel name + **verified badge** (`badgeCls` → red for remembering), `views · timeAgo`. Loading skeletons + empty state. Owner watch/upload flows already existed (`VideoWatch`, `VideoUpload`, `GET /api/videos`).
 - **No backend change** — consumes the existing `GET /api/videos?q=&category=&limit=` (serialize_video already returns author.is_verified/remembering, views, duration, category). Client-side search + category filtering over one fetch.

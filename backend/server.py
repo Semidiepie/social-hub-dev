@@ -197,6 +197,7 @@ class CreateStoryBody(BaseModel):
 
 class CommentBody(BaseModel):
     text: str = Field(min_length=1, max_length=500)
+    parent_id: Optional[str] = None
 
 
 class PushRegisterBody(BaseModel):
@@ -1633,9 +1634,20 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
     post = await db.posts.find_one({"id": post_id})
     if not post:
         raise HTTPException(404, "Post not found")
+    # One-level threading: replies attach to the TOP-LEVEL comment. If replying to
+    # a reply, resolve up to its parent so we never nest deeper than one level.
+    parent_id = None
+    parent_author_id = None
+    if body.parent_id:
+        parent = await db.comments.find_one({"id": body.parent_id, "post_id": post_id})
+        if not parent:
+            raise HTTPException(404, "Parent comment not found")
+        parent_id = parent.get("parent_id") or parent["id"]
+        parent_author_id = parent.get("user_id")
     comment = {
         "id": str(uuid.uuid4()),
         "post_id": post_id,
+        "parent_id": parent_id,
         "user_id": current["id"],
         "username": current["username"],
         "display_name": current["display_name"],
@@ -1647,7 +1659,25 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
     }
     await db.comments.insert_one(comment)
     await db.posts.update_one({"id": post_id}, {"$inc": {"comments_count": 1}})
-    if post["author_id"] != current["id"]:
+    # Notify the person being replied to (if it's someone else).
+    if parent_author_id and parent_author_id != current["id"]:
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": parent_author_id,
+            "type": "comment",
+            "actor_id": current["id"],
+            "actor_name": current["display_name"],
+            "actor_avatar": avatar_or_default(current.get("avatar_url")),
+            "text": f"replied: {body.text[:60]}",
+            "post_id": post_id,
+            "read": False,
+            "created_at": now(),
+        })
+        try:
+            await send_web_push(parent_author_id, "New reply", f"{current['display_name']}: {body.text[:80]}", f"/posts/{post_id}")
+        except Exception as e:
+            logger.warning(f"Reply push failed: {e}")
+    if post["author_id"] != current["id"] and post["author_id"] != parent_author_id:
         await db.notifications.insert_one({
             "id": str(uuid.uuid4()),
             "user_id": post["author_id"],
@@ -1683,17 +1713,20 @@ async def delete_comment(
     comment_id: str,
     current: Annotated[dict, Depends(get_current_user)],
 ):
-    """Delete one of your own comments. Only the comment's author may delete it."""
+    """Delete one of your own comments. Deleting a top-level comment removes its replies too."""
     comment = await db.comments.find_one({"id": comment_id, "post_id": post_id})
     if not comment:
         raise HTTPException(404, "Comment not found")
     if comment.get("user_id") != current["id"]:
         raise HTTPException(403, "You can only delete your own comments")
-    await db.comments.delete_one({"id": comment_id})
+    # Remove the comment + any replies to it.
+    reply_count = await db.comments.count_documents({"post_id": post_id, "parent_id": comment_id})
+    await db.comments.delete_many({"post_id": post_id, "$or": [{"id": comment_id}, {"parent_id": comment_id}]})
+    removed = 1 + reply_count
     await db.posts.update_one(
-        {"id": post_id, "comments_count": {"$gt": 0}}, {"$inc": {"comments_count": -1}}
+        {"id": post_id, "comments_count": {"$gte": removed}}, {"$inc": {"comments_count": -removed}}
     )
-    return {"status": "deleted"}
+    return {"status": "deleted", "removed": removed}
 
 
 # ============================================================

@@ -15,6 +15,7 @@ import {
   Music2,
   Radio,
   PawPrint,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -209,6 +210,9 @@ export function AppShell({ children }) {
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-blogs" onClick={() => navigate("/blogs")}>
                   <BookText size={16} /> Blogs
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-install" onClick={() => window.dispatchEvent(new Event("open-install-guide"))}>
+                  <Download size={16} /> Install app
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-settings" onClick={() => navigate("/settings")}>
                   <Settings size={16} /> Settings
