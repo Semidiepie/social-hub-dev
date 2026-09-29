@@ -125,6 +125,7 @@ class UserPublic(BaseModel):
     is_verified: bool = False
     is_streamer: bool = False
     is_super_admin: bool = False
+    is_official: bool = False
     remembering: bool = False
     remembering_status: Optional[str] = None
     followers: int = 0
@@ -338,6 +339,7 @@ def user_to_public(u: dict) -> UserPublic:
         is_verified=u.get("is_verified", False),
         is_streamer=u.get("is_streamer", False),
         is_super_admin=u.get("is_super_admin", False),
+        is_official=u.get("is_official", False),
         remembering=u.get("remembering", False),
         remembering_status=u.get("remembering_status"),
         followers=u.get("followers", 0),
@@ -602,6 +604,8 @@ async def register(body: RegisterBody):
         "created_at": now(),
     }
     await db.users.insert_one(doc)
+    await _follow_official(user_id)
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0})
     try:
         await send_push(
             recipients=[user_id],
@@ -1389,7 +1393,9 @@ async def discover(filter: Literal["top", "accounts", "tags"] = "top",
     blocked_list = list(blocked)
     if filter == "accounts":
         user_q: dict = {"id": {"$nin": blocked_list}} if blocked_list else {}
-        users = await db.users.find(user_q, {"_id": 0, "password_hash": 0}).sort("followers", -1).limit(30).to_list(30)
+        users = await db.users.find(user_q, {"_id": 0, "password_hash": 0}).sort(
+            [("is_official", -1), ("followers", -1)]
+        ).limit(30).to_list(30)
         items = await annotate_follows([user_to_public(u).model_dump() for u in users], viewer_id)
         return {"type": "accounts", "items": items}
     if filter == "tags":
@@ -2009,6 +2015,20 @@ SEED_USERS = [
         "is_verified": True,
         "is_admin": True,
         "is_super_admin": True,
+        "is_official": True,
+    },
+    {
+        "email": "postmeplex@post.com",
+        "username": "postmeplex",
+        "display_name": "PostMePlex",
+        "password": "PostMePlex#2026",
+        "pin": "1000",
+        "bio": "The official PostMePlex account ⚡ Home of creators, reels & live.",
+        "avatar_url": "https://res.cloudinary.com/dpnrol54k/image/upload/v1790317297/postmeplex_icon_v2.png",
+        "is_verified": True,
+        "is_admin": False,
+        "is_super_admin": False,
+        "is_official": True,
     },
 ]
 
@@ -2149,6 +2169,44 @@ async def purge_legacy_seed_data() -> None:
         logger.info(f"Seed cleanup: purged {removed2.deleted_count} reel(s) with stale stock thumbnails.")
 
 
+async def _follow_official(new_user_id: str) -> None:
+    """Every new (real) member follows the official accounts by default — the
+    standard 'official/system account' onboarding pattern. Real follows, not bots."""
+    officials = await db.users.find({"is_official": True}, {"_id": 0, "id": 1}).to_list(50)
+    for o in officials:
+        oid = o["id"]
+        if oid == new_user_id:
+            continue
+        exists = await db.follows.find_one({"follower_id": new_user_id, "followee_id": oid})
+        if exists:
+            continue
+        await db.follows.insert_one({
+            "id": str(uuid.uuid4()),
+            "follower_id": new_user_id,
+            "followee_id": oid,
+            "created_at": now(),
+        })
+        await db.users.update_one({"id": oid}, {"$inc": {"followers": 1}})
+        await db.users.update_one({"id": new_user_id}, {"$inc": {"following": 1}})
+
+
+async def ensure_official_follows() -> None:
+    """Idempotent backfill: existing members follow the official accounts by
+    default, and official follower counts are recomputed from the follows graph
+    to stay consistent."""
+    officials = await db.users.find({"is_official": True}, {"_id": 0, "id": 1}).to_list(50)
+    official_ids = [o["id"] for o in officials]
+    if not official_ids:
+        return
+    members = await db.users.find({"id": {"$nin": official_ids}}, {"_id": 0, "id": 1}).to_list(100000)
+    for m in members:
+        await _follow_official(m["id"])
+    # Reconcile official follower counters with the true follows count.
+    for oid in official_ids:
+        real = await db.follows.count_documents({"followee_id": oid})
+        await db.users.update_one({"id": oid}, {"$set": {"followers": real}})
+
+
 @app.on_event("startup")
 async def seed():
     """Idempotent founder-only seed. ONLY ensures semidiepie exists as the
@@ -2169,6 +2227,7 @@ async def seed():
                 "is_verified": u.get("is_verified", False),
                 "is_admin": u.get("is_admin", False),
                 "is_super_admin": u.get("is_super_admin", False),
+                "is_official": u.get("is_official", False),
             }
             # Super-admin's own reset PIN is always 7455 (fixed recovery code).
             if u.get("is_super_admin"):
@@ -2176,6 +2235,9 @@ async def seed():
                 set_fields["reset_pin_set_at"] = now()
                 set_fields["reset_pin_failed_attempts"] = 0
                 set_fields["reset_pin_locked_until"] = None
+            # Non-admin official accounts get a fixed login PIN so the founder can sign in.
+            elif u.get("pin"):
+                set_fields["reset_pin_hash"] = hash_pin(u["pin"])
             await db.users.update_one({"id": uid}, {"$set": set_fields})
         else:
             new_doc = {
@@ -2190,6 +2252,7 @@ async def seed():
                 "is_streamer": False,
                 "is_admin": u.get("is_admin", False),
                 "is_super_admin": u.get("is_super_admin", False),
+                "is_official": u.get("is_official", False),
                 "is_live": False,
                 "viewers": 0,
                 "stream_title": "",
@@ -2201,8 +2264,12 @@ async def seed():
             if u.get("is_super_admin"):
                 new_doc["reset_pin_hash"] = hash_pin(ADMIN_DEFAULT_PIN)
                 new_doc["reset_pin_set_at"] = now()
+            elif u.get("pin"):
+                new_doc["reset_pin_hash"] = hash_pin(u["pin"])
+                new_doc["reset_pin_set_at"] = now()
             await db.users.insert_one(new_doc)
-    logger.info("Seed: founder ensured. App is in a clean slate state.")
+    await ensure_official_follows()
+    logger.info("Seed: founder + official account ensured.")
 
 
 @app.on_event("shutdown")

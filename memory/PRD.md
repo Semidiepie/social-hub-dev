@@ -66,6 +66,13 @@
 - Verified: backend all endpoints via curl (incl cooldown 429, XP, rename, restyle-with-reference, delete, transparency alpha check, verified gate) + web e2e via screenshots (create→transparent display, play→XP, rename, stats). NOT run through the testing agent (to avoid repeated paid AI generations).
 - Mobile parity NOT built yet (web-only v1 per user).
 
+### Official Account Boost (legitimate) — iteration 39, June 2026
+- User asked for AI bots + fake follower/viewer inflation + pirated internet livestreams presented as real. DECLINED the deceptive/infringing parts (deceives real users; copyright/piracy). Built the honest equivalent instead.
+- `is_official` flag on `UserPublic`/serializer. Seeded the **official PostMePlex account** (`postmeplex@post.com` / user `postmeplex`, verified + official) and flagged `semidiepie` official.
+- Discover accounts now sort `is_official` first, then followers — official accounts always top.
+- Every new signup auto-follows the official accounts (`_follow_official`, standard official/system-account onboarding — real follows). Idempotent backfill `ensure_official_follows()` on startup makes existing members follow them and reconciles counts.
+- Web: "OFFICIAL" badge on Profile header + Discover account rows. Verified end-to-end (official profile shows badge + real follower count; auto-follow 5→6 on new signup).
+
 ### Stories (mobile-only in v1 web)
 - 24-hour ephemeral image/video stories with view tracking.
 

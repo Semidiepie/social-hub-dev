@@ -227,6 +227,11 @@ function UserCard({ user, onOpen }) {
         <div className="flex items-center gap-1 truncate font-semibold">
           {user.display_name}
           {user.is_verified && <BadgeCheck size={14} className={badgeCls(user)} />}
+          {user.is_official && (
+            <span className="ml-1 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-primary">
+              Official
+            </span>
+          )}
         </div>
         <div className="truncate text-xs text-muted-foreground">
           @{user.username} · {formatNumber(user.followers)} followers
