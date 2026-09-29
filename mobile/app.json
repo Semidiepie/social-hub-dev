@@ -25,7 +25,7 @@
       }
     },
     "android": {
-      "package": "com.postmeplex.app",
+      "package": "app.emergent.vibesstream169e45e05",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
