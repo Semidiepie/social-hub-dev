@@ -13,6 +13,8 @@ import {
   Film,
   Plus,
   X,
+  ArrowLeft,
+  Share2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
@@ -43,36 +45,47 @@ export default function ReelsFeedPage() {
   const onDeleted = (id) => setReels((rows) => (rows || []).filter((r) => r.id !== id));
 
   return (
-    <div className="flex flex-col" data-testid="reels-feed-page">
-      <div className="mb-3 flex items-center gap-2">
-        <Film className="text-primary" size={22} />
-        <h1 className="text-2xl font-black tracking-tight">Reels</h1>
-        <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">For You</span>
-        {user && (
+    <div className="fixed inset-0 z-40 flex flex-col bg-black" data-testid="reels-feed-page">
+      {/* Top overlay bar */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))]">
+        <button
+          onClick={() => navigate("/")}
+          className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
+          data-testid="reels-close"
+          aria-label="Back to home"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <span className="flex items-center gap-1.5 text-sm font-black text-white drop-shadow-lg">
+          <Film size={16} /> For You
+        </span>
+        {user ? (
           <button
-            type="button"
             onClick={() => navigate("/reels/new")}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+            className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
             data-testid="reels-create-btn"
+            aria-label="Create reel"
           >
-            <Plus size={16} /> Create reel
+            <Plus size={20} />
           </button>
+        ) : (
+          <span className="w-10" />
         )}
       </div>
 
       {reels === null ? (
-        <div className="flex h-[70vh] items-center justify-center">
+        <div className="flex h-full items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       ) : reels.length === 0 ? (
-        <div className="flex h-[70vh] flex-col items-center justify-center gap-2 text-center">
-          <Film size={48} className="text-muted-foreground" />
+        <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-white">
+          <Film size={48} className="text-white/60" />
           <p className="text-lg font-bold">No reels yet</p>
-          <p className="text-sm text-muted-foreground">Be the first to share a reel.</p>
+          <p className="text-sm text-white/60">Be the first to share a reel.</p>
         </div>
       ) : (
         <div
-          className="mx-auto h-[calc(100vh-8rem)] w-full max-w-[440px] snap-y snap-mandatory overflow-y-scroll rounded-2xl bg-black"
+          className="mx-auto h-full w-full max-w-[500px] snap-y snap-mandatory overflow-y-scroll bg-black"
           style={{ scrollbarWidth: "none" }}
           data-testid="reels-scroller"
         >
@@ -180,6 +193,14 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
     }
   };
 
+  const share = async () => {
+    const url = `${window.location.origin}/reels/${reel.id}`;
+    try {
+      if (navigator.share) await navigator.share({ title: "Reel on PostMePlex", url });
+      else { await navigator.clipboard.writeText(url); toast.success("Reel link copied!"); }
+    } catch { /* cancelled */ }
+  };
+
   return (
     <div
       ref={wrapRef}
@@ -194,7 +215,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
         muted={muted}
         playsInline
         onClick={togglePlay}
-        className="h-full w-full object-contain"
+        className="h-full w-full object-cover"
         data-testid={`reels-feed-player-${reel.id}`}
       />
 
@@ -206,34 +227,25 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
         </div>
       )}
 
-      {/* Top-right mute + owner controls */}
-      <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-        <button
-          onClick={onToggleMute}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
-          data-testid={`reels-feed-mute-${reel.id}`}
-        >
-          {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
-        </button>
-        {canManage && (
-          <>
-            <button
-              onClick={onEdit}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
-              data-testid={`reels-feed-edit-${reel.id}`}
-            >
-              <Pencil size={16} />
-            </button>
-            <button
-              onClick={handleDelete}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-red-500/80"
-              data-testid={`reels-feed-delete-${reel.id}`}
-            >
-              <Trash2 size={16} />
-            </button>
-          </>
-        )}
-      </div>
+      {/* Owner controls (below the top bar) */}
+      {canManage && (
+        <div className="absolute right-3 top-16 z-20 flex items-center gap-2">
+          <button
+            onClick={onEdit}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
+            data-testid={`reels-feed-edit-${reel.id}`}
+          >
+            <Pencil size={16} />
+          </button>
+          <button
+            onClick={handleDelete}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-red-500/80"
+            data-testid={`reels-feed-delete-${reel.id}`}
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Right action rail */}
       <div className="absolute bottom-24 right-3 z-20 flex flex-col items-center gap-5">
@@ -241,18 +253,29 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
           <span className={`flex h-12 w-12 items-center justify-center rounded-full ${liked ? "bg-primary" : "bg-white/15"}`}>
             <Heart size={24} className={liked ? "fill-white text-white" : "text-white"} />
           </span>
-          <span className="text-xs font-bold text-white">{formatNumber(likes)}</span>
+          <span className="text-xs font-bold text-white drop-shadow">{formatNumber(likes)}</span>
         </button>
         <button onClick={onOpenComments} className="flex flex-col items-center gap-1" data-testid={`reels-feed-comment-${reel.id}`}>
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 hover:bg-white/25">
             <MessageCircle size={24} className="text-white" />
           </span>
-          <span className="text-xs font-bold text-white">{formatNumber(reel.comments_count)}</span>
+          <span className="text-xs font-bold text-white drop-shadow">{formatNumber(reel.comments_count)}</span>
+        </button>
+        <button onClick={share} className="flex flex-col items-center gap-1" data-testid={`reels-feed-share-${reel.id}`}>
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 hover:bg-white/25">
+            <Share2 size={22} className="text-white" />
+          </span>
+          <span className="text-xs font-bold text-white drop-shadow">Share</span>
+        </button>
+        <button onClick={onToggleMute} className="flex flex-col items-center gap-1" data-testid={`reels-feed-mute-${reel.id}`}>
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 hover:bg-white/25">
+            {muted ? <VolumeX size={22} className="text-white" /> : <Volume2 size={22} className="text-white" />}
+          </span>
         </button>
       </div>
 
       {/* Bottom author + caption */}
-      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-6 pt-16">
+      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-8 pt-16">
         {reel.author && (
           <Link to={userPath(reel.author)} className="flex items-center gap-2">
             <Avatar src={reel.author.avatar_url} size={38} />

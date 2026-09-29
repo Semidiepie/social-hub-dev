@@ -79,6 +79,10 @@
 - Referral loop: `RegisterBody.ref` (inviter username). On signup the new member auto-follows the inviter + gets a "joined from your invite and followed you" notification, so sharing directly grows real followers. Verified: semidiepie 5→7 across invited signups.
 - App.js captures `?ref=` on load; AuthContext.register sends it and clears it after.
 
+### Reels tab full-screen (web) — iteration 43, June 2026
+- **`/reels` is now a full-screen immersive TikTok-style feed** (added to `isFullscreenRoute` in `App.js`, so it renders edge-to-edge outside the app shell). `ReelsFeed.jsx`: video changed from `object-contain` (letterboxed) to `object-cover` (fills), container `fixed inset-0` with a centered `max-w-[500px]` portrait column (fills the whole screen on mobile web). Top overlay bar = back-to-home + "For You" + create(+); right action rail = like / comment / share / mute; bottom = author + caption over a gradient. New `reels-feed-share-*` (copies reel link / native share) and `reels-close` testIDs.
+- Live (`/live/:id` watch, `/live/new` broadcast) were already full-screen routes with `object-cover` — no change needed; they already match the requested immersive layout. Verified reels full-screen via mobile-viewport screenshot.
+
 ### Pet: 3D Pixar look + interactive care/mini-games + death & reminders — iteration 42, June 2026
 - **3D Pixar style:** `_style_block()` in `routes/pets.py` now prompts Sage AI (Nano Banana) for a glossy 3D Pixar/DreamWorks animated-movie render (subsurface scattering, big glossy eyes, chunky rounded forms, cinematic lighting) on BOTH create + restyle. Existing pets keep their image until restyled/re-adopted (1 credit); prompt change itself is free.
 - **Bigger + animated pet (web `Pet.jsx`):** pet image enlarged to h-72/80, gentle idle "breathing" float (`animate-pet-idle`), tap-to-pet → floating hearts + wobble (`pet-heart-pop`/`pet-bounce` keyframes in `index.css`), reaction bounce on every care action.

@@ -47,6 +47,7 @@ function Shell({ children }) {
   // Only the reels player renders fullscreen (edge-to-edge, immersive). The
   // video watch page uses the normal shell so it matches the rest of the site.
   const isFullscreenRoute =
+    location.pathname === "/reels" ||
     /^\/reels\/(?!new$)[^/]+$/.test(location.pathname) ||
     location.pathname === "/live/new" ||
     /^\/live\/(?!new$)[^/]+$/.test(location.pathname);
