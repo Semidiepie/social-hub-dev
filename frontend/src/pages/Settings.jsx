@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,19 @@ export default function SettingsPage() {
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [remBusy, setRemBusy] = useState(false);
+  const [cosmeticBusy, setCosmeticBusy] = useState(false);
+
+  const saveCosmetic = async (payload) => {
+    setCosmeticBusy(true);
+    try {
+      const updated = await api.post("/market/cosmetics", payload);
+      patchUser(updated);
+    } catch (e) {
+      toast.error(e.message || "Failed to update");
+    } finally {
+      setCosmeticBusy(false);
+    }
+  };
 
   const applyRemembering = async () => {
     setRemBusy(true);
@@ -294,6 +307,44 @@ export default function SettingsPage() {
             {pushBusy ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
             {pushOn ? "Turn off" : "Enable"}
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Sparkles size={18} /> Cosmetics</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="font-semibold">Show my profile frame</div>
+              <p className="text-xs text-muted-foreground">Display your equipped animated frame around your avatar. Get frames in the <button type="button" onClick={() => navigate("/market")} className="font-semibold text-primary underline">Market</button>.</p>
+            </div>
+            <Button
+              type="button"
+              variant={user?.frame_enabled ? "outline" : "default"}
+              disabled={cosmeticBusy}
+              onClick={() => saveCosmetic({ frame_enabled: !user?.frame_enabled })}
+              className={`gap-2 ${user?.frame_enabled ? "" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+              data-testid="settings-toggle-frame"
+            >
+              {user?.frame_enabled ? "Turn off" : "Turn on"}
+            </Button>
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+            <div>
+              <div className="font-semibold">Seasonal theme &amp; animations</div>
+              <p className="text-xs text-muted-foreground">Apply your chosen holiday/season theme (colors + falling animation) across the app.</p>
+            </div>
+            <Button
+              type="button"
+              variant={user?.theme_enabled ? "outline" : "default"}
+              disabled={cosmeticBusy}
+              onClick={() => saveCosmetic({ theme_enabled: !user?.theme_enabled })}
+              className={`gap-2 ${user?.theme_enabled ? "" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+              data-testid="settings-toggle-theme"
+            >
+              {user?.theme_enabled ? "Turn off" : "Turn on"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

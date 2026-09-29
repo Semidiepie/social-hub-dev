@@ -6,6 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { formatNumber, timeAgo, userPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
+import CommentThread from "@/components/CommentThread";
 import { toast } from "sonner";
 
 export default function ReelWatchPage() {
@@ -17,10 +18,6 @@ export default function ReelWatchPage() {
   const [muted, setMuted] = useState(false);
   const [playing, setPlaying] = useState(true);
   const [showComments, setShowComments] = useState(false);
-  const [comments, setComments] = useState([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [commentText, setCommentText] = useState("");
-  const [posting, setPosting] = useState(false);
   const [editing, setEditing] = useState(false);
   const videoRef = useRef(null);
 
@@ -58,50 +55,7 @@ export default function ReelWatchPage() {
     };
   }, [id, navigate]);
 
-  const openComments = useCallback(async () => {
-    setShowComments(true);
-    setCommentsLoading(true);
-    try {
-      const rows = await api.get(`/posts/${id}/comments`);
-      setComments(rows);
-    } catch (e) {
-      toast.error(e.message || "Failed to load comments");
-    } finally {
-      setCommentsLoading(false);
-    }
-  }, [id]);
-
-  const postComment = async (e) => {
-    e.preventDefault();
-    if (!user) return navigate("/login");
-    if (!commentText.trim()) return;
-    setPosting(true);
-    try {
-      await api.post(`/posts/${id}/comments`, { text: commentText.trim() });
-      setCommentText("");
-      const rows = await api.get(`/posts/${id}/comments`);
-      setComments(rows);
-      setReel((r) => (r ? { ...r, comments_count: r.comments_count + 1 } : r));
-    } catch (err) {
-      toast.error(err.message || "Failed");
-    } finally {
-      setPosting(false);
-    }
-  };
-
-  const deleteComment = async (c) => {
-    if (!window.confirm("Delete this comment?")) return;
-    const prev = comments;
-    setComments((rows) => rows.filter((x) => x.id !== c.id));
-    setReel((r) => (r ? { ...r, comments_count: Math.max(0, (r.comments_count || 0) - 1) } : r));
-    try {
-      await api.del(`/posts/${id}/comments/${c.id}`);
-    } catch (e) {
-      setComments(prev);
-      setReel((r) => (r ? { ...r, comments_count: (r.comments_count || 0) + 1 } : r));
-      toast.error(e.message || "Failed to delete");
-    }
-  };
+  const openComments = useCallback(() => setShowComments(true), []);
 
   const togglePlay = () => {
     const v = videoRef.current;
@@ -253,7 +207,7 @@ export default function ReelWatchPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h3 className="text-sm font-black">Comments · {comments.length}</h3>
+              <h3 className="text-sm font-black">Comments</h3>
               <button
                 onClick={() => setShowComments(false)}
                 className="rounded-full p-1 text-muted-foreground hover:bg-secondary"
@@ -263,64 +217,14 @@ export default function ReelWatchPage() {
               </button>
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
-              {commentsLoading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="animate-spin text-primary" />
-                </div>
-              ) : comments.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  No comments yet. Be the first!
-                </p>
-              ) : (
-                comments.map((c) => (
-                  <div key={c.id} className="group flex items-start gap-3" data-testid={`reel-comment-${c.id}`}>
-                    <Avatar src={c.author?.avatar_url || c.avatar_url} size={32} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1 text-sm">
-                        <span className="font-semibold">{c.author?.display_name || c.display_name || c.author?.username}</span>
-                        {(c.is_verified || c.author?.is_verified) && (
-                          <BadgeCheck size={13} className={badgeCls(c, "shrink-0")} data-testid={`reel-comment-verified-${c.id}`} />
-                        )}
-                        <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
-                      </div>
-                      <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/95">{c.text}</p>
-                    </div>
-                    {user && c.user_id === user.id && (
-                      <button
-                        type="button"
-                        onClick={() => deleteComment(c)}
-                        title="Delete comment"
-                        aria-label="Delete comment"
-                        data-testid={`reel-comment-delete-${c.id}`}
-                        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-
-            <form onSubmit={postComment} className="flex items-center gap-2 border-t border-border p-3">
-              <input
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder={user ? "Add a comment…" : "Sign in to comment"}
-                disabled={!user}
-                data-testid="reel-comment-input"
-                className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm outline-none focus:border-primary/60"
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              <CommentThread
+                type="post"
+                id={id}
+                autoFocus
+                onCountChange={(d) => setReel((r) => (r ? { ...r, comments_count: Math.max(0, (r.comments_count || 0) + d) } : r))}
               />
-              <button
-                type="submit"
-                disabled={posting || !commentText.trim()}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-                data-testid="reel-comment-submit"
-              >
-                {posting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              </button>
-            </form>
+            </div>
           </div>
         </div>
       )}

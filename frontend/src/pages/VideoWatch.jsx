@@ -6,6 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatNumber, timeAgo, userPath, videoPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import CommentThread from "@/components/CommentThread";
 import { EditContentModal } from "@/components/EditContentModal";
 import { toast } from "sonner";
 
@@ -17,9 +18,6 @@ export default function VideoWatchPage() {
   const [video, setVideo] = useState(null);
   const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [comments, setComments] = useState([]);
-  const [commentText, setCommentText] = useState("");
-  const [posting, setPosting] = useState(false);
   const [editing, setEditing] = useState(false);
   const viewFiredRef = useRef(false);
 
@@ -32,14 +30,12 @@ export default function VideoWatchPage() {
 
   const load = useCallback(async () => {
     try {
-      const [v, r, c] = await Promise.all([
+      const [v, r] = await Promise.all([
         api.get(`/videos/${id}`),
         api.get(`/videos/${id}/related`).catch(() => []),
-        api.get(`/videos/${id}/comments`).catch(() => []),
       ]);
       setVideo(v);
       setRelated(r);
-      setComments(c);
       // Canonical URL: rewrite a legacy /videos/:id link to /@handle/{videoId}.
       if (!videoId && v.author?.username) {
         navigate(`/@${v.author.username}/${v.id}`, { replace: true });
@@ -89,22 +85,6 @@ export default function VideoWatchPage() {
     } catch (e) {
       setVideo((v) => ({ ...v, liked_by_me: prev.liked, likes: prev.likes }));
       toast.error(e.message || "Failed");
-    }
-  };
-
-  const postComment = async (e) => {
-    e.preventDefault();
-    if (!user) return navigate("/login");
-    if (commentText.trim().length < 1) return;
-    setPosting(true);
-    try {
-      const c = await api.post(`/videos/${id}/comments`, { text: commentText.trim() });
-      setComments((rows) => [c, ...rows]);
-      setCommentText("");
-    } catch (err) {
-      toast.error(err.message || "Failed");
-    } finally {
-      setPosting(false);
     }
   };
 
@@ -208,49 +188,12 @@ export default function VideoWatchPage() {
           )}
 
           <section className="mt-8">
-            <h2 className="text-lg font-black">Comments · {comments.length}</h2>
-            <form onSubmit={postComment} className="mt-3 flex items-start gap-3">
-              {user && <Avatar src={user.avatar_url} size={36} />}
-              <div className="flex-1">
-                <textarea
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  placeholder={user ? "Add a comment…" : "Sign in to comment"}
-                  disabled={!user}
-                  data-testid="video-comment-input"
-                  className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary/60"
-                  rows={2}
-                />
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    type="submit"
-                    disabled={posting || !commentText.trim()}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90"
-                    data-testid="video-comment-submit"
-                  >
-                    {posting ? <Loader2 size={14} className="animate-spin" /> : "Post"}
-                  </Button>
-                </div>
-              </div>
-            </form>
-
-            <div className="mt-6 space-y-4">
-              {comments.map((c) => (
-                <div key={c.id} className="flex gap-3" data-testid={`video-comment-${c.id}`}>
-                  <Avatar src={c.author?.avatar_url || c.avatar_url} size={36} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1 text-sm">
-                      <span className="font-semibold">{c.author?.display_name || c.display_name}</span>
-                      {(c.is_verified || c.author?.is_verified) && (
-                        <BadgeCheck size={13} className={badgeCls(c, "shrink-0")} data-testid={`video-comment-verified-${c.id}`} />
-                      )}
-                      <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
-                    </div>
-                    <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/95">{c.text}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <h2 className="mb-3 text-lg font-black">Comments · {formatNumber(video.comments_count || 0)}</h2>
+            <CommentThread
+              type="video"
+              id={id}
+              onCountChange={(d) => setVideo((v) => (v ? { ...v, comments_count: Math.max(0, (v.comments_count || 0) + d) } : v))}
+            />
           </section>
         </div>
 

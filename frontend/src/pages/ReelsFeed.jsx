@@ -21,6 +21,7 @@ import { Avatar } from "@/components/Avatar";
 import { formatNumber, timeAgo, userPath, badgeCls } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
+import CommentThread from "@/components/CommentThread";
 import { toast } from "sonner";
 
 // Web "For You" reels feed — a vertical snap-scroll column of reels only,
@@ -291,54 +292,11 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
   );
 }
 
-function CommentsModal({ reel, user, onClose, onPosted, onRemoved }) {
-  const navigate = useNavigate();
-  const [comments, setComments] = useState(null);
-  const [text, setText] = useState("");
-  const [posting, setPosting] = useState(false);
-
-  useEffect(() => {
-    api
-      .get(`/posts/${reel.id}/comments`)
-      .then(setComments)
-      .catch(() => setComments([]));
-  }, [reel.id]);
-
-  const removeComment = async (c) => {
-    if (!window.confirm("Delete this comment?")) return;
-    const prev = comments || [];
-    setComments(prev.filter((x) => x.id !== c.id));
-    try {
-      await api.del(`/posts/${reel.id}/comments/${c.id}`);
-      onRemoved?.();
-    } catch (e) {
-      setComments(prev);
-      toast.error(e.message || "Failed to delete");
-    }
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!user) return navigate("/login");
-    if (!text.trim() || posting) return;
-    setPosting(true);
-    try {
-      await api.post(`/posts/${reel.id}/comments`, { text: text.trim() });
-      setText("");
-      const rows = await api.get(`/posts/${reel.id}/comments`);
-      setComments(rows);
-      onPosted?.();
-    } catch (err) {
-      toast.error(err.message || "Failed to comment");
-    } finally {
-      setPosting(false);
-    }
-  };
-
+function CommentsModal({ reel, onClose, onPosted, onRemoved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose} data-testid="reels-comments-modal">
       <div
-        className="max-h-[70vh] w-full max-w-[460px] overflow-hidden rounded-t-2xl border border-border bg-card"
+        className="flex h-[75vh] w-full max-w-[460px] flex-col overflow-hidden rounded-t-2xl border border-border bg-card"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -347,61 +305,14 @@ function CommentsModal({ reel, user, onClose, onPosted, onRemoved }) {
             <X size={18} />
           </button>
         </div>
-
-        <div className="max-h-[45vh] overflow-y-auto px-4 py-3">
-          {comments === null ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
-          ) : comments.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No comments yet. Be the first.</p>
-          ) : (
-            <div className="space-y-3">
-              {comments.map((c) => (
-                <div key={c.id} className="group flex items-start gap-2.5" data-testid={`reels-comment-${c.id}`}>
-                  <Avatar src={c.avatar_url} size={32} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1 text-sm">
-                      <span className="font-semibold">{c.display_name || c.username}</span>
-                      {c.is_verified && <BadgeCheck size={13} className={badgeCls(c)} />}
-                      <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
-                    </div>
-                    <p className="mt-0.5 whitespace-pre-wrap text-sm">{c.text}</p>
-                  </div>
-                  {user && c.user_id === user.id && (
-                    <button
-                      type="button"
-                      onClick={() => removeComment(c)}
-                      title="Delete comment"
-                      aria-label="Delete comment"
-                      data-testid={`reels-comment-delete-${c.id}`}
-                      className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={submit} className="flex items-center gap-2 border-t border-border p-3">
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={user ? "Add a comment…" : "Sign in to comment"}
-            disabled={!user}
-            data-testid="reels-comment-input"
-            className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm outline-none focus:border-primary/60 disabled:opacity-60"
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          <CommentThread
+            type="post"
+            id={reel.id}
+            autoFocus
+            onCountChange={(d) => (d > 0 ? onPosted?.(d) : onRemoved?.(-d))}
           />
-          <button
-            type="submit"
-            disabled={posting || !text.trim() || !user}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-            data-testid="reels-comment-submit"
-          >
-            {posting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   );

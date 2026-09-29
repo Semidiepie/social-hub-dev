@@ -132,6 +132,10 @@ class UserPublic(BaseModel):
     following: int = 0
     posts_count: int = 0
     invites_count: int = 0
+    equipped_frame: Optional[str] = None
+    active_theme: Optional[str] = None
+    frame_enabled: bool = True
+    theme_enabled: bool = True
 
 
 class RegisterBody(BaseModel):
@@ -349,6 +353,10 @@ def user_to_public(u: dict) -> UserPublic:
         following=u.get("following", 0),
         posts_count=u.get("posts_count", 0),
         invites_count=u.get("invites_count", 0),
+        equipped_frame=u.get("equipped_frame"),
+        active_theme=u.get("active_theme"),
+        frame_enabled=u.get("frame_enabled", True),
+        theme_enabled=u.get("theme_enabled", True),
     )
 
 
@@ -703,6 +711,41 @@ async def login_pin(body: LoginPinBody):
 @app.get("/api/auth/me", response_model=UserPublic)
 async def me(current: Annotated[dict, Depends(get_current_user)]):
     return user_to_public(current)
+
+
+_FRAME_IDS = {"gold", "neon", "fire", "frost", "hearts", "emerald", "violet", "ocean", "rainbow"}
+_THEME_IDS = {"fall", "winter", "halloween", "christmas", "valentine", "spring", "summer", "newyear", "stpatrick"}
+
+
+class CosmeticsBody(BaseModel):
+    equipped_frame: Optional[str] = None  # "" to unequip, None = no change
+    active_theme: Optional[str] = None    # "" to clear, None = no change
+    frame_enabled: Optional[bool] = None
+    theme_enabled: Optional[bool] = None
+
+
+@app.post("/api/market/cosmetics", response_model=UserPublic)
+async def update_cosmetics(body: CosmeticsBody, current: Annotated[dict, Depends(get_current_user)]):
+    updates: dict = {}
+    if body.equipped_frame is not None:
+        val = body.equipped_frame or None
+        if val and val not in _FRAME_IDS:
+            raise HTTPException(400, "Unknown frame")
+        updates["equipped_frame"] = val
+    if body.active_theme is not None:
+        val = body.active_theme or None
+        if val and val not in _THEME_IDS:
+            raise HTTPException(400, "Unknown theme")
+        updates["active_theme"] = val
+    if body.frame_enabled is not None:
+        updates["frame_enabled"] = body.frame_enabled
+    if body.theme_enabled is not None:
+        updates["theme_enabled"] = body.theme_enabled
+    if updates:
+        await db.users.update_one({"id": current["id"]}, {"$set": updates})
+    u = await db.users.find_one({"id": current["id"]})
+    return user_to_public(u)
+
 
 
 @app.put("/api/auth/me", response_model=UserPublic)

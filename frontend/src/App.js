@@ -27,6 +27,8 @@ import LiveWatchPage from "@/pages/LiveWatch";
 import PetPage from "@/pages/Pet";
 import VideoUploadPage from "@/pages/VideoUpload";
 import VideosPage from "@/pages/Videos";
+import MarketPage from "@/pages/Market";
+import ThemeLayer from "@/components/ThemeLayer";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
 import NotificationsPage from "@/pages/Notifications";
@@ -92,6 +94,7 @@ export default function App() {
             <Route path="/videos/new" element={<ProtectedRoute><VideoUploadPage /></ProtectedRoute>} />
             <Route path="/videos" element={<VideosPage />} />
             <Route path="/videos/:id" element={<VideoWatchPage />} />
+            <Route path="/market" element={<ProtectedRoute><MarketPage /></ProtectedRoute>} />
             <Route path="/reels" element={<ReelsFeedPage />} />
             <Route path="/reels/new" element={<ProtectedRoute><ReelUploadPage /></ProtectedRoute>} />
             <Route path="/reels/:id" element={<ReelWatchPage />} />
@@ -159,6 +162,7 @@ export default function App() {
         </Shell>
           <PlayerBar />
           <InstallAppPrompt />
+          <ThemeLayer />
         </PlayerProvider>
       </AuthProvider>
     </BrowserRouter>

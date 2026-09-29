@@ -39,6 +39,7 @@ class UpdateVideoBody(BaseModel):
 
 class VideoCommentBody(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
+    parent_id: Optional[str] = None
 
 
 def build_router(ctx) -> APIRouter:
@@ -274,6 +275,7 @@ def build_router(ctx) -> APIRouter:
             out.append({
                 "id": c["id"],
                 "text": c["text"],
+                "parent_id": c.get("parent_id"),
                 "created_at": c["created_at"].isoformat() if isinstance(c["created_at"], datetime) else c["created_at"],
                 "author": {
                     "id": author["id"],
@@ -295,19 +297,52 @@ def build_router(ctx) -> APIRouter:
         v = await db.videos.find_one({"id": video_id})
         if not v:
             raise HTTPException(404, "Video not found")
+        # One-level threading: replies attach to the top-level comment.
+        parent_id = None
+        parent_author_id = None
+        if body.parent_id:
+            parent = await db.video_comments.find_one({"id": body.parent_id, "video_id": video_id})
+            if not parent:
+                raise HTTPException(404, "Parent comment not found")
+            parent_id = parent.get("parent_id") or parent["id"]
+            parent_author_id = parent.get("user_id")
         comment_id = str(uuid.uuid4())
         await db.video_comments.insert_one({
             "id": comment_id,
             "video_id": video_id,
+            "parent_id": parent_id,
             "user_id": current["id"],
             "text": body.text.strip(),
             "created_at": now(),
         })
         await db.videos.update_one({"id": video_id}, {"$inc": {"comments_count": 1}})
+        # Notify the person replied to + the video owner (dedup, skip self).
+        notified = set()
+        for target, label in [(parent_author_id, "replied"), (v.get("author_id"), "commented on your video")]:
+            if not target or target == current["id"] or target in notified:
+                continue
+            notified.add(target)
+            try:
+                await db.notifications.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "user_id": target,
+                    "type": "comment",
+                    "actor_id": current["id"],
+                    "actor_name": current["display_name"],
+                    "actor_avatar": avatar_or_default(current.get("avatar_url")),
+                    "text": f"{label}: {body.text.strip()[:60]}",
+                    "video_id": video_id,
+                    "read": False,
+                    "created_at": now(),
+                })
+                await ctx.send_web_push(target, "New comment", f"{current['display_name']}: {body.text.strip()[:80]}", f"/videos/{video_id}")
+            except Exception as e:
+                ctx.logger.warning(f"video comment notify failed: {e}")
         author = await db.users.find_one({"id": current["id"]}, {"_id": 0})
         return {
             "id": comment_id,
             "text": body.text.strip(),
+            "parent_id": parent_id,
             "created_at": now().isoformat(),
             "author": {
                 "id": author["id"],
@@ -318,6 +353,23 @@ def build_router(ctx) -> APIRouter:
                 "remembering": author.get("remembering", False),
             } if author else None,
         }
+
+    @router.delete("/api/videos/{video_id}/comments/{comment_id}")
+    async def delete_video_comment(
+        video_id: str,
+        comment_id: str,
+        current: Annotated[dict, Depends(get_current_user)],
+    ):
+        c = await db.video_comments.find_one({"id": comment_id, "video_id": video_id})
+        if not c:
+            raise HTTPException(404, "Comment not found")
+        if c.get("user_id") != current["id"]:
+            raise HTTPException(403, "You can only delete your own comments")
+        reply_count = await db.video_comments.count_documents({"video_id": video_id, "parent_id": comment_id})
+        await db.video_comments.delete_many({"video_id": video_id, "$or": [{"id": comment_id}, {"parent_id": comment_id}]})
+        removed = 1 + reply_count
+        await db.videos.update_one({"id": video_id, "comments_count": {"$gte": removed}}, {"$inc": {"comments_count": -removed}})
+        return {"status": "deleted", "removed": removed}
 
     @router.get("/api/users/{user_id}/videos")
     async def channel_videos(

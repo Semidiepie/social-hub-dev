@@ -122,7 +122,7 @@ export default function ProfilePage() {
     <div className="mx-auto max-w-3xl" data-testid={`profile-${target.id}`}>
       <header className="rounded-2xl border border-border bg-card p-5 sm:p-6">
         <div className="flex items-start gap-4 sm:gap-6">
-          <Avatar src={target.avatar_url} size={80} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
+          <Avatar src={target.avatar_url} size={80} frame={target.frame_enabled ? target.equipped_frame : null} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
               <div className="min-w-0">

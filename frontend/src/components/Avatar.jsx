@@ -2,12 +2,12 @@ import React from "react";
 import { AVATAR_FALLBACK, badgeCls } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
 
-export function Avatar({ src, alt, size = 40, className = "", ring = false }) {
-  return (
+export function Avatar({ src, alt, size = 40, className = "", ring = false, frame = null }) {
+  const inner = (
     <div
       className={`inline-flex items-center justify-center overflow-hidden rounded-full bg-secondary ${
         ring ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
-      } ${className}`}
+      } ${frame ? "relative z-10" : ""} ${className}`}
       style={{ width: size, height: size }}
     >
       <img
@@ -19,6 +19,13 @@ export function Avatar({ src, alt, size = 40, className = "", ring = false }) {
         }}
       />
     </div>
+  );
+  if (!frame) return inner;
+  return (
+    <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <span className={`pmp-frame pmp-frame-${frame}`} aria-hidden />
+      {inner}
+    </span>
   );
 }
 

@@ -16,6 +16,7 @@ import {
   Radio,
   PawPrint,
   Download,
+  ShoppingBag,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -37,6 +38,7 @@ const NAV = [
   { to: "/reels", label: "Reels", icon: Film, testId: "nav-reels" },
   { to: "/music", label: "Music", icon: Music2, testId: "nav-music" },
   { to: "/pet", label: "Pet", icon: PawPrint, testId: "nav-pet" },
+  { to: "/market", label: "Market", icon: ShoppingBag, testId: "nav-market" },
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },
   { to: "/discover", label: "Discover", icon: Compass, testId: "nav-discover" },
   { to: "/messages", label: "Messages", icon: MessageSquare, testId: "nav-messages" },
@@ -127,7 +129,7 @@ export function AppShell({ children }) {
           ) : user ? (
             <div className="flex items-center gap-3 rounded-xl bg-secondary/50 p-2">
               <NavLink to="/profile" className="flex flex-1 items-center gap-3" data-testid="sidebar-profile-link">
-                <Avatar src={user.avatar_url} size={40} />
+                <Avatar src={user.avatar_url} size={40} frame={user.frame_enabled ? user.equipped_frame : null} />
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="truncate text-sm font-semibold">{user.display_name}</div>
                   <div className="truncate text-xs text-muted-foreground">@{user.username}</div>
@@ -190,7 +192,7 @@ export function AppShell({ children }) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button data-testid="topbar-menu-trigger" className="rounded-full outline-none focus:ring-2 focus:ring-primary">
-                  <Avatar src={user.avatar_url} size={32} />
+                  <Avatar src={user.avatar_url} size={32} frame={user.frame_enabled ? user.equipped_frame : null} />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
@@ -210,6 +212,9 @@ export function AppShell({ children }) {
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-blogs" onClick={() => navigate("/blogs")}>
                   <BookText size={16} /> Blogs
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-market" onClick={() => navigate("/market")}>
+                  <ShoppingBag size={16} /> Market
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-install" onClick={() => window.dispatchEvent(new Event("open-install-guide"))}>
                   <Download size={16} /> Install app

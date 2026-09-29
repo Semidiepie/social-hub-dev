@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 38 — Threaded comment replies (posts/reels/videos) and PostMePlex Market cosmetics verified end-to-end on backend + web UI. Backend: 21/21 pytest passed covering (1) market: 9 frames + 9 themes accepted, invalid ids -> 400, '' unequips, frame_enabled/theme_enabled toggles independent, UserPublic exposes equipped_frame/active_theme/frame_enabled/theme_enabled; (2) posts: root/reply/reply-to-reply flatten to root, list returns parent_id, comments_count increments per row, top-level delete cascades (owner-only 403 for others), 404 on invalid parent, reply generates 'comment' notification (type=comment, text starts with 'replied'); (3) videos: same threading + cascade + 403 owner-only via DELETE /api/videos/{id}/comments/{cid}; (4) reels: use the SAME /api/posts/{id}/comments endpoint (reels are rows in posts with type='reel') — flatten + cascade verified. Web UI: /market renders 9 frames + 9 themes with equip/apply toasts and 'Active/Equipped' state; /settings exposes settings-toggle-frame + settings-toggle-theme; /posts/:id shows comment-thread; typing + submit works, Reply prefills '@username ', 'View N reply/replies' / 'Hide replies' toggle works, owner-only delete enforced (founder does NOT see delete on alice's comment), comments_count updates. Founder cosmetics reset to none after run + all TEST_ posts purged (including stale ones from earlier iterations).",
+  "platforms_tested": ["web"],
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration38_threads_market.py",
+    "/app/test_reports/pytest/iteration38_threads_market.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CommentThread.jsx del(): after cascade delete of a top-level comment the local state removes rows where x.parent_id === c.id, but it does NOT remove rows whose parent_id === (a deeper reply that was flattened to c.id). Since the backend enforces one-level threading this is currently safe, but if the parent-resolution ever regresses (e.g., a stray direct reply-to-reply row lingers in DB), the UI list would go out of sync. Consider a defensive re-fetch or filter on parent_id chain.",
+    "server.py:1723 — a comment on a post by its own author does NOT self-notify (correct), but a REPLY by the post author to their own top-level comment still emits the 'reply push' branch (parent_author_id path) because parent_author_id could equal current['id']; the guard at 1706 correctly skips it. Good.",
+    "cosmetics.js is intentionally tiny; consider moving to a single source of truth (backend GET /api/market/catalog) so the frame/theme registries can't drift between server-side _FRAME_IDS/_THEME_IDS and frontend FRAMES/THEMES arrays. Currently synced by hand.",
+    "server.py:104 CORSMiddleware still uses allow_origins=['*'] + allow_credentials=True (pre-existing, flagged in iter37) — not caused by this iteration.",
+    "Market page: 'frames rendered: 18, themes: 18' from Playwright is a testid-count artifact (each card exposes both market-frame-{id} and market-frame-equip-{id}). Not a bug, just a note for future selector counts — filtering to '^market-frame-equip-' gives the true 9."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration38_threads_market.py"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21)",
+    "frontend": "web 100% for the flows exercised (login, market equip/apply, settings toggles present, comment thread add/reply/toggle/delete cascade, owner-only enforcement, comments_count)"
+  },
+  "test_credentials": "Founder semidiepie / PIN 7455 (see /app/memory/test_credentials.md). Scratch users test_uia_* / pin 1234 auto-purged on backend restart.",
+  "seed_data_creation": "Registered a couple of scratch test_* users during pytest run (auto-purged on backend restart per test_credentials.md). Post-run cleanup deleted the two UI-test posts AND swept 20+ pre-existing TEST_* posts left by prior iterations. Founder cosmetics were reset to equipped_frame=None, active_theme=None, frame_enabled=false, theme_enabled=false (verified via POST /api/market/cosmetics response).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Threading + Market are green on backend and web. Two things I DID NOT run (out of scope for the review request): (a) end-to-end web-push delivery for the new 'replied' notification (would need a real subscription; the notification row itself IS asserted). (b) mobile — the review_request restricted platforms_to_test to 'web', and the pre-existing Expo-preview CORS block from iter37 still applies if the next tester tries mobile. To reproduce the flatten test in the UI, click Reply on a nested reply AFTER opening 'View N replies' — the composer opens under the ROOT comment id (topId = c.parent_id || c.id in CommentThread.jsx:113). Test file: /app/backend/tests/test_iteration38_threads_market.py — safe to rerun as regression.",
+  "rca of the issue": ""
+}

@@ -152,3 +152,27 @@ html, body {
   0%   { transform: translateY(-20px); }
   100% { transform: translateY(var(--fall, 320px)); }
 }
+
+
+/* Market: animated avatar frames */
+@keyframes pmp-spin { to { transform: rotate(360deg); } }
+@keyframes pmp-glow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.4); } }
+.pmp-frame { position: absolute; inset: -3px; border-radius: 9999px; z-index: 0; }
+.pmp-frame-gold    { background: #f7c948; box-shadow: 0 0 10px 2px rgba(247,201,72,.6); animation: pmp-glow 1.8s ease-in-out infinite; }
+.pmp-frame-hearts  { background: #ff5c8a; box-shadow: 0 0 10px 2px rgba(255,92,138,.6); animation: pmp-glow 1.5s ease-in-out infinite; }
+.pmp-frame-emerald { background: #22c55e; box-shadow: 0 0 10px 2px rgba(34,197,94,.6); animation: pmp-glow 1.8s ease-in-out infinite; }
+.pmp-frame-violet  { background: #8b5cf6; box-shadow: 0 0 10px 2px rgba(139,92,246,.6); animation: pmp-glow 1.8s ease-in-out infinite; }
+.pmp-frame-neon    { background: conic-gradient(from 0deg, #ff00ff, #00ffff, #ffff00, #ff00ff); animation: pmp-spin 3s linear infinite; }
+.pmp-frame-rainbow { background: conic-gradient(from 0deg, #ff0000, #ff9900, #ffee00, #33ff00, #00ffee, #3300ff, #ff00cc, #ff0000); animation: pmp-spin 4s linear infinite; }
+.pmp-frame-fire    { background: conic-gradient(from 0deg, #ff512f, #f09819, #ff512f); animation: pmp-spin 2.4s linear infinite; box-shadow: 0 0 10px 2px rgba(255,107,61,.55); }
+.pmp-frame-frost   { background: conic-gradient(from 0deg, #7ee8fa, #ffffff, #7ee8fa); animation: pmp-spin 3.2s linear infinite; box-shadow: 0 0 10px 2px rgba(126,232,250,.55); }
+.pmp-frame-ocean   { background: conic-gradient(from 0deg, #2193b0, #6dd5ed, #2193b0); animation: pmp-spin 3.6s linear infinite; }
+
+/* Market: full-screen seasonal particle animation */
+.pmp-particles { position: fixed; inset: 0; z-index: 45; pointer-events: none; overflow: hidden; }
+.pmp-particle { position: absolute; top: -8%; opacity: .75; animation-name: pmp-fall; animation-timing-function: linear; animation-iteration-count: infinite; }
+@keyframes pmp-fall {
+  0%   { transform: translateY(-12vh) translateX(0) rotate(0deg); }
+  50%  { transform: translateY(50vh) translateX(24px) rotate(180deg); }
+  100% { transform: translateY(112vh) translateX(-16px) rotate(360deg); }
+}
