@@ -188,7 +188,7 @@ export function AppShell({ children }) {
       {/* Main content */}
       <main className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
-        <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/85 px-4 py-2.5 backdrop-blur md:hidden">
+        <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/85 px-4 py-2.5 backdrop-blur md:hidden" style={{ paddingTop: "calc(env(safe-area-inset-top) + 10px)" }}>
           <Brand />
           <div className="flex items-center gap-1.5">
             <NavLink to="/blogs" className="pmp-iconbtn" data-testid="topbar-icon-blogs" aria-label="Blogs">
