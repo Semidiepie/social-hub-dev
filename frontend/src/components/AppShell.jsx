@@ -19,6 +19,7 @@ import {
   Download,
   ShoppingBag,
   User,
+  Phone,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -242,6 +243,11 @@ export function AppShell({ children }) {
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-settings" onClick={() => navigate("/settings")}>
                   <Settings size={16} /> Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild data-testid="topbar-menu-support">
+                  <a href="tel:+18005076788" className="cursor-pointer">
+                    <Phone size={16} /> Call support · Sage AI
+                  </a>
                 </DropdownMenuItem>
                 {user?.is_super_admin && (
                   <DropdownMenuItem data-testid="topbar-menu-admin" onClick={() => navigate("/admin/verify")}>

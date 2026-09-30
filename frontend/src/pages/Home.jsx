@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/PostComposer";
-import { StoryBar } from "@/components/StoryBar";
+// StoryBar import removed while stories are hidden
 import { EditContentModal } from "@/components/EditContentModal";
 import { FeaturedBadge, FeatureToggle } from "@/components/FeaturedControls";
 import { timeAgo, formatNumber, userPath, videoPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
@@ -94,7 +94,7 @@ export default function HomePage() {
         </div>
       ) : (
         <>
-          {user && <StoryBar />}
+          {/* Stories temporarily hidden — re-enable by restoring <StoryBar /> */}
           <PostComposer onPosted={(created) => setItems((rows) => [created, ...rows])} />
           {items.length === 0 ? (
             <EmptyState />
