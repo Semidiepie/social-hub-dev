@@ -96,7 +96,7 @@ export function FollowListDialog({ open, onClose, userId, kind, title }) {
                       }
                       data-testid={`follow-row-btn-${u.id}`}
                     >
-                      {u.follows_them ? "Following" : "Follow"}
+                      {u.follows_them ? "Following" : u.followed_by ? "Follow back" : "Follow"}
                     </Button>
                   )}
                 </li>

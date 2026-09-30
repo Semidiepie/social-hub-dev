@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
 import { compressVideoToTarget, TARGET_MAX_BYTES } from "@/lib/videoCompress";
+import { playPostChime } from "@/lib/sound";
 import { toast } from "sonner";
 
 // Homepage composer: create a text post with an optional photo OR video.
@@ -83,6 +84,7 @@ export function PostComposer({ onPosted }) {
       setCaption("");
       setGameTag("");
       setMedia(null);
+      playPostChime();
       toast.success("Posted!");
       onPosted?.(created);
     } catch (e) {

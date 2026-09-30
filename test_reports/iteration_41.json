@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 41 — Stories bundle + Follow-back label (WEB-only) tested end-to-end. Backend pytest 5/5 GREEN: (a) POST /api/stories creates a story with 24h expiry; (b) GET /api/stories groups by user with self first (is_me=true), all required fields present; (c) GET /api/stories/user/{id} returns {user, stories}; (d) POST /api/stories/{id}/view is idempotent and marks seen; (e) DELETE /api/stories/{id} is 403 for non-owner and 200 for owner (then 404 on second delete); (f) GET /api/users/{id} two-account matrix: neither follows → both false; B follows A → A viewing B sees followed_by=true+follows_them=false ('Follow back'); B viewing A sees follows_them=true+followed_by=false; both follow → both true; self-view both false; (g) GET /api/discover?filter=accounts items include follows_them + followed_by + is_me. WEB UI at 1920x1080: story-bar renders on Home with 'Your story' + 2 rings; clicking story-add-btn opens story-composer with all testIDs (story-add-photo, story-add-video, story-caption, story-submit); clicking a ring opens story-viewer with story-next/story-prev navigation working and story-close dismissing; own-story delete button correctly hidden for others' stories (story-delete=false on ninapetrova's story ring); on /user/ninapetrova (who follows the founder), profile-follow-btn text = 'Follow back' ✓; on /discover Accounts tab we saw 29 user-follow-* buttons with the correct mix of 'Following' (postmeplex, already followed) and 'Follow back' for accounts that follow the founder. HOWEVER: found ONE BUG in FollowListDialog — the /api/users/{id}/followers and /api/users/{id}/following endpoints (backend/server.py:_list_relationship, lines 1128-1182) return `follows_them` + `is_me` but DO NOT return `followed_by`. As a result, in the Followers list of semidiepie every row shows 'Follow' where it should show 'Follow back' (by definition every user in a followers-of-X list follows X). Chime sound (Web Audio) is not headless-testable per instructions — skipped. Mobile skipped per platforms_to_test=web. Cleanup: 6 test_* users + their stories/follows purged post-test.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/users/{id}/followers and /api/users/{id}/following", "issue": "Response items lack the `followed_by` field, so FollowListDialog can never render 'Follow back' — every follower row shows 'Follow' instead of 'Follow back'. Fix: in _list_relationship (server.py ~1128-1182), after computing viewer_follows, also compute viewer_followers_of set (SELECT follows WHERE followee_id=viewer_id AND follower_id IN ids) and add `\"followed_by\": u[\"id\"] in viewer_followers_of` to each returned row (mirroring annotate_follows at line 1482). For followers-list this trivially yields followed_by=True for everyone."}
+    ]
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [
+        {"component": "FollowListDialog", "issue": "Followers list rows never show 'Follow back' label because backend doesn't return `followed_by`. Manifests on semidiepie's Followers modal (see /app/frontend/src/components/FollowListDialog.jsx:99).", "selector": "[data-testid^='follow-row-btn-']", "priority": "MEDIUM"}
+      ],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration41_stories_followback.py",
+    "/app/test_reports/pytest/iteration41.xml"
+  ],
+  "action_items": [
+    "Fix `_list_relationship` in /app/backend/server.py (~lines 1160-1182) to also annotate each returned user with `followed_by` (compute a `viewer_followers_of` set via db.follows.find({followee_id: viewer_id, follower_id: {\\$in: ids}}) once, then set `\"followed_by\": u[\"id\"] in viewer_followers_of`). Trivially, for the followers endpoint every row is followed_by=true. This unblocks the 'Follow back' label in FollowListDialog which is already correctly wired in the JSX."
+  ],
+  "critical_code_review_comments": [
+    "server.py:_list_relationship (~1128) duplicates most of annotate_follows (~1463) but omits followed_by — consider refactoring to a single helper so this class of bug can't recur.",
+    "StoryBar.jsx:56 uses onClick on a nested <span> inside a <button> — nested interactive elements are invalid HTML and cause the '+' overlay click to still bubble sometimes; consider replacing the outer <button> with a <div role='button'> or moving the '+' outside the button subtree.",
+    "server.py list_stories (~1313) computes `seen` from LATEST story only — a user who has 3 stories where the viewer has only seen story #2 will still show as 'seen=false' at the ring level even after viewing all older ones. Acceptable IG-like behavior, worth documenting.",
+    "stories collection lacks a TTL index — expired stories accumulate forever. Add `db.stories.create_index([('expires_at', 1)], expireAfterSeconds=0)` on startup."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration41_stories_followback.py"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "web ~90% — all story testIDs and profile/discover 'Follow back' labels verified; FollowListDialog 'Follow back' label is broken due to backend missing `followed_by` field."},
+  "test_credentials": "Founder semidiepie / PIN 7455. Fresh test_* users registered via /api/auth/register with pin=1234 (username capped at 20 chars in test helper).",
+  "seed_data_creation": "Created 6 test_* accounts (test_story_a/b_*, test_fb_a/b_*), some stories, and mutual follows for the follow-back matrix. All cleaned up post-run — verified via Mongo delete_many on stories, story_views, follows, users.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Story flow and Profile/Discover 'Follow back' labels are green on web. Only outstanding item is the FollowListDialog 'Follow back' regression caused by the /followers + /following endpoints missing `followed_by` in each row (see backend_issues.minor and action_items). Once main agent patches _list_relationship, re-run: open semidiepie's Followers modal → every row should now show 'Follow back' (or 'Following' for those the founder follows back). test_iteration41_stories_followback.py is safe to rerun (registers unique test_* users each time; existing tests already assert the /discover annotate_follows path which is the correct reference implementation).",
+  "rca of the issue": "FollowListDialog RCA: FollowListDialog.jsx:99 renders `u.follows_them ? 'Following' : u.followed_by ? 'Follow back' : 'Follow'`. Data flows in via `api.get('/users/{id}/followers')` (or /following). The backend handler `_list_relationship` in server.py:1128 computes only `viewer_follows` (people the viewer follows) and returns `follows_them` + `is_me`, but not `followed_by`. Since JS `undefined` is falsy, the ternary falls through to 'Follow' for every row where the viewer isn't already following the user — even though for a followers list, followed_by is trivially true for every entry. Contrast with `annotate_follows` (server.py:1463) used by /api/discover, which correctly computes both sets and attaches followed_by. Fix is a 3-line addition mirroring lines 1475-1479 + adding the key at line 1177."
+}

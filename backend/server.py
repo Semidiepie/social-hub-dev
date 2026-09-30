@@ -1051,9 +1051,11 @@ async def get_user(user_id: str, viewer: Annotated[Optional[dict], Depends(get_o
     if not u:
         raise HTTPException(404, "User not found")
     follows_them = False
+    followed_by = False
     if viewer and viewer["id"] != u["id"]:
         follows_them = await db.follows.find_one({"follower_id": viewer["id"], "followee_id": u["id"]}) is not None
-    return {**user_to_public(u).model_dump(), "follows_them": follows_them}
+        followed_by = await db.follows.find_one({"follower_id": u["id"], "followee_id": viewer["id"]}) is not None
+    return {**user_to_public(u).model_dump(), "follows_them": follows_them, "followed_by": followed_by}
 
 
 @app.post("/api/users/{user_id}/follow")
@@ -1160,12 +1162,18 @@ async def _list_relationship(
     # Annotate each row with `follows_them` so the UI can show Follow/Following
     # next to each entry.
     viewer_follows: set[str] = set()
+    viewer_followers: set[str] = set()
     if viewer_id:
         f_rows = await db.follows.find(
             {"follower_id": viewer_id, "followee_id": {"$in": ids}},
             {"_id": 0, "followee_id": 1},
         ).to_list(length=10000)
         viewer_follows = {r["followee_id"] for r in f_rows}
+        r_rows = await db.follows.find(
+            {"followee_id": viewer_id, "follower_id": {"$in": ids}},
+            {"_id": 0, "follower_id": 1},
+        ).to_list(length=10000)
+        viewer_followers = {r["follower_id"] for r in r_rows}
 
     return {
         "private": False,
@@ -1173,6 +1181,7 @@ async def _list_relationship(
             {
                 **user_to_public(u).model_dump(),
                 "follows_them": u["id"] in viewer_follows,
+                "followed_by": u["id"] in viewer_followers,
                 "is_me": u["id"] == viewer_id,
             }
             for u in users
@@ -1462,6 +1471,7 @@ async def annotate_follows(items: list[dict], viewer_id: Optional[str]) -> list[
     """Attach `follows_them` + `is_me` to a list of serialized users so the UI
     can render Follow vs Following correctly in lists (discover, search)."""
     followed: set[str] = set()
+    followers_of_me: set[str] = set()
     if viewer_id and items:
         ids = [it["id"] for it in items]
         frows = await db.follows.find(
@@ -1469,8 +1479,14 @@ async def annotate_follows(items: list[dict], viewer_id: Optional[str]) -> list[
             {"_id": 0, "followee_id": 1},
         ).to_list(length=10000)
         followed = {r["followee_id"] for r in frows}
+        rrows = await db.follows.find(
+            {"followee_id": viewer_id, "follower_id": {"$in": ids}},
+            {"_id": 0, "follower_id": 1},
+        ).to_list(length=10000)
+        followers_of_me = {r["follower_id"] for r in rrows}
     for it in items:
         it["follows_them"] = it["id"] in followed
+        it["followed_by"] = it["id"] in followers_of_me
         it["is_me"] = it["id"] == viewer_id
     return items
 

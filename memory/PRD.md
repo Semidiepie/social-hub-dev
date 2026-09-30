@@ -3,6 +3,13 @@
 ## Overview
 **PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
+## Feature — Web Stories + post sound + "Follow back" (2026-06, web only) — iteration 41
+- **Facebook-style Stories on web:** new `components/StoryBar.jsx` on Home ("Your story" + create, plus rings for people you follow; orange ring = unseen, self-first), `components/StoryComposer.jsx` (photo/video upload via Cloudinary + optional caption → `POST /api/stories`, 24h expiry), and `components/StoryViewer.jsx` (full-screen, auto-advancing progress bars, tap left/right + keyboard nav, mark-seen via `POST /api/stories/{id}/view`, delete-own). Reuses existing story backend endpoints (no backend change for stories).
+- **Post sound:** `lib/sound.js` `playPostChime()` — a bright two-note Web Audio chime played on a successful **post** (PostComposer) and **story** share. Best-effort (never blocks; respects muted browser). NOT headless-testable.
+- **"Follow back" label:** backend adds `followed_by` (target follows the viewer) to `GET /api/users/{id}`, `annotate_follows` (discover/search), and `_list_relationship` (followers/following lists). Frontend shows **"Follow back"** when `!follows_them && followed_by` on Profile (`profile-follow-btn`), Discover (`user-follow-<id>`), and FollowListDialog (`follow-row-btn-<id>`); else "Following"/"Follow".
+- **Verified:** testing agent iteration_41 — backend 5/5 pytest (stories CRUD + view + owner-only delete; `followed_by`/`follows_them` two-account matrix; discover accounts) + web UI (story bar/composer/viewer nav, Follow-back on Profile & Discover). Fixed the one bug it found: `_list_relationship` omitted `followed_by` (followers modal) — patched + re-verified via curl ('Follow back'). Web-only; mobile already has stories. Scratch test_* users/stories/follows purged.
+
+
 ## Web → Mobile visual parity (phased) — Phase 1: shell + Home feed (2026-06, web only)
 - **Goal (user):** make the WEB app's GUI/look feel exactly like the mobile app, done in phases, while keeping ALL current web features.
 - **Phase 1 (done):** Reusable mobile-parity CSS kit added to `index.css` (`.pmp-iconbtn`, `.pmp-chip`/`.pmp-chip-active`, `.pmp-iconchip`, `.pmp-streamer`, `.pmp-kind`, `.pmp-statchip`, `.pmp-cap`/`.pmp-cap-bar`). Restyled:

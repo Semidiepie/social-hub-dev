@@ -196,7 +196,7 @@ export default function ProfilePage() {
                       variant={following ? "outline" : "default"}
                       data-testid="profile-follow-btn"
                     >
-                      {following ? "Following" : "Follow"}
+                      {following ? "Following" : target?.followed_by ? "Follow back" : "Follow"}
                     </Button>
                     <Button variant="outline" onClick={startDM} className="flex-1 gap-2 sm:flex-none" data-testid="profile-message-btn">
                       <MessageCircle size={16} /> Message

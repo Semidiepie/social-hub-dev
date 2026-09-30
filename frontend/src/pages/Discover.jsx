@@ -250,7 +250,7 @@ function UserCard({ user, onOpen }) {
           variant={following ? "outline" : "default"}
           data-testid={`user-follow-${user.id}`}
         >
-          {following ? "Following" : "Follow"}
+          {following ? "Following" : user.followed_by ? "Follow back" : "Follow"}
         </Button>
       )}
     </button>
