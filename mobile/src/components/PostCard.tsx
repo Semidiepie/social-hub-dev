@@ -38,6 +38,18 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
   const [likes, setLikes] = useState(post.likes);
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [featured, setFeatured] = useState(!!post.featured);
+
+  const toggleFeatured = async () => {
+    const next = !featured;
+    setFeatured(next);
+    try {
+      await api.post("/admin/feature", { type: post.type, id: post.id, featured: next });
+    } catch {
+      setFeatured(!next);
+      Alert.alert("Error", "Couldn't update featured status");
+    }
+  };
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -133,7 +145,7 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
                 {author?.display_name ?? "Unknown"}
               </Text>
               {author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={author?.verified_color || colors.primary} />}
-              {post.featured && (
+              {featured && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: colors.primary + "33", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999 }} testID="featured-label">
                   <Ionicons name="star" size={9} color={colors.primary} />
                   <Text style={{ color: colors.primary, fontSize: 9, fontWeight: "800", textTransform: "uppercase" }}>Featured</Text>
@@ -157,6 +169,19 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
             </View>
           ) : null}
         </TouchableOpacity>
+        {user?.is_super_admin && (
+          <TouchableOpacity
+            style={styles.more}
+            onPress={toggleFeatured}
+            testID={`post-feature-${post.id}`}
+          >
+            <Ionicons
+              name={featured ? "star" : "star-outline"}
+              size={18}
+              color={featured ? colors.primary : colors.textSecondary}
+            />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.more}
           onPress={() => setMenuOpen(true)}

@@ -44,7 +44,7 @@ export default function ProfileView({ userId, isOwn = false }: Props) {
   const insets = useSafeAreaInsets();
   const { user: me, logout: _logout } = useAuth();
   const { isDesktop } = useResponsive();
-  const [profile, setProfile] = useState<(UserPublic & { follows_them?: boolean }) | null>(null);
+  const [profile, setProfile] = useState<(UserPublic & { follows_them?: boolean; followed_by?: boolean }) | null>(null);
   const [tab, setTab] = useState<Tab>("posts");
   const [posts, setPosts] = useState<FeedItem[]>([]);
   const [videos, setVideos] = useState<FeedItem[]>([]);
@@ -59,7 +59,7 @@ export default function ProfileView({ userId, isOwn = false }: Props) {
     if (!userId) return;
     try {
       const [u, p, vids] = await Promise.all([
-        api.get<UserPublic & { follows_them: boolean }>(`/users/${userId}`),
+        api.get<UserPublic & { follows_them: boolean; followed_by: boolean }>(`/users/${userId}`),
         api.get<FeedItem[]>(`/users/${userId}/posts`),
         // Long-form videos posted via the + button (previously called reels).
         api.get<Array<{
@@ -259,7 +259,7 @@ export default function ProfileView({ userId, isOwn = false }: Props) {
                     testID="profile-follow-button"
                   >
                     <Text style={[styles.followBtnText, profile.follows_them && { color: colors.textPrimary }]}>
-                      {profile.follows_them ? "Following" : "Follow"}
+                      {profile.follows_them ? "Following" : profile.followed_by ? "Follow back" : "Follow"}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity

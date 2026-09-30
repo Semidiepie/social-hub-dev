@@ -3,6 +3,18 @@
 ## Overview
 **PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
+## Web→mobile parity ports + mobile push diagnosis (2026-06)
+- **Ported recent web features to mobile:**
+  - **Follow back:** `ProfileView.tsx` now reads `followed_by` and shows "Follow back" (target follows you, you don't follow them) → else "Following"/"Follow". Backend already returns `followed_by` on `/users/{id}`.
+  - **Admin feature/boost toggle:** `PostCard.tsx` shows a star toggle for `user.is_super_admin` that calls `POST /admin/feature {type: post.type, id, featured}` (matches web FeatureToggle); `featured` label now driven by local state. Added `featured?: boolean` to `FeedItem` (client.ts).
+  - **Support number:** `settings.tsx` new "Support" section → "Call support · Sage AI" row dials `tel:+18005076788` via `Linking.openURL`.
+  - (Stories already native on mobile; splash/visual-parity/iOS-safe-area were web-only and don't apply to native.)
+- **Mobile push notifications — diagnosis (integration_expert verified):** Backend relay (`/register-push`→`/api/v1/push/users/register`, `send_push`→`/api/v1/push/trigger` with `X-Push-Key`), token via `getDevicePushTokenAsync`, tap handlers (`addNotificationResponseReceivedListener` + `getLastNotificationResponseAsync`), module-scope `setNotificationHandler`/`setNotificationChannelAsync`, `Linking.openSettings` nudge, and the `expo-notifications` plugin are ALL present and correct per the verified Emergent push playbook. **Root cause of past mobile-push failure: Android FCM not configured — no `google-services.json` and no `android.googleServicesFile` in `app.json`.** This is why only web (VAPID) push worked.
+  - **BLOCKED on user:** must provide Firebase `google-services.json` for Android package `app.emergent.vibesstream169e45e05`. Once provided → save to `mobile/google-services.json` + add `expo.android.googleServicesFile: "./google-services.json"`. Did NOT add the config reference yet (a missing file would break the Android build).
+  - Push only works on a native build (Publish→Deploy→Generate build), not Expo Go / web preview; build UI additionally prompts for a Google service account JSON (Android) + APNs `.p8` (iOS).
+- **Verified:** mobile lint clean (pre-existing ProfileView warnings only); mobile restarted + Expo preview healthy. Backend `followed_by` and `/admin/feature` already curl-verified in iteration 40/41. Mobile authenticated e2e blocked on Expo-web-preview CORS limitation (works on native).
+
+
 ## Feature — Web Stories + post sound + "Follow back" (2026-06, web only) — iteration 41
 - **Facebook-style Stories on web:** new `components/StoryBar.jsx` on Home ("Your story" + create, plus rings for people you follow; orange ring = unseen, self-first), `components/StoryComposer.jsx` (photo/video upload via Cloudinary + optional caption → `POST /api/stories`, 24h expiry), and `components/StoryViewer.jsx` (full-screen, auto-advancing progress bars, tap left/right + keyboard nav, mark-seen via `POST /api/stories/{id}/view`, delete-own). Reuses existing story backend endpoints (no backend change for stories).
 - **Post sound:** `lib/sound.js` `playPostChime()` — a bright two-note Web Audio chime played on a successful **post** (PostComposer) and **story** share. Best-effort (never blocks; respects muted browser). NOT headless-testable.

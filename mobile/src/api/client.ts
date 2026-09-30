@@ -173,6 +173,7 @@ export interface FeedItem {
   views: number;
   created_at: string;
   liked_by_me: boolean;
+  featured?: boolean;
   author: Author | null;
 }
 

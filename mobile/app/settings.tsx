@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, Platform, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -261,6 +261,17 @@ export default function Settings() {
             </View>
           </>
         )}
+
+        <Text style={styles.sectionLabel}>Support</Text>
+        <View style={styles.group}>
+          <Row
+            icon="call-outline"
+            label="Call support · Sage AI"
+            hint="+1 800-507-6788"
+            onPress={() => Linking.openURL("tel:+18005076788")}
+            testID="settings-support-call"
+          />
+        </View>
 
         <Text style={styles.sectionLabel}>About</Text>
         <View style={styles.group}>
