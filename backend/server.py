@@ -2636,32 +2636,55 @@ class SageClipBody(BaseModel):
     add_to_library: bool = True
 
 
-async def _pixabay_video(query: str) -> Optional[dict]:
+class CuratedAccountEditBody(BaseModel):
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    category: Optional[str] = None
+
+
+class SagePopulateBody(BaseModel):
+    count: int = 5
+    query: Optional[str] = None
+
+
+class ReelEditBody(BaseModel):
+    caption: Optional[str] = None
+
+
+async def _pixabay_videos(query: str, count: int = 1) -> list[dict]:
     key = os.environ.get("PIXABAY_API_KEY", "")
     if not key:
-        return None
+        return []
     import random
     try:
         async with httpx.AsyncClient(timeout=20) as c:
             resp = await c.get(
                 "https://pixabay.com/api/videos/",
-                params={"key": key, "q": query, "per_page": 30, "safesearch": "true"},
+                params={"key": key, "q": query, "per_page": 50, "safesearch": "true"},
             )
             resp.raise_for_status()
             hits = resp.json().get("hits") or []
     except Exception as e:  # network / quota / bad key → fall back to library
         logger.warning("Pixabay fetch failed: %s", e)
-        return None
-    if not hits:
-        return None
-    h = random.choice(hits)
-    vids = h.get("videos", {})
-    v = vids.get("medium") or vids.get("small") or vids.get("large") or vids.get("tiny")
-    if not v or not v.get("url"):
-        return None
-    tags = (h.get("tags") or "").split(",")
-    cap = (tags[0].strip().title() if tags and tags[0].strip() else query.title())
-    return {"video_url": v["url"], "thumbnail_url": v.get("thumbnail"), "caption": f"{cap} · royalty-free"}
+        return []
+    random.shuffle(hits)
+    out: list[dict] = []
+    for h in hits:
+        vids = h.get("videos", {})
+        v = vids.get("medium") or vids.get("small") or vids.get("large") or vids.get("tiny")
+        if not v or not v.get("url"):
+            continue
+        tags = (h.get("tags") or "").split(",")
+        cap = tags[0].strip().title() if tags and tags[0].strip() else query.title()
+        out.append({"video_url": v["url"], "thumbnail_url": v.get("thumbnail"), "caption": f"{cap} · royalty-free"})
+        if len(out) >= count:
+            break
+    return out
+
+
+async def _pixabay_video(query: str) -> Optional[dict]:
+    vids = await _pixabay_videos(query, 1)
+    return vids[0] if vids else None
 
 
 @app.post("/api/admin/sage-clip")
@@ -2697,6 +2720,88 @@ async def bulk_add_reels(user_id: str, body: BulkReelsBody, current: Annotated[d
         raise HTTPException(404, "Account not found")
     created = await _reels_from_clips(user_id, [c.model_dump() for c in body.clips])
     return {"created": created}
+
+
+@app.get("/api/admin/curated-accounts")
+async def list_curated_accounts(current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    rows = await db.users.find(
+        {"is_curated": True},
+        {"_id": 0, "id": 1, "username": 1, "display_name": 1, "avatar_url": 1, "category": 1, "posts_count": 1, "is_verified": 1},
+    ).sort("created_at", -1).to_list(length=500)
+    return rows
+
+
+@app.patch("/api/admin/curated-accounts/{user_id}")
+async def edit_curated_account(user_id: str, body: CuratedAccountEditBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    u = await db.users.find_one({"id": user_id})
+    if not u:
+        raise HTTPException(404, "Account not found")
+    updates: dict = {}
+    if body.display_name is not None and body.display_name.strip():
+        updates["display_name"] = body.display_name.strip()
+    if body.avatar_url is not None:
+        updates["avatar_url"] = body.avatar_url
+    if body.category is not None:
+        updates["category"] = body.category.strip()
+    if updates:
+        await db.users.update_one({"id": user_id}, {"$set": updates})
+    fresh = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "username": 1, "display_name": 1, "avatar_url": 1, "category": 1, "posts_count": 1, "is_verified": 1})
+    return fresh
+
+
+@app.post("/api/admin/accounts/{user_id}/sage-reels")
+async def sage_populate_account(user_id: str, body: SagePopulateBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Sage AI: fetch `count` royalty-free clips for the account's category and
+    attach them as reels; also adds them to the shared library."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    u = await db.users.find_one({"id": user_id})
+    if not u:
+        raise HTTPException(404, "Account not found")
+    count = max(1, min(body.count, 20))
+    query = (body.query or u.get("category") or "trending").strip() or "trending"
+    clips = await _pixabay_videos(query, count)
+    source = "pixabay"
+    if not clips:
+        clips = await db.curated_clips.aggregate([{"$sample": {"size": count}}]).to_list(length=count)
+        source = "library"
+    if not clips:
+        raise HTTPException(502, "No royalty-free clips available")
+    if source == "pixabay":
+        await db.curated_clips.insert_many([{"id": str(uuid.uuid4()), "created_at": now(), **c} for c in clips])
+    created = await _reels_from_clips(user_id, clips)
+    return {"created": created, "source": source}
+
+
+@app.patch("/api/admin/reels/{post_id}")
+async def admin_edit_reel(post_id: str, body: ReelEditBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    post = await db.posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(404, "Reel not found")
+    if body.caption is not None:
+        await db.posts.update_one({"id": post_id}, {"$set": {"caption": body.caption.strip(), "updated_at": now()}})
+    fresh = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    return await serialize_post(fresh, current["id"])
+
+
+@app.delete("/api/admin/reels/{post_id}")
+async def admin_delete_reel(post_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    post = await db.posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(404, "Reel not found")
+    await db.posts.delete_one({"id": post_id})
+    await db.comments.delete_many({"post_id": post_id})
+    await db.likes.delete_many({"post_id": post_id})
+    await db.users.update_one({"id": post["author_id"]}, {"$inc": {"posts_count": -1}})
+    return {"status": "deleted"}
 
 
 @app.on_event("startup")

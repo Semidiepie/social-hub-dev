@@ -3,6 +3,12 @@
 ## Overview
 **PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
+## Feature — Manage curated accounts (edit account, edit/delete reels, Sage add clips) (2026-06, web) — iteration 43
+- Extends `/admin/curate` with a **"Manage curated accounts"** section (`components/CuratedAccountManager.jsx`): lists all `is_curated` accounts; clicking opens an edit dialog to change display name / avatar / category, edit each reel's caption (blur-save) and delete reels, and a **Sage AI** button to add N more royalty-free clips for the account's category.
+- Backend (all super-admin, 403 otherwise): `GET /api/admin/curated-accounts`, `PATCH /api/admin/curated-accounts/{id}`, `POST /api/admin/accounts/{id}/sage-reels {count,query?}` (Pixabay by category via new `_pixabay_videos(query,count)` helper, library fallback, adds to library), `PATCH /api/admin/reels/{id}` + `DELETE /api/admin/reels/{id}` (admin override — not ownership-bound).
+- **Verified:** testing agent iteration_43 — backend 15/15 pytest + full web UI flow (open dialog, edit+persist, Sage add 2 Pixabay reels, caption blur-save, reel delete) all pass. Added `DialogDescription` for a11y. DB cleaned, library restored to 3 seed clips. Web-only.
+
+
 ## Feature — Admin curated-account provisioning + Sage AI clip finder (2026-06, web) — iteration 42
 - **Compliance note:** user's original ask was TikTok scraping + impersonation + fake verification → DECLINED (ToS/copyright/impersonation). Built the compliant version below (admin-provided + royalty-free content only).
 - **Admin panel** (`/admin/curate`, super-admin only, new "Curated accounts" tab in AdminTabs): form = avatar upload + profile name + optional handle + category + reel count → **"Sync & Create Account"** creates a VERIFIED account (`is_verified=true`, unique auto-handle, default avatar via `DEFAULT_AVATAR_URL`) and auto-populates its feed with N reels from the curated library.

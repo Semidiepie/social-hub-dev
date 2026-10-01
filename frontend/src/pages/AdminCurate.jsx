@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { AdminTabs } from "@/components/AdminTabs";
+import { CuratedAccountManager } from "@/components/CuratedAccountManager";
 import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
 import { toast } from "sonner";
 
@@ -311,6 +312,8 @@ export default function AdminCuratePage() {
           </div>
         </CardContent>
       </Card>
+
+      <CuratedAccountManager reloadKey={created?.user?.id} />
     </div>
   );
 }
