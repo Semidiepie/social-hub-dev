@@ -3,6 +3,16 @@
 ## Overview
 **PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
+## Feature — Admin curated-account provisioning + Sage AI clip finder (2026-06, web) — iteration 42
+- **Compliance note:** user's original ask was TikTok scraping + impersonation + fake verification → DECLINED (ToS/copyright/impersonation). Built the compliant version below (admin-provided + royalty-free content only).
+- **Admin panel** (`/admin/curate`, super-admin only, new "Curated accounts" tab in AdminTabs): form = avatar upload + profile name + optional handle + category + reel count → **"Sync & Create Account"** creates a VERIFIED account (`is_verified=true`, unique auto-handle, default avatar via `DEFAULT_AVATAR_URL`) and auto-populates its feed with N reels from the curated library.
+- **Royalty-free clip library:** Mongo `curated_clips`, idempotently seeded (3 Cloudinary demo CC0 clips) in `seed()`. `GET/POST /api/admin/curated-clips`. Bulk MP4 uploader in the panel pushes Cloudinary uploads into the library. New accounts `$sample` from it.
+- **Sage AI clip finder:** `POST /api/admin/sage-clip {query}` → fetches a fresh royalty-free video from **Pixabay** (`PIXABAY_API_KEY` in backend/.env; keyed off the category; uses NO Sage/LLM credits — it's a keyword video search), adds it to the library, falls back to a random library clip if Pixabay fails. Web "✨ Sage AI" button in the create panel pulls a clip, previews the thumbnail, and bumps the library count.
+- **Endpoints (all super-admin, 403 otherwise):** `POST /api/admin/curated-accounts`, `GET/POST /api/admin/curated-clips`, `POST /api/admin/sage-clip`, `POST /api/admin/accounts/{user_id}/reels` (bulk assign; 404 if missing).
+- **Critical bug fixed (test iteration 42):** curated emails used reserved `.local` TLD → Pydantic `EmailStr` rejected it → 500 on viewing a curated profile. Changed to `@curated.postmeplex.com` (verified 200).
+- **Verified:** testing agent iteration_42 backend 14/14 pytest + web UI (create flow, redirect for non-admins, clip library) all pass; main agent additionally curl+UI-verified the Sage AI Pixabay pull (toast + preview + library increment) and the email-bug fix. Web-only; test data cleaned, library reset to 3 seed clips.
+
+
 ## Web→mobile parity ports + mobile push diagnosis (2026-06)
 - **Ported recent web features to mobile:**
   - **Follow back:** `ProfileView.tsx` now reads `followed_by` and shows "Follow back" (target follows you, you don't follow them) → else "Following"/"Follow". Backend already returns `followed_by` on `/users/{id}`.

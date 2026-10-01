@@ -2478,6 +2478,227 @@ async def ensure_official_follows() -> None:
         await db.users.update_one({"id": oid}, {"$set": {"followers": real}})
 
 
+# ============================================================
+# Admin: curated account provisioning + royalty-free feed population
+# ============================================================
+CURATED_SEED_CLIPS = [
+    {
+        "video_url": "https://res.cloudinary.com/demo/video/upload/dog.mp4",
+        "thumbnail_url": "https://res.cloudinary.com/demo/video/upload/so_1/dog.jpg",
+        "caption": "Good boy showing off 🐶 #pets",
+    },
+    {
+        "video_url": "https://res.cloudinary.com/demo/video/upload/sea_turtle.mp4",
+        "thumbnail_url": "https://res.cloudinary.com/demo/video/upload/so_1/sea_turtle.jpg",
+        "caption": "Ocean vibes 🌊🐢 #nature",
+    },
+    {
+        "video_url": "https://res.cloudinary.com/demo/video/upload/elephants.mp4",
+        "thumbnail_url": "https://res.cloudinary.com/demo/video/upload/so_1/elephants.jpg",
+        "caption": "Gentle giants on the move 🐘 #wildlife",
+    },
+]
+
+
+class CuratedAccountBody(BaseModel):
+    display_name: str
+    username: Optional[str] = None
+    avatar_url: Optional[str] = ""
+    category: Optional[str] = ""
+    populate_count: int = 8
+
+
+class CuratedClipBody(BaseModel):
+    video_url: str
+    thumbnail_url: Optional[str] = None
+    caption: Optional[str] = None
+
+
+class BulkReelsBody(BaseModel):
+    clips: list[CuratedClipBody]
+
+
+def _slugify_username(base: str) -> str:
+    s = "".join(ch for ch in base.lower() if ch.isalnum() or ch == "_")
+    return s[:20] or "creator"
+
+
+async def _unique_username(base: str) -> str:
+    slug = _slugify_username(base)
+    candidate = slug
+    i = 1
+    while await db.users.find_one({"username": candidate}):
+        i += 1
+        candidate = f"{slug}{i}"[:24]
+    return candidate
+
+
+async def _reels_from_clips(user_id: str, clips: list[dict]) -> int:
+    docs = []
+    for c in clips:
+        if not c.get("video_url"):
+            continue
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "type": "reel",
+            "author_id": user_id,
+            "caption": c.get("caption") or "",
+            "video_url": c["video_url"],
+            "thumbnail_url": c.get("thumbnail_url"),
+            "likes": 0,
+            "comments_count": 0,
+            "views": 0,
+            "created_at": now(),
+        })
+    if docs:
+        await db.posts.insert_many(docs)
+        await db.users.update_one({"id": user_id}, {"$inc": {"posts_count": len(docs)}})
+    return len(docs)
+
+
+async def _populate_from_library(user_id: str, count: int) -> int:
+    count = max(0, min(count, 50))
+    if count == 0:
+        return 0
+    clips = await db.curated_clips.aggregate([{"$sample": {"size": count}}]).to_list(length=count)
+    return await _reels_from_clips(user_id, clips)
+
+
+@app.post("/api/admin/curated-accounts")
+async def create_curated_account(body: CuratedAccountBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    display = (body.display_name or "").strip()
+    if not display:
+        raise HTTPException(400, "Display name is required")
+    username = await _unique_username(body.username or display)
+    uid = str(uuid.uuid4())
+    doc = {
+        "id": uid,
+        "email": f"{username}@curated.postmeplex.com",
+        "username": username,
+        "display_name": display,
+        "password_hash": hash_pw(secrets.token_urlsafe(24)),
+        "reset_pin_hash": hash_pin(f"{secrets.randbelow(10000):04d}"),
+        "reset_pin_set_at": now(),
+        "bio": (f"{body.category} • Curated on PostMePlex" if body.category else ""),
+        "avatar_url": body.avatar_url or os.environ.get("DEFAULT_AVATAR_URL", ""),
+        "category": body.category or "",
+        "is_verified": True,
+        "is_streamer": False,
+        "is_admin": False,
+        "is_curated": True,
+        "is_live": False,
+        "followers": 0,
+        "following": 0,
+        "posts_count": 0,
+        "created_at": now(),
+    }
+    await db.users.insert_one(doc)
+    await _follow_official(uid)
+    created = await _populate_from_library(uid, body.populate_count)
+    return {
+        "user": {
+            "id": uid,
+            "username": username,
+            "display_name": display,
+            "avatar_url": doc["avatar_url"],
+            "category": doc["category"],            "is_verified": True,
+        },
+        "reels_created": created,
+    }
+
+
+@app.get("/api/admin/curated-clips")
+async def list_curated_clips(current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    return await db.curated_clips.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
+
+
+@app.post("/api/admin/curated-clips")
+async def add_curated_clip(body: CuratedClipBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "video_url": body.video_url,
+        "thumbnail_url": body.thumbnail_url,
+        "caption": body.caption or "",
+        "created_at": now(),
+    }
+    await db.curated_clips.insert_one(doc)
+    return {k: v for k, v in doc.items() if k != "_id"}
+
+
+class SageClipBody(BaseModel):
+    query: Optional[str] = None
+    add_to_library: bool = True
+
+
+async def _pixabay_video(query: str) -> Optional[dict]:
+    key = os.environ.get("PIXABAY_API_KEY", "")
+    if not key:
+        return None
+    import random
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            resp = await c.get(
+                "https://pixabay.com/api/videos/",
+                params={"key": key, "q": query, "per_page": 30, "safesearch": "true"},
+            )
+            resp.raise_for_status()
+            hits = resp.json().get("hits") or []
+    except Exception as e:  # network / quota / bad key → fall back to library
+        logger.warning("Pixabay fetch failed: %s", e)
+        return None
+    if not hits:
+        return None
+    h = random.choice(hits)
+    vids = h.get("videos", {})
+    v = vids.get("medium") or vids.get("small") or vids.get("large") or vids.get("tiny")
+    if not v or not v.get("url"):
+        return None
+    tags = (h.get("tags") or "").split(",")
+    cap = (tags[0].strip().title() if tags and tags[0].strip() else query.title())
+    return {"video_url": v["url"], "thumbnail_url": v.get("thumbnail"), "caption": f"{cap} · royalty-free"}
+
+
+@app.post("/api/admin/sage-clip")
+async def sage_pull_clip(body: SageClipBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Sage AI: pull a royalty-free video clip (Pixabay by keyword), falling back
+    to the existing curated library. Optionally adds it to the library."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    query = (body.query or "").strip() or "trending"
+    clip = await _pixabay_video(query)
+    source = "pixabay"
+    if not clip:
+        sample = await db.curated_clips.aggregate([{"$sample": {"size": 1}}]).to_list(length=1)
+        if sample:
+            s = sample[0]
+            clip = {"video_url": s["video_url"], "thumbnail_url": s.get("thumbnail_url"), "caption": s.get("caption", "")}
+            source = "library"
+    if not clip:
+        raise HTTPException(502, "No royalty-free clip available")
+    if body.add_to_library and source == "pixabay":
+        doc = {"id": str(uuid.uuid4()), "created_at": now(), **clip}
+        await db.curated_clips.insert_one(doc)
+        clip = {k: v for k, v in doc.items() if k != "_id"}
+    return {**clip, "source": source}
+
+
+@app.post("/api/admin/accounts/{user_id}/reels")
+async def bulk_add_reels(user_id: str, body: BulkReelsBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Admins only")
+    u = await db.users.find_one({"id": user_id})
+    if not u:
+        raise HTTPException(404, "Account not found")
+    created = await _reels_from_clips(user_id, [c.model_dump() for c in body.clips])
+    return {"created": created}
+
+
 @app.on_event("startup")
 async def seed():
     """Idempotent founder-only seed. ONLY ensures semidiepie exists as the
@@ -2540,6 +2761,11 @@ async def seed():
                 new_doc["reset_pin_set_at"] = now()
             await db.users.insert_one(new_doc)
     await ensure_official_follows()
+    if await db.curated_clips.count_documents({}) == 0:
+        await db.curated_clips.insert_many([
+            {"id": str(uuid.uuid4()), "created_at": now(), **c} for c in CURATED_SEED_CLIPS
+        ])
+        logger.info("Seed: curated clip library seeded.")
     logger.info("Seed: founder + official account ensured.")
 
 

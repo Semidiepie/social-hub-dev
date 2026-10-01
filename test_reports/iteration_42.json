@@ -1,0 +1,71 @@
+{
+  "summary": "Iteration 42: Admin curated account provisioning + royalty-free clip library. Backend: 14/14 pytest cases pass (super-admin gating, 400 on blank name, verified-user + reels creation, clip library seeded >=3, bulk add reels, 404 missing user). Web /admin/curate: form renders with all required testids, submit creates account + shows curate-result with view link, bulk upload button + seeded clip thumbnails visible, non-admin is redirected away. CRITICAL BUG FOUND: clicking the View profile link for a curated account triggers a 500 on the profile fetch because UserPublic.email is Pydantic EmailStr and rejects the generated `@curated.postmeplex.local` domain (`.local` is reserved) — toast 'Unexpected token I, Internal S... is not valid JSON' then redirect to /discover. The curated account itself is created correctly and its verified reels DO appear in the global feed with the blue checkmark.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/users/by-username/{username} (and any UserPublic-serializing endpoint for curated accounts)",
+        "issue": "Returns 500 for curated accounts. Root cause: `UserPublic.email: EmailStr` fails validation on auto-generated email `<username>@curated.postmeplex.local` because `.local` is a reserved/special-use TLD and `email_validator` rejects it. Server log shows: `pydantic_core._pydantic_core.ValidationError: 1 validation error for UserPublic ... value is not a valid email address: The part after the @-sign is a special-use or reserved name`. This breaks profile fetch, admin user list, and any list that includes curated accounts.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/curated-accounts",
+        "issue": "`populate_count` is silently clamped to [0,50] internally; a 400 for out-of-range or at least an echo of the effective count in the response would be clearer (currently the client only sees `reels_created`)."
+      },
+      {
+        "endpoint": "POST /api/admin/accounts/{user_id}/reels",
+        "issue": "`clips: []` succeeds with `{created:0}` without any validation — consider a 400 for empty clips array for clearer semantics (non-blocking)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [
+        {
+          "component": "AdminCurate -> curate-view-profile link",
+          "issue": "Clicking the 'View' link lands on `/@<handle>` which hits the backend 500 (see critical backend issue). UI shows two 'Unexpected token I ...' error toasts and silently redirects to /discover instead of the newly created profile. User cannot verify the curated profile from the result card.",
+          "selector": "[data-testid='curate-view-profile']",
+          "priority": "HIGH"
+        }
+      ],
+      "integration_issues": [
+        {
+          "flow": "Create curated account → view profile",
+          "issue": "End-to-end flow is broken on the final step because of the EmailStr serialization bug above. Fix the backend and this UI flow auto-passes.",
+          "affected_selectors": ["[data-testid='curate-view-profile']"]
+        }
+      ],
+      "design_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration42_curated.py",
+    "/app/test_reports/pytest/iteration42_curated.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Fix UserPublic serialization for curated accounts. Options: (a) change curated email domain from `@curated.postmeplex.local` to a non-reserved domain like `@curated.postmeplex.app` or `@curated.invalid` won't work either (also reserved); best choice `@curated.postmeplex.com` or use a real-looking subdomain. (b) Change `UserPublic.email` to a plain `str` (profile responses don't need EmailStr validation on output). (c) Exclude `email` from UserPublic entirely for public endpoints. Option (b) is lowest-risk; combined with (a) using a valid domain is cleanest.",
+    "Add a backend regression test for GET profile of a curated account (currently none — the UI exposed it).",
+    "Optionally echo effective `populate_count` in /api/admin/curated-accounts response and add a seed-cleanup step for leftover curated accounts (@curated.postmeplex.local) on startup, similar to how `test_*` users are purged."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py L2578: `email: f'{username}@curated.postmeplex.local'` — `.local` is a reserved multicast DNS TLD and is rejected by Pydantic EmailStr. This causes a cascade of 500s on any endpoint returning UserPublic that includes a curated user.",
+    "No cleanup/purge for curated accounts on startup (unlike `test_*`). Test agents and admins will accumulate `@curated.postmeplex.local` ghost accounts in production preview DB. Add a documented admin cleanup endpoint or a startup purge if desired.",
+    "Avatar is stored as `avatar_url: body.avatar_url or ''` — consider defaulting to DEFAULT_AVATAR_URL so curated accounts have a visible avatar when none is uploaded.",
+    "`_populate_from_library` caps at 50 silently; return the clamped value to caller for transparency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration42_curated.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 pytest on new endpoints) — BUT the EmailStr/.local bug surfaces only on downstream UserPublic serialization, which isn't covered by the dedicated curated-endpoint tests (and is now a documented action item).",
+    "frontend": "80% (form, submit, result, bulk upload UI, seeded clips, non-admin redirect all PASS; View-profile navigation FAILS due to backend 500)."
+  },
+  "seed_data_creation": "Backend tests + UI tests created 11 curated accounts; all 11 plus their reels were deleted via direct MongoDB cleanup after testing. DB is clean.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The 14 pytest cases in test_iteration42_curated.py cover super-admin gating, 400 on blank name, verified-user + reels creation, library listing + add, bulk add reels + posts_count increment, and auto-cleanup. Login testid is `login-submit` (not `login-submit-button`). Local-storage auth key is `postmeplex.token`. PIN login endpoint has a brute-force lockout — prefer `/api/auth/login` (email/password) in test automation. Cleanup curated accounts via Mongo (`db.users.find({email:{$regex:'@curated.postmeplex.local'}})`) after testing.",
+  "rca of the issue": "Root cause of the profile 500: /app/backend/server.py L2578 sets the curated account email to `{username}@curated.postmeplex.local`. The `.local` TLD is a reserved special-use name (RFC 6762 / IANA special-use registry), which the `email_validator` library (used by Pydantic `EmailStr`) rejects. Any endpoint that serializes a curated user through `UserPublic` (which declares `email: EmailStr`) raises `pydantic_core.ValidationError` and returns 500. Reproduce: create curated account → GET /api/users/by-username/<handle> → 500. Fix: either make `UserPublic.email` a plain `str` for output or switch the curated email domain to a non-reserved one (e.g., `curated.postmeplex.com`). Verified via /var/log/supervisor/backend.err.log."
+}
