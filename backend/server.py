@@ -2960,6 +2960,18 @@ app.include_router(_build_sage(route_ctx))
 from routes.keyhealth import build_router as _build_keyhealth, check_and_alert as _keyhealth_check  # noqa: E402
 app.include_router(_build_keyhealth(route_ctx))
 
+from routes.games import build_router as _build_games, seed_default_game as _seed_games  # noqa: E402
+app.include_router(_build_games(route_ctx))
+
+
+@app.on_event("startup")
+async def _seed_games_startup():
+    try:
+        await _seed_games(db, now)
+        logger.info("Seed: default game ensured.")
+    except Exception as e:
+        logger.warning(f"[games] seed failed: {e}")
+
 
 @app.on_event("startup")
 async def _load_api_key_overrides():

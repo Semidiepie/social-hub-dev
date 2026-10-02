@@ -262,3 +262,50 @@ html, body {
 .pmp-cap-bar { width: 3px; align-self: stretch; min-height: 16px; border-radius: 2px; background: hsl(var(--primary)); flex: none; }
 
 .splash-text { animation: splash-text-in .55s cubic-bezier(.16,1,.3,1) .35s both; }
+
+
+/* ===== PostMePlex Match (match-3) ===== */
+.pmp-tile-wrap { position: relative; width: 100%; height: 100%; }
+.pmp-tile-empty { width: 100%; height: 100%; }
+.pmp-tile {
+  position: relative; width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 16px; cursor: pointer;
+  box-shadow: inset 0 -4px 0 rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.25);
+  transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
+  animation: pmp-tile-in .22s cubic-bezier(.16,1,.3,1) both;
+  overflow: hidden;
+}
+.pmp-tile:hover { filter: brightness(1.08); }
+.pmp-tile:active { transform: scale(.94); }
+.pmp-tile-sel {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px #fff, 0 0 0 6px hsl(var(--primary)), 0 4px 12px rgba(0,0,0,.4);
+  z-index: 2;
+}
+.pmp-tile-special { box-shadow: inset 0 0 0 2px rgba(255,255,255,.7), 0 2px 8px rgba(0,0,0,.35); }
+.pmp-tile-bomb {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 30% 30%, #fff 0%, #ff6b3d 22%, #a020f0 55%, #1b1030 100%);
+  border-radius: 16px;
+  animation: pmp-bomb-spin 3s linear infinite;
+}
+.pmp-stripe { position: absolute; background: rgba(255,255,255,.85); pointer-events: none; }
+.pmp-stripe-row { left: 6%; right: 6%; height: 3px; top: calc(50% - 1.5px); box-shadow: 0 7px 0 rgba(255,255,255,.85), 0 -7px 0 rgba(255,255,255,.85); }
+.pmp-stripe-col { top: 6%; bottom: 6%; width: 3px; left: calc(50% - 1.5px); box-shadow: 7px 0 0 rgba(255,255,255,.85), -7px 0 0 rgba(255,255,255,.85); }
+@keyframes pmp-tile-in { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes pmp-bomb-spin { to { filter: hue-rotate(360deg); } }
+.pmp-shake { animation: pmp-shake .2s ease; }
+@keyframes pmp-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+/* Saga level-map node */
+.pmp-level-node {
+  position: relative; width: 60px; height: 60px; border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 900; font-size: 18px; border: 3px solid;
+  transition: transform .15s ease;
+}
+.pmp-level-node:hover { transform: scale(1.08); }
+.pmp-level-locked { background: hsl(var(--secondary)); border-color: hsl(var(--border)); color: hsl(var(--muted-foreground)); cursor: not-allowed; }
+.pmp-level-open { background: hsl(var(--card)); border-color: hsl(var(--primary)); color: hsl(var(--primary)); cursor: pointer; box-shadow: 0 0 16px hsl(var(--primary) / .4); }
+.pmp-level-done { background: hsl(var(--primary)); border-color: #fff; color: #fff; cursor: pointer; }
