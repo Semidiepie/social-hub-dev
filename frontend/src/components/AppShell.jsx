@@ -234,6 +234,9 @@ export function AppShell({ children }) {
                 <DropdownMenuItem data-testid="topbar-menu-pet" onClick={() => navigate("/pet")}>
                   <PawPrint size={16} /> My Pet
                 </DropdownMenuItem>
+                <DropdownMenuItem data-testid="topbar-menu-games" onClick={() => navigate("/games")}>
+                  <Gamepad2 size={16} /> Games
+                </DropdownMenuItem>
                 <DropdownMenuItem data-testid="topbar-menu-blogs" onClick={() => navigate("/blogs")}>
                   <BookText size={16} /> Blogs
                 </DropdownMenuItem>
