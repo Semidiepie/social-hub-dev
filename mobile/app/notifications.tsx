@@ -23,6 +23,7 @@ const FALLBACK =
 function iconFor(type: Notification["type"]) {
   if (type === "like") return { name: "heart" as const, color: colors.primary };
   if (type === "comment") return { name: "chatbubble" as const, color: "#4FC3F7" };
+  if (type === "live") return { name: "radio" as const, color: "#EF4444" };
   return { name: "person-add" as const, color: colors.success };
 }
 
@@ -88,7 +89,8 @@ export default function Notifications() {
               <TouchableOpacity
                 style={styles.row}
                 onPress={() => {
-                  if (item.post_id) router.push(`/post/${item.post_id}`);
+                  if (item.type === "live") router.push(`/live/${item.live_stream_id || (item.link || "").split("/live/")[1] || ""}`);
+                  else if (item.post_id) router.push(`/post/${item.post_id}`);
                   else router.push(`/profile/${item.actor_id}`);
                 }}
                 testID={`notif-${item.id}`}

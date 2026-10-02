@@ -200,6 +200,7 @@ def build_router(ctx) -> APIRouter:
                     "actor_avatar": _av(current.get("avatar_url")),
                     "text": "is live now — tap to watch",
                     "link": f"/live/{doc['id']}",
+                    "live_stream_id": doc["id"],
                     "read": False,
                     "created_at": now(),
                 })

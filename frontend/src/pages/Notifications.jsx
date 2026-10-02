@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Bell, Heart, MessageCircle, UserPlus, PawPrint, Megaphone } from "lucide-react";
+import { Loader2, Bell, Heart, MessageCircle, UserPlus, PawPrint, Megaphone, Radio } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ const ICONS = {
   follow: UserPlus,
   pet: PawPrint,
   update: Megaphone,
+  live: Radio,
 };
 
 export default function NotificationsPage() {
@@ -44,8 +45,10 @@ export default function NotificationsPage() {
   // profile; a like/comment → the post/reel it references.
   const openNotification = (n) => {
     setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
-    if (n.type === "pet") navigate("/pet");
+    if (n.type === "live") navigate(n.link || `/live/${n.live_stream_id || ""}`);
+    else if (n.type === "pet") navigate("/pet");
     else if (n.type === "update") navigate("/");
+    else if (n.link) navigate(n.link);
     else if (n.video_id) navigate(`/videos/${n.video_id}`);
     else if (n.post_id) navigate(`/posts/${n.post_id}`);
     else if (n.actor_id) navigate(`/user/${n.actor_id}`);

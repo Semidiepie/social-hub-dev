@@ -40,6 +40,7 @@ import SettingsPage from "@/pages/Settings";
 import AdminResetPinsPage from "@/pages/AdminResetPins";
 import AdminVerifyPage from "@/pages/AdminVerify";
 import AdminCuratePage from "@/pages/AdminCurate";
+import AdminAccountsPage from "@/pages/AdminAccounts";
 import AdminRememberingPage from "@/pages/AdminRemembering";
 import AdminBlogsPage from "@/pages/AdminBlogs";
 import AdminAnnouncePage from "@/pages/AdminAnnounce";
@@ -140,6 +141,10 @@ export default function App() {
             <Route
               path="/admin/curate"
               element={<ProtectedRoute><AdminCuratePage /></ProtectedRoute>}
+            />
+            <Route
+              path="/admin/accounts"
+              element={<ProtectedRoute><AdminAccountsPage /></ProtectedRoute>}
             />
             <Route
               path="/admin/remembering"

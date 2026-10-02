@@ -2135,6 +2135,25 @@ async def admin_search_users(q: str = "", current: Annotated[dict, Depends(get_c
     ]
 
 
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    """Super-admin: permanently delete a user (e.g. leftover test accounts) and
+    their posts, follows and stories. Founder/official/self are protected."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Super admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("is_official") or target.get("is_super_admin") or user_id == current["id"]:
+        raise HTTPException(400, "This account is protected and cannot be deleted")
+    await db.posts.delete_many({"author_id": user_id})
+    await db.follows.delete_many({"$or": [{"follower_id": user_id}, {"followee_id": user_id}]})
+    await db.stories.delete_many({"user_id": user_id})
+    await db.users.delete_one({"id": user_id})
+    logger.info("[admin] deleted user %s (@%s)", user_id, target.get("username"))
+    return {"status": "deleted", "id": user_id}
+
+
 @app.post("/api/admin/users/{user_id}/reset-pin")
 async def admin_set_reset_pin(
     user_id: str,

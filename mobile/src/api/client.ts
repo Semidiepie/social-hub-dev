@@ -255,12 +255,14 @@ export interface Comment {
 export interface Notification {
   id: string;
   user_id: string;
-  type: "like" | "comment" | "follow";
+  type: "like" | "comment" | "follow" | "live" | "pet" | "update";
   actor_id: string;
   actor_name: string;
   actor_avatar: string;
   text: string;
   post_id?: string;
+  link?: string;
+  live_stream_id?: string;
   read: boolean;
   created_at: string;
 }

@@ -3,6 +3,14 @@
 ## Overview
 **PostMePlex** is a creator-first social platform combining Facebook (text/photo posts), Instagram (3-column profile grid + Stories), TikTok (vertical reels), and long-form Blogs + Videos. Deep dark `#12141c` palette with vivid orange `#FF6B3D` accents — energetic, streamer-coded, never AI-slop. Ships on **iOS + Android (Expo)** and **Desktop / Web (React)**, all against the same FastAPI + MongoDB backend.
 
+## Feature — Admin account cleanup tool (delete test/junk users) (2026-06, web) — iteration 44
+- **Why:** user saw leftover test accounts (e.g. @liveprobe_9b3b, @realprod_aae92 "Prod Test", "Chg Test", "Qwerty" — default lightning avatar, empty feeds) following the founder on PRODUCTION. These are automated-test scratch accounts whose handles are NOT `test_`-prefixed, so startup cleanup never removes them. Preview and production use SEPARATE databases (preview had `test_*` accounts; production has different junk) — so these must be deleted on the live site by an admin.
+- **Backend:** `DELETE /api/admin/users/{user_id}` (super-admin only; 403 non-admin; 400 if target is official/super_admin/self → protected; cascades delete of the user's posts, follows both directions, and stories). Reuses existing `GET /api/admin/users?q=` search.
+- **Web:** new **Admin → Accounts** tab (`/admin/accounts`, `pages/AdminAccounts.jsx`): debounced search over all users; each row shows avatar/name/@handle/posts; trash button deletes (with confirm); founder + official accounts show "protected" with delete disabled.
+- **Verified (curl):** delete self→400, delete junk→200 then profile 404, non-admin→403, UI renders with protected rows disabled. Also manually purged 13 leftover `test_*`/"Test" accounts from the PREVIEW db (36 real seed users remain).
+- **User action required:** redeploy so the Accounts tab reaches production, then Admin → Accounts → search "test"/"probe"/"qwerty" etc. and delete the junk accounts (they live only in the production DB, which the agent can't access).
+
+
 ## Feature — Manage curated accounts (edit account, edit/delete reels, Sage add clips) (2026-06, web) — iteration 43
 - Extends `/admin/curate` with a **"Manage curated accounts"** section (`components/CuratedAccountManager.jsx`): lists all `is_curated` accounts; clicking opens an edit dialog to change display name / avatar / category, edit each reel's caption (blur-save) and delete reels, and a **Sage AI** button to add N more royalty-free clips for the account's category.
 - Backend (all super-admin, 403 otherwise): `GET /api/admin/curated-accounts`, `PATCH /api/admin/curated-accounts/{id}`, `POST /api/admin/accounts/{id}/sage-reels {count,query?}` (Pixabay by category via new `_pixabay_videos(query,count)` helper, library fallback, adds to library), `PATCH /api/admin/reels/{id}` + `DELETE /api/admin/reels/{id}` (admin override — not ownership-bound).
@@ -388,6 +396,13 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **iOS Safari "not allowed by the user agent" error:** the web compressor called `canvas.captureStream()`/`MediaRecorder`, which throw `NotAllowedError` on iOS Safari and surfaced as a toast that broke uploads. Fix: `canCompressVideo()` now actively probes the APIs (returns false on iOS → skips compression) and `compressVideoToTarget()` wraps everything in try/catch to **fall back to uploading the original file** on any error. The permission error can no longer appear.
 - **Delete own posts on web (was missing entirely):** added an owner-only Trash button to feed `PostCard` (`post-delete-<id>`), feed `VideoCard` (`feed-video-delete-<id>`), and `PostDetail` (`post-detail-delete`) → `DELETE /api/posts/:id` (or `/api/videos/:id` for videos). Only shows for the current user's own content; backend enforces 403 for non-owners.
 - Verified: testing agent iteration_32 — backend 7/7 (delete + ownership 403 + regression) + frontend 5/5 (feed/detail delete, ownership guard, upload regression). iOS permission error not reproducible in headless Chromium; fix validated by code + no permission toast on normal uploads.
+
+### 2026-06 — Go-live follower alerts: notification page routing (web + mobile)
+- Backend `POST /api/live` already fanned out to all followers via (1) in-app `notifications` doc (type `live`), (2) native `send_push`, and (3) browser `send_web_push`. Added `live_stream_id` to the live notification doc for clean client routing.
+- Web `Notifications.jsx`: added a `Radio` icon for `live` and routed `live` notifications (and any notif with a `link`) to `/live/:id` (previously fell through to the actor's profile).
+- Mobile `app/notifications.tsx`: `Notification` type extended (`live`/`pet`/`update` + `link`/`live_stream_id`); red `radio` icon for live; tapping a live notification pushes to `/live/:id`.
+- Verified end-to-end on preview: creator go-live produced a follower `live` notification with correct `link` + `live_stream_id`. Real web-push / native-push delivery still requires a subscribed browser / native build (unverified in preview).
+
 
 ### 2026-06 (part 14) — Inline commenting on homepage posts (web)
 - Homepage feed `PostCard` comment button was previously a static, non-functional count. Now it toggles an inline comment section (`post-comment-toggle-<id>` → `post-comments-<id>`) that fetches `GET /api/posts/:id/comments`, shows an input (`post-comment-input-<id>`) + submit (`post-comment-submit-<id>`), and posts via `POST /api/posts/:id/comments`. Comments render author name + verified badge; live count updates on the card. Non-signed-in users see a disabled "Sign in to comment" input.
