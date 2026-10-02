@@ -21,8 +21,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-CF_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
-CF_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+import settings_store
+
 CF_BASE = "https://api.cloudflare.com/client/v4"
 
 _DEFAULT_AVATAR = ""
@@ -81,8 +81,8 @@ hub = LiveHub()
 
 
 async def _cf(method: str, path: str, json: Optional[dict] = None):
-    headers = {"Authorization": f"Bearer {CF_API_TOKEN}", "Content-Type": "application/json"}
-    url = f"{CF_BASE}/accounts/{CF_ACCOUNT_ID}{path}"
+    headers = {"Authorization": f"Bearer {settings_store.get('CLOUDFLARE_API_TOKEN')}", "Content-Type": "application/json"}
+    url = f"{CF_BASE}/accounts/{settings_store.get('CLOUDFLARE_ACCOUNT_ID')}{path}"
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.request(method, url, headers=headers, json=json)
     data = r.json()
@@ -147,7 +147,7 @@ def build_router(ctx) -> APIRouter:
         mode = body.mode if body.mode in ("webrtc", "hls") else "webrtc"
         whip_url = whep_url = hls_url = input_id = None
         provider_ok = False
-        if CF_ACCOUNT_ID and CF_API_TOKEN:
+        if settings_store.get("CLOUDFLARE_ACCOUNT_ID") and settings_store.get("CLOUDFLARE_API_TOKEN"):
             payload: dict = {"meta": {"name": body.title, "owner": current["id"]}, "preferLowLatency": True}
             if mode == "hls":
                 payload["recording"] = {"mode": "automatic"}
@@ -246,7 +246,7 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(404, "Stream not found")
         if s.get("owner_id") != current["id"]:
             raise HTTPException(403, "Only the broadcaster can end this stream")
-        if s.get("input_id") and CF_ACCOUNT_ID and CF_API_TOKEN:
+        if s.get("input_id") and settings_store.get("CLOUDFLARE_ACCOUNT_ID") and settings_store.get("CLOUDFLARE_API_TOKEN"):
             try:
                 await _cf("PUT", f"/stream/live_inputs/{s['input_id']}", json={"enabled": False})
             except Exception as e:

@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { AdminTabs } from "@/components/AdminTabs";
+import { ApiKeyEditor } from "@/components/ApiKeyEditor";
 import { pushSupported, enableBrowserPush, isBrowserPushEnabled } from "@/lib/webpush";
 import { toast } from "sonner";
 
@@ -73,10 +74,12 @@ export default function AdminKeysPage() {
         <h1 className="flex items-center gap-2 text-3xl font-black tracking-tight">
           <ShieldAlert size={24} className="text-primary" /> Admin
         </h1>
-        <p className="mt-1 text-muted-foreground">Live health of your API keys. You get an instant browser push + in-app alert whenever one needs updating.</p>
+        <p className="mt-1 text-muted-foreground">Update your API keys anytime and check their live health. You get an instant browser push + in-app alert whenever one needs updating.</p>
       </header>
 
       <AdminTabs />
+
+      <ApiKeyEditor />
 
       {pushSupported() && !pushOn && (
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4" data-testid="keys-enable-push">

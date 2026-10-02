@@ -10,7 +10,6 @@ Avoids `from __future__ import annotations` (breaks closure-local Depends).
 import asyncio
 import base64
 import io
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -21,9 +20,8 @@ from PIL import Image
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
-UPLOAD_PRESET = os.environ.get("CLOUDINARY_UPLOAD_PRESET", "")
+import settings_store
+
 NANO_BANANA = "gemini-3.1-flash-image-preview"
 
 # Care cooldowns (seconds) and the stat each refills.
@@ -76,8 +74,8 @@ async def _cloudinary_upload(image_b64: str) -> str:
     data_uri = f"data:image/png;base64,{image_b64}"
     async with httpx.AsyncClient(timeout=60) as c:
         r = await c.post(
-            f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload",
-            data={"upload_preset": UPLOAD_PRESET, "file": data_uri},
+            f"https://api.cloudinary.com/v1_1/{settings_store.get('CLOUDINARY_CLOUD_NAME')}/image/upload",
+            data={"upload_preset": settings_store.get("CLOUDINARY_UPLOAD_PRESET"), "file": data_uri},
         )
     j = r.json()
     if r.status_code >= 400 or not j.get("secure_url"):
@@ -87,12 +85,12 @@ async def _cloudinary_upload(image_b64: str) -> str:
 
 async def _sage_generate(prompt: str, reference_b64: Optional[str] = None) -> str:
     """Generate a pet image with Sage AI (Nano Banana). Returns base64 PNG data."""
-    if not EMERGENT_LLM_KEY:
+    if not settings_store.get("EMERGENT_LLM_KEY"):
         raise HTTPException(503, "Sage AI is not configured")
     from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
     chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
+        api_key=settings_store.get("EMERGENT_LLM_KEY"),
         session_id=f"sage-pet-{uuid.uuid4()}",
         system_message="You are Sage AI, an expert cartoon pet-character artist.",
     )

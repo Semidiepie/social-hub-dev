@@ -23,10 +23,10 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+import settings_store
+
 load_dotenv()
 
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 SAGE_VOICE_ID = os.environ.get("SAGE_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # "Sarah" — calm, warm
 SAGE_TTS_MODEL = os.environ.get("SAGE_TTS_MODEL", "eleven_turbo_v2_5")
 
@@ -112,7 +112,7 @@ def build_router(ctx) -> APIRouter:
         history.reverse()
         transcript = "\n".join(f"{'User' if m['role'] == 'user' else 'Sage'}: {m['text']}" for m in history)
         chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
+            api_key=settings_store.get("EMERGENT_LLM_KEY"),
             session_id=f"sage-{user_id}",
             system_message=SAGE_SYSTEM + (SPOKEN_STYLE if spoken else ""),
         ).with_model("anthropic", "claude-sonnet-4-6")
@@ -123,12 +123,13 @@ def build_router(ctx) -> APIRouter:
         return (resp or "").strip()
 
     async def _tts(text: str) -> str:
-        if not ELEVENLABS_API_KEY:
+        eleven_key = settings_store.get("ELEVENLABS_API_KEY")
+        if not eleven_key:
             raise HTTPException(503, "Voice isn't configured yet")
 
         def _synth() -> bytes:
             from elevenlabs.client import ElevenLabs
-            client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+            client = ElevenLabs(api_key=eleven_key)
             stream = client.text_to_speech.convert(
                 text=text,
                 voice_id=SAGE_VOICE_ID,
@@ -161,14 +162,14 @@ def build_router(ctx) -> APIRouter:
     @router.get("/api/sage/profile")
     async def sage_profile():
         return {"id": SAGE_ID, "username": SAGE_USERNAME, "display_name": SAGE_NAME,
-                "avatar_url": SAGE_AVATAR, "voice_enabled": bool(ELEVENLABS_API_KEY)}
+                "avatar_url": SAGE_AVATAR, "voice_enabled": bool(settings_store.get("ELEVENLABS_API_KEY"))}
 
     @router.get("/api/sage/thread")
     async def sage_thread(current: Annotated[dict, Depends(get_current_user)]):
         rows = await db.sage_messages.find(
             {"user_id": current["id"]}, {"_id": 0}
         ).sort("created_at", 1).to_list(500)
-        return {"messages": [_out(r) for r in rows], "voice_enabled": bool(ELEVENLABS_API_KEY)}
+        return {"messages": [_out(r) for r in rows], "voice_enabled": bool(settings_store.get("ELEVENLABS_API_KEY"))}
 
     @router.delete("/api/sage/thread")
     async def sage_clear(current: Annotated[dict, Depends(get_current_user)]):
@@ -209,7 +210,8 @@ def build_router(ctx) -> APIRouter:
 
     @router.post("/api/sage/stt")
     async def sage_stt(audio: UploadFile = File(...), current: dict = Depends(get_current_user)):
-        if not ELEVENLABS_API_KEY:
+        eleven_key = settings_store.get("ELEVENLABS_API_KEY")
+        if not eleven_key:
             raise HTTPException(503, "Voice isn't configured yet")
         content = await audio.read()
         if not content:
@@ -218,7 +220,7 @@ def build_router(ctx) -> APIRouter:
         def _transcribe() -> str:
             import io
             from elevenlabs.client import ElevenLabs
-            client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+            client = ElevenLabs(api_key=eleven_key)
             r = client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1")
             return r.text if hasattr(r, "text") else str(r)
 

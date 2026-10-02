@@ -397,6 +397,14 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - **Delete own posts on web (was missing entirely):** added an owner-only Trash button to feed `PostCard` (`post-delete-<id>`), feed `VideoCard` (`feed-video-delete-<id>`), and `PostDetail` (`post-detail-delete`) → `DELETE /api/posts/:id` (or `/api/videos/:id` for videos). Only shows for the current user's own content; backend enforces 403 for non-owners.
 - Verified: testing agent iteration_32 — backend 7/7 (delete + ownership 403 + regression) + frontend 5/5 (feed/detail delete, ownership guard, upload regression). iOS permission error not reproducible in headless Chromium; fix validated by code + no permission toast on normal uploads.
 
+### 2026-06 — Editable API Keys admin panel (web) — update keys live, no redeploy
+- **New `backend/settings_store.py`**: central resolver for all third-party keys — DB override (`db.api_keys`) → env → default, cached in memory and refreshed instantly on edit, so new keys take effect at runtime with NO restart/redeploy. Each environment (preview/prod) keeps its own overrides in its own DB.
+- Refactored every key consumer to read dynamically via `settings_store.get(...)`: Cloudflare (`live.py`), Agora (`calls.py`), ElevenLabs + Emergent LLM (`sage.py`), Cloudinary + Emergent LLM (`pets.py`), VAPID web-push + Pixabay + badge-color LLM (`server.py`), and all health checks (`keyhealth.py`). VAPID PEM is now derived per current key (`_vapid_pem_path`).
+- **Admin endpoints** (super-admin only, in `keyhealth.py`): `GET /api/admin/keys/values` (masked values + source), `PUT /api/admin/keys/{name}` (save/clear override), `POST /api/admin/keys/{name}/test` (live validation). Managed keys: Cloudflare (acct+token), Agora (id+cert), ElevenLabs, Cloudinary (name+preset), Pixabay, VAPID (public/private/subject), Emergent LLM.
+- **Web UI**: `ApiKeyEditor.jsx` added to Admin → API keys — per-key masked value, source pill (Custom/Default/Not set), password input, Save, live Test (✅/❌), and Reset-to-default.
+- Verified via API: saving a fake Pixabay key → Test returns `invalid` (proves override is live); clearing → back to `env` → Test `ok`; non-admin → 403. Web editor screenshot confirmed. Masked secrets never leave the backend.
+
+
 ### 2026-06 — Go-live follower alerts: notification page routing (web + mobile)
 - Backend `POST /api/live` already fanned out to all followers via (1) in-app `notifications` doc (type `live`), (2) native `send_push`, and (3) browser `send_web_push`. Added `live_stream_id` to the live notification doc for clean client routing.
 - Web `Notifications.jsx`: added a `Radio` icon for `live` and routed `live` notifications (and any notif with a `link`) to `/live/:id` (previously fell through to the actor's profile).

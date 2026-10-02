@@ -43,20 +43,6 @@ import asyncio as _asyncio  # noqa: E402
 VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY_B64 = os.environ.get("VAPID_PRIVATE_KEY_B64", "")
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:support@postmeplex.com")
-try:
-    _VAPID_PRIVATE_PEM = _base64.b64decode(VAPID_PRIVATE_KEY_B64).decode() if VAPID_PRIVATE_KEY_B64 else ""
-except Exception:
-    _VAPID_PRIVATE_PEM = ""
-
-# pywebpush wants a PEM file path (or raw base64 key), not a PEM string — write once.
-_VAPID_PRIVATE_PEM_PATH = ""
-if _VAPID_PRIVATE_PEM:
-    try:
-        _VAPID_PRIVATE_PEM_PATH = "/tmp/postmeplex_vapid_private.pem"
-        with open(_VAPID_PRIVATE_PEM_PATH, "w") as _f:
-            _f.write(_VAPID_PRIVATE_PEM)
-    except Exception:
-        _VAPID_PRIVATE_PEM_PATH = ""
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_FROM = os.environ.get("RESEND_FROM", "PostMePlex <onboarding@resend.dev>")
@@ -80,6 +66,9 @@ def avatar_or_default(url: Optional[str]) -> str:
 
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
+
+import settings_store  # noqa: E402
+settings_store.init(db)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("postmeplex")
@@ -433,6 +422,26 @@ async def send_push(recipients: list[str], data: dict, idempotency_key: Optional
         logger.warning(f"[push] trigger exception (non-blocking): {e}")
 
 
+def _vapid_pem_path() -> str:
+    """Write the current VAPID private key (from settings) to a PEM file keyed
+    by its content hash, and return the path. Picks up live key updates."""
+    b64 = settings_store.get("VAPID_PRIVATE_KEY_B64", "")
+    if not b64:
+        return ""
+    try:
+        pem = _base64.b64decode(b64).decode()
+    except Exception:
+        return ""
+    path = f"/tmp/pmp_vapid_{hashlib.md5(b64.encode()).hexdigest()[:10]}.pem"
+    if not os.path.exists(path):
+        try:
+            with open(path, "w") as _f:
+                _f.write(pem)
+        except Exception:
+            return ""
+    return path
+
+
 def _web_push_send_sync(sub: dict, payload: str) -> Optional[int]:
     """Blocking pywebpush call. Returns an HTTP status code on WebPushException, else None."""
     from pywebpush import WebPushException, webpush
@@ -441,8 +450,8 @@ def _web_push_send_sync(sub: dict, payload: str) -> Optional[int]:
         webpush(
             subscription_info={"endpoint": sub["endpoint"], "keys": sub["keys"]},
             data=payload,
-            vapid_private_key=_VAPID_PRIVATE_PEM_PATH,
-            vapid_claims={"sub": VAPID_SUBJECT},
+            vapid_private_key=_vapid_pem_path(),
+            vapid_claims={"sub": settings_store.get("VAPID_SUBJECT", "mailto:support@postmeplex.com")},
             ttl=60 * 60,
             timeout=10,
         )
@@ -454,7 +463,7 @@ def _web_push_send_sync(sub: dict, payload: str) -> Optional[int]:
 async def send_web_push(user_id: str, title: str, body: str, url: str = "/notifications") -> None:
     """Send a browser Web Push to every subscription the user registered. No-op when
     VAPID isn't configured. Prunes dead subscriptions (404/410). Never raises."""
-    if not (_VAPID_PRIVATE_PEM_PATH and VAPID_PUBLIC_KEY):
+    if not (_vapid_pem_path() and settings_store.get("VAPID_PUBLIC_KEY")):
         return
     try:
         subs = await db.push_subscriptions.find({"user_id": user_id}, {"_id": 0}).to_list(50)
@@ -1851,7 +1860,7 @@ async def unread_notifications_count(current: Annotated[dict, Depends(get_curren
 # ---- Web Push (browser) — self-hosted VAPID ----
 @app.get("/api/push/vapid-public-key")
 async def vapid_public_key():
-    return {"publicKey": VAPID_PUBLIC_KEY}
+    return {"publicKey": settings_store.get("VAPID_PUBLIC_KEY", "")}
 
 
 @app.post("/api/push/web-subscribe", status_code=201)
@@ -2005,10 +2014,10 @@ async def _color_from_description(desc: str) -> str:
     into a single valid CSS hex code. Returns an uppercase #RRGGBB string."""
     import re
     from emergentintegrations.llm.chat import LlmChat, UserMessage
-    if not EMERGENT_LLM_KEY:
+    if not settings_store.get("EMERGENT_LLM_KEY"):
         raise HTTPException(503, "Color naming isn't configured")
     chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
+        api_key=settings_store.get("EMERGENT_LLM_KEY"),
         session_id=f"badge-color-{uuid.uuid4()}",
         system_message=(
             "You convert a short color description into a single valid CSS hex color. "
@@ -2671,7 +2680,7 @@ class ReelEditBody(BaseModel):
 
 
 async def _pixabay_videos(query: str, count: int = 1) -> list[dict]:
-    key = os.environ.get("PIXABAY_API_KEY", "")
+    key = settings_store.get("PIXABAY_API_KEY", "")
     if not key:
         return []
     import random
@@ -2950,6 +2959,11 @@ app.include_router(_build_sage(route_ctx))
 
 from routes.keyhealth import build_router as _build_keyhealth, check_and_alert as _keyhealth_check  # noqa: E402
 app.include_router(_build_keyhealth(route_ctx))
+
+
+@app.on_event("startup")
+async def _load_api_key_overrides():
+    await settings_store.load()
 
 
 @app.on_event("startup")

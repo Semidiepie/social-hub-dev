@@ -10,7 +10,6 @@ NOTE: intentionally NO `from __future__ import annotations` (postponed
 annotations break closure-local `Depends` in these routers).
 """
 import hashlib
-import os
 import time
 import uuid
 from datetime import datetime
@@ -19,13 +18,13 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+import settings_store
+
 try:
     from agora_token_builder import RtcTokenBuilder
 except Exception:  # pragma: no cover - import guard
     RtcTokenBuilder = None
 
-AGORA_APP_ID = os.environ.get("AGORA_APP_ID", "")
-AGORA_APP_CERTIFICATE = os.environ.get("AGORA_APP_CERTIFICATE", "")
 AGORA_TOKEN_TTL = 3600  # 1 hour
 _ROLE_PUBLISHER = 1
 
@@ -122,14 +121,16 @@ def build_router(ctx) -> APIRouter:
     async def agora_token(body: AgoraTokenBody, current: Annotated[dict, Depends(get_current_user)]):
         """Mint a short-lived Agora RTC publisher token for a call channel.
         The UID is derived from the authenticated user (never client-supplied)."""
-        if not (AGORA_APP_ID and AGORA_APP_CERTIFICATE and RtcTokenBuilder):
+        app_id = settings_store.get("AGORA_APP_ID")
+        app_cert = settings_store.get("AGORA_APP_CERTIFICATE")
+        if not (app_id and app_cert and RtcTokenBuilder):
             raise HTTPException(503, "Calling is not configured")
         uid = agora_uid(current["id"])
         expire_at = int(time.time()) + AGORA_TOKEN_TTL
         token = RtcTokenBuilder.buildTokenWithUid(
-            AGORA_APP_ID, AGORA_APP_CERTIFICATE, body.channel, uid, _ROLE_PUBLISHER, expire_at
+            app_id, app_cert, body.channel, uid, _ROLE_PUBLISHER, expire_at
         )
-        return {"app_id": AGORA_APP_ID, "channel": body.channel, "uid": uid, "token": token, "expires_in": AGORA_TOKEN_TTL}
+        return {"app_id": app_id, "channel": body.channel, "uid": uid, "token": token, "expires_in": AGORA_TOKEN_TTL}
 
     @router.websocket("/api/rtc/ws")
     async def rtc_socket(websocket: WebSocket):

@@ -10,7 +10,6 @@ third-party API key looks broken/expired/missing, so it can be updated fast.
 
 NOTE: intentionally NO `from __future__ import annotations`.
 """
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -18,10 +17,17 @@ from typing import Annotated
 import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+import settings_store
 
 load_dotenv()
 
 ALERT_COOLDOWN_HOURS = 12
+
+
+class SetKeyBody(BaseModel):
+    value: str = ""
 
 
 def _now():
@@ -75,7 +81,7 @@ async def clear_issue(db, service):
 
 
 async def _check_elevenlabs():
-    key = os.environ.get("ELEVENLABS_API_KEY", "")
+    key = settings_store.get("ELEVENLABS_API_KEY", "")
     if not key:
         return {"status": "missing", "detail": "No ElevenLabs key set — Sage voice is off."}
     try:
@@ -96,7 +102,7 @@ async def _check_elevenlabs():
 
 
 async def _check_cloudflare():
-    token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    token = settings_store.get("CLOUDFLARE_API_TOKEN", "")
     if not token:
         return {"status": "missing", "detail": "No Cloudflare API token — livestreaming is off."}
     try:
@@ -115,16 +121,46 @@ async def _check_cloudflare():
 
 
 def _check_presence(env_name, label_missing):
-    val = os.environ.get(env_name, "")
+    val = settings_store.get(env_name, "")
     if not val or val.startswith("placeholder"):
         return {"status": "missing", "detail": label_missing}
     return {"status": "ok", "detail": "Configured."}
+
+
+async def _check_pixabay():
+    key = settings_store.get("PIXABAY_API_KEY", "")
+    if not key:
+        return {"status": "missing", "detail": "No Pixabay key — curated clip search is off."}
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get("https://pixabay.com/api/videos/", params={"key": key, "q": "ocean", "per_page": 3})
+        if r.status_code == 429:
+            return {"status": "ok", "detail": "Pixabay key OK (rate-limited right now)."}
+        if r.status_code >= 400:
+            return {"status": "invalid", "detail": f"Pixabay rejected the key ({r.status_code}) — replace it."}
+        return {"status": "ok", "detail": "Pixabay key active."}
+    except Exception as e:
+        return {"status": "error", "detail": f"Pixabay check failed: {e}"}
+
+
+def _check_vapid():
+    import base64 as _b64
+    pub = settings_store.get("VAPID_PUBLIC_KEY", "")
+    priv = settings_store.get("VAPID_PRIVATE_KEY_B64", "")
+    if not (pub and priv):
+        return {"status": "missing", "detail": "No VAPID key — browser web push is off."}
+    try:
+        _b64.b64decode(priv).decode()
+    except Exception:
+        return {"status": "invalid", "detail": "VAPID private key isn't valid base64 of a PEM — replace it."}
+    return {"status": "ok", "detail": "Web Push (VAPID) configured."}
 
 
 async def run_checks():
     """Returns a list of {service, label, status, detail}."""
     el = await _check_elevenlabs()
     cf = await _check_cloudflare()
+    px = await _check_pixabay()
     return [
         {"service": "elevenlabs", "label": "ElevenLabs (Sage voice)", **el},
         {"service": "cloudflare", "label": "Cloudflare Stream (Live)", **cf},
@@ -136,9 +172,30 @@ async def run_checks():
          **_check_presence("EMERGENT_LLM_KEY", "No Emergent LLM key — AI features are off.")},
         {"service": "cloudinary", "label": "Cloudinary (media uploads)",
          **_check_presence("CLOUDINARY_CLOUD_NAME", "No Cloudinary config — uploads are off.")},
-        {"service": "vapid", "label": "Web Push (VAPID)",
-         **_check_presence("VAPID_PRIVATE_KEY_B64", "No VAPID key — web push is off.")},
+        {"service": "pixabay", "label": "Pixabay (curated clips)", **px},
+        {"service": "vapid", "label": "Web Push (VAPID)", **_check_vapid()},
     ]
+
+
+# Per-key live validation used by the admin "Test" button.
+async def test_key(name: str) -> dict:
+    if name in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+        return await _check_cloudflare()
+    if name == "ELEVENLABS_API_KEY":
+        return await _check_elevenlabs()
+    if name == "PIXABAY_API_KEY":
+        return await _check_pixabay()
+    if name in ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY_B64", "VAPID_SUBJECT"):
+        return _check_vapid()
+    if name == "AGORA_APP_ID":
+        return _check_presence("AGORA_APP_ID", "No Agora App ID set.")
+    if name == "AGORA_APP_CERTIFICATE":
+        return _check_presence("AGORA_APP_CERTIFICATE", "No Agora certificate set.")
+    if name == "EMERGENT_LLM_KEY":
+        return _check_presence("EMERGENT_LLM_KEY", "No Emergent LLM key set.")
+    if name in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_UPLOAD_PRESET"):
+        return _check_presence(name, "Not set.")
+    return _check_presence(name, "Not set.")
 
 
 async def check_and_alert(db, send_web_push, default_avatar, force=False):
@@ -173,5 +230,48 @@ def build_router(ctx) -> APIRouter:
         report = await check_and_alert(db, send_web_push, default_avatar, force=True)
         broken = [r for r in report if r["status"] != "ok"]
         return {"services": report, "alerted": [r["service"] for r in broken], "checked_at": _now().isoformat()}
+
+    @router.get("/api/admin/keys/values")
+    async def keys_values(current: Annotated[dict, Depends(get_current_user)]):
+        """List every editable key with a masked current value + its source
+        (custom override / env / unset). Full secrets are never returned."""
+        _require_admin(current)
+        out = []
+        for k in settings_store.MANAGED_KEYS:
+            out.append({
+                "name": k["name"],
+                "label": k["label"],
+                "service": k["service"],
+                "secret": k["secret"],
+                "source": settings_store.source(k["name"]),
+                "masked": settings_store.mask(k["name"], k["secret"]),
+                "present": bool(settings_store.get(k["name"])),
+            })
+        return {"keys": out}
+
+    @router.put("/api/admin/keys/{name}")
+    async def keys_set(name: str, body: SetKeyBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Save (or clear, when value is empty) a key override. Takes effect
+        immediately at runtime — no restart/redeploy needed."""
+        _require_admin(current)
+        try:
+            await settings_store.set_key(name, body.value or "")
+        except KeyError:
+            raise HTTPException(404, "Unknown key")
+        meta = next((k for k in settings_store.MANAGED_KEYS if k["name"] == name), None)
+        return {
+            "name": name,
+            "source": settings_store.source(name),
+            "masked": settings_store.mask(name, meta["secret"] if meta else True),
+            "present": bool(settings_store.get(name)),
+        }
+
+    @router.post("/api/admin/keys/{name}/test")
+    async def keys_test(name: str, current: Annotated[dict, Depends(get_current_user)]):
+        """Validate the CURRENT effective value of a key against its provider."""
+        _require_admin(current)
+        if name not in {k["name"] for k in settings_store.MANAGED_KEYS}:
+            raise HTTPException(404, "Unknown key")
+        return {"name": name, **await test_key(name)}
 
     return router
