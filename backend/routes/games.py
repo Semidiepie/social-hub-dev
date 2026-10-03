@@ -10,11 +10,24 @@ score) is persisted so the saga-style level map resumes where you left off.
 NOTE: intentionally NO `from __future__ import annotations` (postponed
 annotations break closure-local `Depends` in these routers).
 """
+import json
+import re
 import uuid
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
+import settings_store
+
+# Lucide icon names the match-3 board can render (keep in sync with Match3Board).
+ALLOWED_ICONS = [
+    "Zap", "Heart", "MessageCircle", "Camera", "Star", "Music", "Flame", "Gem",
+    "Crown", "Rocket", "Smile", "Sparkles", "Ghost", "Leaf", "Moon", "Sun",
+    "Cloud", "Bell", "Trophy", "Apple", "Candy", "IceCream", "Pizza", "Diamond",
+]
+PALETTE = ["#FF6B3D", "#FF4D6D", "#4FC3F7", "#A78BFA", "#FFD166", "#2DD4BF"]
+AI_MODEL = ("openai", "gpt-4.1-mini")  # fast + cheap, conserves LLM credits
 
 # Default PostMePlex-themed match-3 tile set (lucide icon name + brand color).
 DEFAULT_TILES = [
@@ -37,6 +50,7 @@ DEFAULT_GAME = {
     "base_moves": 28,
     "base_target": 1500,
     "difficulty": 1.0,
+    "control": "tap",
     "is_active": True,
     "sort": 0,
 }
@@ -86,6 +100,7 @@ class CreateGameBody(BaseModel):
     base_moves: int = Field(default=28, ge=8, le=80)
     base_target: int = Field(default=1500, ge=200, le=100000)
     difficulty: float = Field(default=1.0, ge=0.3, le=4.0)
+    control: str = Field(default="tap")
     is_active: bool = True
 
 
@@ -98,11 +113,121 @@ class UpdateGameBody(BaseModel):
     base_moves: Optional[int] = Field(default=None, ge=8, le=80)
     base_target: Optional[int] = Field(default=None, ge=200, le=100000)
     difficulty: Optional[float] = Field(default=None, ge=0.3, le=4.0)
+    control: Optional[str] = None
     is_active: Optional[bool] = None
+    visibility: Optional[str] = None
 
 
 class CompleteBody(BaseModel):
     score: int = Field(ge=0)
+
+
+class AIPromptBody(BaseModel):
+    prompt: str = Field(min_length=2, max_length=600)
+
+
+_HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def _coerce_tiles(raw) -> Optional[list]:
+    """Validate an AI-proposed tile set: 4–6 tiles, each with an allowed lucide
+    icon and a valid hex color. Returns None if unusable (keep the old tiles)."""
+    if not isinstance(raw, list) or len(raw) < 4:
+        return None
+    out = []
+    for i, t in enumerate(raw[:6]):
+        if not isinstance(t, dict):
+            continue
+        icon = t.get("icon")
+        if icon not in ALLOWED_ICONS:
+            icon = ALLOWED_ICONS[i % len(ALLOWED_ICONS)]
+        color = t.get("color")
+        if not (isinstance(color, str) and _HEX.match(color)):
+            color = PALETTE[i % len(PALETTE)]
+        tid = str(t.get("id") or icon.lower())[:20]
+        out.append({"id": tid, "icon": icon, "color": color})
+    return out if len(out) >= 4 else None
+
+
+def _apply_patch(doc: dict, patch: dict) -> dict:
+    """Apply only known, validated fields from an AI patch onto a game doc."""
+    upd = {}
+    if isinstance(patch.get("title"), str) and patch["title"].strip():
+        upd["title"] = patch["title"].strip()[:60]
+    if isinstance(patch.get("description"), str):
+        upd["description"] = patch["description"].strip()[:400]
+    if isinstance(patch.get("cover_emoji"), str) and patch["cover_emoji"].strip():
+        upd["cover_emoji"] = patch["cover_emoji"].strip()[:8]
+    if isinstance(patch.get("level_count"), (int, float)):
+        upd["level_count"] = max(1, min(500, int(patch["level_count"])))
+    if isinstance(patch.get("base_moves"), (int, float)):
+        upd["base_moves"] = max(8, min(80, int(patch["base_moves"])))
+    if isinstance(patch.get("base_target"), (int, float)):
+        upd["base_target"] = max(200, min(100000, int(patch["base_target"])))
+    if isinstance(patch.get("difficulty"), (int, float)):
+        upd["difficulty"] = max(0.3, min(4.0, round(float(patch["difficulty"]), 2)))
+    if patch.get("control") in ("tap", "slide"):
+        upd["control"] = patch["control"]
+    tiles = _coerce_tiles(patch.get("tiles"))
+    if tiles:
+        upd["tiles"] = tiles
+    return upd
+
+
+def _parse_json(text: str) -> dict:
+    """Pull the first JSON object out of an LLM reply (handles code fences/prose)."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        t = t[t.find("{"):]
+    s, e = t.find("{"), t.rfind("}")
+    if s == -1 or e == -1:
+        raise ValueError("no json")
+    return json.loads(t[s:e + 1])
+
+
+async def _ai_design(prompt: str, base: Optional[dict], logger) -> dict:
+    """Ask Sage (LLM) to design/patch a match-3 game config from a description.
+    Returns a validated patch dict. Raises HTTPException on failure."""
+    key = settings_store.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(503, "Sage AI isn't configured")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+    icon_list = ", ".join(ALLOWED_ICONS)
+    system = (
+        "You are Sage, a game designer for a PostMePlex match-3 (Candy-Crush-style) puzzle. "
+        "Given an admin's instruction, output ONLY a compact JSON object describing the game's tunable "
+        "settings. Do not include any prose, markdown, or explanation. Allowed keys:\n"
+        '  "title" (string), "description" (string, <=200 chars), "cover_emoji" (ONE emoji),\n'
+        '  "level_count" (int 1-200), "base_moves" (int 8-60), "base_target" (int 500-20000),\n'
+        '  "difficulty" (number 0.3-4.0, higher = harder),\n'
+        '  "control" ("tap" = tap two tiles to swap, OR "slide" = swipe/drag a tile to swap),\n'
+        '  "tiles" (array of EXACTLY 6 objects: {"id":short-string,"icon":<one of the allowed icons>,"color":"#RRGGBB"}).\n'
+        f"Allowed icon names (use ONLY these): {icon_list}.\n"
+        "Pick icons + colors that fit the theme. 'physics'/'harder' => raise difficulty and base_target, "
+        "lower base_moves. 'easier' => the opposite. 'slide'/'swipe physics' => set control to 'slide'; "
+        "'tap' => set control to 'tap'. Only include keys you intend to change."
+    )
+    if base:
+        current = {k: base.get(k) for k in ("title", "description", "cover_emoji", "level_count", "base_moves", "base_target", "difficulty", "control", "tiles")}
+        user = f"Current game settings:\n{json.dumps(current)}\n\nAdmin instruction: {prompt}\n\nReturn the updated settings as JSON (only the keys that should change)."
+    else:
+        user = f"Design a brand-new match-3 game from this description: {prompt}\n\nReturn the full settings as JSON including all keys and 6 themed tiles."
+
+    chat = LlmChat(api_key=key, session_id=f"sage-game-{uuid.uuid4()}", system_message=system).with_model(*AI_MODEL)
+    try:
+        resp = await chat.send_message(UserMessage(text=user))
+        patch = _parse_json(resp)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[games] AI design failed: {e}")
+        raise HTTPException(502, "Sage couldn't design that — try rephrasing.")
+    applied = _apply_patch(base or {}, patch)
+    if not applied:
+        raise HTTPException(502, "Sage didn't return any usable changes — try being more specific.")
+    return applied
 
 
 def _public_game(g: dict) -> dict:
@@ -118,7 +243,9 @@ def _public_game(g: dict) -> dict:
         "base_moves": g.get("base_moves", 28),
         "base_target": g.get("base_target", 1500),
         "difficulty": g.get("difficulty", 1.0),
+        "control": g.get("control", "tap"),
         "is_active": g.get("is_active", True),
+        "visibility": g.get("visibility", "public"),
     }
 
 
@@ -140,6 +267,16 @@ def build_router(ctx) -> APIRouter:
         if not current.get("is_super_admin"):
             raise HTTPException(403, "Admins only")
 
+    async def _unique_slug(title: str) -> str:
+        base = slug = "-".join(
+            "".join(c for c in w.lower() if c.isalnum()) for w in title.split()
+        ).strip("-") or "game"
+        i = 2
+        while await db.games.find_one({"slug": slug}):
+            slug = f"{base}-{i}"
+            i += 1
+        return slug
+
     async def _progress(user_id: str, game_id: str) -> dict:
         p = await db.game_progress.find_one({"user_id": user_id, "game_id": game_id}, {"_id": 0})
         if not p:
@@ -149,7 +286,11 @@ def build_router(ctx) -> APIRouter:
     # ---------- Public ----------
     @router.get("/api/games")
     async def list_games(current: Annotated[Optional[dict], Depends(get_optional_user)] = None):
-        rows = await db.games.find({"is_active": True}, {"_id": 0}).sort("sort", 1).to_list(100)
+        is_admin = bool(current and current.get("is_super_admin"))
+        q = {"is_active": True}
+        if not is_admin:
+            q["visibility"] = {"$ne": "private"}
+        rows = await db.games.find(q, {"_id": 0}).sort("sort", 1).to_list(100)
         out = []
         for g in rows:
             item = _public_game(g)
@@ -169,6 +310,9 @@ def build_router(ctx) -> APIRouter:
         g = await db.games.find_one({"slug": slug}, {"_id": 0})
         if not g or not g.get("is_active", True):
             raise HTTPException(404, "Game not found")
+        is_admin = bool(current and current.get("is_super_admin"))
+        if g.get("visibility") == "private" and not is_admin:
+            raise HTTPException(404, "Game not found")
         item = _public_game(g)
         item["progress"] = await _progress(current["id"], g["id"]) if current else {"unlocked": 1, "levels": {}}
         return item
@@ -180,7 +324,7 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(404, "Game not found")
         if n < 1 or n > g.get("level_count", 30):
             raise HTTPException(404, "Level not found")
-        return {"game_id": g["id"], "tiles": g.get("tiles", DEFAULT_TILES), **level_params(g, n)}
+        return {"game_id": g["id"], "tiles": g.get("tiles", DEFAULT_TILES), "control": g.get("control", "tap"), **level_params(g, n)}
 
     @router.post("/api/games/{slug}/levels/{n}/complete")
     async def complete_level(slug: str, n: int, body: CompleteBody, current: Annotated[dict, Depends(get_current_user)]):
@@ -225,13 +369,7 @@ def build_router(ctx) -> APIRouter:
     @router.post("/api/admin/games")
     async def admin_create(body: CreateGameBody, current: Annotated[dict, Depends(get_current_user)]):
         _require_admin(current)
-        base = slug = "-".join(
-            "".join(c for c in w.lower() if c.isalnum()) for w in body.title.split()
-        ).strip("-") or "game"
-        i = 2
-        while await db.games.find_one({"slug": slug}):
-            slug = f"{base}-{i}"
-            i += 1
+        slug = await _unique_slug(body.title)
         count = await db.games.count_documents({})
         tiles = body.tiles if (body.tiles and len(body.tiles) >= 4) else DEFAULT_TILES
         doc = {
@@ -246,12 +384,57 @@ def build_router(ctx) -> APIRouter:
             "base_moves": body.base_moves,
             "base_target": body.base_target,
             "difficulty": body.difficulty,
+            "control": body.control if body.control in ("tap", "slide") else "tap",
             "is_active": body.is_active,
+            "visibility": "public",
             "sort": count,
             "created_at": now(),
         }
         await db.games.insert_one(doc)
         return _public_game(doc)
+
+    @router.post("/api/admin/games/ai-create")
+    async def admin_ai_create(body: AIPromptBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Sage designs a brand-new match-3 game from a description. Saved PRIVATE
+        so the admin can preview it, then flip it to public when happy."""
+        _require_admin(current)
+        patch = await _ai_design(body.prompt, None, ctx.logger)
+        title = patch.get("title") or "Sage Game"
+        slug = await _unique_slug(title)
+        count = await db.games.count_documents({})
+        doc = {
+            "id": str(uuid.uuid4()),
+            "slug": slug,
+            "title": title,
+            "description": patch.get("description", ""),
+            "kind": "match3",
+            "cover_emoji": patch.get("cover_emoji", "🎮"),
+            "tiles": patch.get("tiles", DEFAULT_TILES),
+            "level_count": patch.get("level_count", 30),
+            "base_moves": patch.get("base_moves", 28),
+            "base_target": patch.get("base_target", 1500),
+            "difficulty": patch.get("difficulty", 1.0),
+            "control": patch.get("control", "tap"),
+            "is_active": True,
+            "visibility": "private",
+            "sort": count,
+            "created_at": now(),
+        }
+        await db.games.insert_one(doc)
+        return _public_game(doc)
+
+    @router.post("/api/admin/games/{game_id}/ai-edit")
+    async def admin_ai_edit(game_id: str, body: AIPromptBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Sage edits an existing game's settings ("physics" and theme) from a
+        natural-language instruction. Applies live — affects public players too."""
+        _require_admin(current)
+        g = await db.games.find_one({"id": game_id}, {"_id": 0})
+        if not g:
+            raise HTTPException(404, "Game not found")
+        patch = await _ai_design(body.prompt, g, ctx.logger)
+        await db.games.update_one({"id": game_id}, {"$set": patch})
+        g = await db.games.find_one({"id": game_id}, {"_id": 0})
+        return {"game": _public_game(g), "changed": list(patch.keys())}
 
     @router.put("/api/admin/games/{game_id}")
     async def admin_update(game_id: str, body: UpdateGameBody, current: Annotated[dict, Depends(get_current_user)]):
@@ -265,6 +448,8 @@ def build_router(ctx) -> APIRouter:
                 upd.pop("tiles")
             else:
                 upd["tiles"] = upd["tiles"][:6]
+        if "visibility" in upd and upd["visibility"] not in ("public", "private"):
+            upd.pop("visibility")
         if upd:
             await db.games.update_one({"id": game_id}, {"$set": upd})
         g = await db.games.find_one({"id": game_id}, {"_id": 0})

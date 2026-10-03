@@ -49,6 +49,9 @@ export default function GamesPage() {
                 <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-background/70 px-2.5 py-1 text-[11px] font-bold">
                   <Trophy size={12} className="text-primary" /> {g.level_count} levels
                 </div>
+                {g.visibility === "private" && (
+                  <div className="absolute left-3 top-3 rounded-full bg-yellow-500/90 px-2.5 py-1 text-[11px] font-bold text-black">Private</div>
+                )}
               </div>
               <div className="p-4">
                 <h3 className="text-lg font-black">{g.title}</h3>
