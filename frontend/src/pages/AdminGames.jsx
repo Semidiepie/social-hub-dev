@@ -34,10 +34,12 @@ function GameRow({ g, onSaved, onDeleted }) {
         description: draft.description,
         cover_emoji: draft.cover_emoji,
         level_count: Number(draft.level_count),
-        base_moves: Number(draft.base_moves),
-        base_target: Number(draft.base_target),
-        difficulty: Number(draft.difficulty),
         is_active: draft.is_active,
+        ...(g.kind === "match3" ? {
+          base_moves: Number(draft.base_moves),
+          base_target: Number(draft.base_target),
+          difficulty: Number(draft.difficulty),
+        } : {}),
         ...patch,
       };
       const updated = await api.put(`/admin/games/${g.id}`, body);
@@ -86,7 +88,9 @@ function GameRow({ g, onSaved, onDeleted }) {
   return (
     <div className="rounded-xl border border-border p-3" data-testid={`admin-game-${g.slug}`}>
       <div className="flex items-center gap-2">
+        <span className="text-xl">{draft.cover_emoji}</span>
         <Input value={draft.title} onChange={(e) => set("title", e.target.value)} className="h-9 flex-1 font-semibold" data-testid={`admin-game-title-${g.slug}`} />
+        <span className="rounded-full bg-secondary px-2 py-1 text-[10px] font-bold uppercase text-muted-foreground" data-testid={`admin-game-kind-${g.slug}`}>{g.kind}</span>
         <button
           onClick={toggleVisibility}
           className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold uppercase transition-colors ${isPrivate ? "bg-yellow-500/15 text-yellow-500 hover:bg-yellow-500/25" : "bg-green-500/15 text-green-400 hover:bg-green-500/25"}`}
@@ -101,7 +105,7 @@ function GameRow({ g, onSaved, onDeleted }) {
       </div>
       <Input value={draft.description} onChange={(e) => set("description", e.target.value)} placeholder="Description" className="mt-2 h-9 text-sm" />
       <div className="mt-2 flex flex-wrap items-end gap-3">
-        {FIELDS.map((f) => (
+        {FIELDS.filter((f) => g.kind === "match3" || f.key === "cover_emoji" || f.key === "level_count").map((f) => (
           <div key={f.key}>
             <div className="text-[10px] uppercase text-muted-foreground">{f.label}</div>
             <Input
@@ -156,6 +160,8 @@ export default function AdminGamesPage() {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [aiPrompt, setAiPrompt] = useState("");
+  const [aiKind, setAiKind] = useState("auto");
+  const [aiDifficulty, setAiDifficulty] = useState("normal");
   const [aiBusy, setAiBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -194,10 +200,14 @@ export default function AdminGamesPage() {
     if (!aiPrompt.trim()) return;
     setAiBusy(true);
     try {
-      const g = await api.post("/admin/games/ai-create", { prompt: aiPrompt.trim() });
+      const g = await api.post("/admin/games/ai-create", {
+        prompt: aiPrompt.trim(),
+        kind: aiKind === "auto" ? undefined : aiKind,
+        difficulty: aiDifficulty,
+      });
       setGames((list) => [...list, g]);
       setAiPrompt("");
-      toast.success(`Sage created "${g.title}" (private) — review it, then publish.`);
+      toast.success(`Sage created "${g.title}" (${g.kind}, private) — review it, then publish.`);
     } catch (e) {
       toast.error(e.message || "Sage couldn't create that");
     } finally {
@@ -211,7 +221,7 @@ export default function AdminGamesPage() {
         <h1 className="flex items-center gap-2 text-3xl font-black tracking-tight">
           <Gamepad2 size={24} className="text-primary" /> Admin
         </h1>
-        <p className="mt-1 text-muted-foreground">Create and manage match-3 games. Describe a game to Sage AI and it builds one for you — private first, then publish.</p>
+        <p className="mt-1 text-muted-foreground">Describe any game and Sage builds it — match-3, memory, trivia or tap-reflex. Saved private first, then publish.</p>
       </header>
 
       <AdminTabs />
@@ -220,20 +230,37 @@ export default function AdminGamesPage() {
         <CardContent className="space-y-3 pt-6">
           <div className="flex items-center gap-2">
             <Sparkles size={18} className="text-primary" />
-            <h2 className="text-lg font-bold">Create a game with Sage AI</h2>
+            <h2 className="text-lg font-bold">AI Game Studio</h2>
           </div>
-          <p className="text-sm text-muted-foreground">Describe the game you want. Sage designs the theme, tiles, difficulty and levels. It's saved <b>private</b> so you can play-test it, then flip it public.</p>
-          <div className="flex gap-2">
-            <Input
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && aiCreate()}
-              placeholder='e.g. "a chill ocean-themed puzzle with easy early levels"'
-              className="h-10"
-              data-testid="admin-game-ai-input"
-            />
-            <Button onClick={aiCreate} disabled={aiBusy || !aiPrompt.trim()} className="h-10 gap-1.5 bg-primary text-primary-foreground" data-testid="admin-game-ai-create">
-              {aiBusy ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />} Generate
+          <p className="text-sm text-muted-foreground">Describe the game you want in your own words. Sage picks the best game type and builds the full thing — theme, content, difficulty and levels. Saved <b>private</b> so you can play-test, then flip it public.</p>
+          <textarea
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            placeholder={'e.g. "a trivia game about 90s hip-hop" · "a memory game with cute sea creatures" · "a fast tap game popping balloons" · "a chill ocean gem match-3"'}
+            className="min-h-[88px] w-full resize-y rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary"
+            data-testid="admin-game-ai-input"
+          />
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <div className="mb-1 text-[10px] uppercase text-muted-foreground">Game type</div>
+              <select value={aiKind} onChange={(e) => setAiKind(e.target.value)} className="h-9 rounded-lg border border-border bg-background px-2 text-sm" data-testid="admin-game-ai-kind">
+                <option value="auto">Auto (let Sage choose)</option>
+                <option value="match3">Match-3</option>
+                <option value="memory">Memory match</option>
+                <option value="quiz">Trivia quiz</option>
+                <option value="tapper">Tap reflex</option>
+              </select>
+            </div>
+            <div>
+              <div className="mb-1 text-[10px] uppercase text-muted-foreground">Difficulty</div>
+              <select value={aiDifficulty} onChange={(e) => setAiDifficulty(e.target.value)} className="h-9 rounded-lg border border-border bg-background px-2 text-sm" data-testid="admin-game-ai-difficulty">
+                <option value="easy">Easy</option>
+                <option value="normal">Normal</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
+            <Button onClick={aiCreate} disabled={aiBusy || !aiPrompt.trim()} className="ml-auto h-10 gap-1.5 bg-primary text-primary-foreground" data-testid="admin-game-ai-create">
+              {aiBusy ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />} Generate game
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">Uses your Emergent LLM credits each time you generate.</p>

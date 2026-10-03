@@ -56,28 +56,83 @@ DEFAULT_GAME = {
 }
 
 
+KINDS = ("match3", "memory", "quiz", "tapper")
+
+# Starter content for AI fallbacks / defaults.
+DEFAULT_MEMORY_EMOJIS = ["⚡", "❤️", "💬", "📸", "⭐", "🎵", "🔥", "🏆", "🚀", "🌙", "🍕", "👻"]
+
+
+def _cfg(game: dict) -> dict:
+    """The kind-specific config. match3 keeps its fields at top level (so the
+    manual admin editor keeps working); the other kinds store everything under
+    `config`."""
+    if game.get("kind", "match3") == "match3":
+        return {
+            "tiles": game.get("tiles", DEFAULT_TILES),
+            "base_moves": game.get("base_moves", 28),
+            "base_target": game.get("base_target", 1500),
+            "difficulty": game.get("difficulty", 1.0),
+            "control": game.get("control", "tap"),
+        }
+    return game.get("config") or {}
+
+
 def level_params(game: dict, n: int) -> dict:
-    """Deterministic per-level config derived from the game. Shared by client
-    (to render the level) and server (to validate the submitted score)."""
+    """Deterministic per-level config + content, branched by game kind. Shared by
+    client (to render) and server (to score). Always returns target/star2/star3."""
     n = max(1, int(n))
-    base_target = int(game.get("base_target", 1500))
-    base_moves = int(game.get("base_moves", 28))
-    difficulty = float(game.get("difficulty", 1.0))
+    kind = game.get("kind", "match3")
+    c = _cfg(game)
+
+    if kind == "memory":
+        emojis = [e for e in (c.get("emojis") or DEFAULT_MEMORY_EMOJIS) if isinstance(e, str)][:12] or DEFAULT_MEMORY_EMOJIS
+        base_pairs = int(c.get("base_pairs", 6))
+        base_seconds = int(c.get("base_seconds", 60))
+        pairs = max(3, min(len(emojis), base_pairs + n // 2, 12))
+        seconds = max(20, base_seconds - 3 * (n - 1))
+        target = pairs * 100
+        return {"level": n, "kind": kind, "pairs": pairs, "seconds": seconds,
+                "emojis": emojis[:pairs],
+                "target": target, "star2": target + round(seconds * 5 * 0.25), "star3": target + round(seconds * 5 * 0.55)}
+
+    if kind == "quiz":
+        bank = c.get("questions") or []
+        per = max(3, min(5, len(bank) or 5))
+        seconds_per_q = int(c.get("seconds_per_q", 15))
+        start = ((n - 1) * per) % max(1, len(bank)) if bank else 0
+        qs = [bank[(start + i) % len(bank)] for i in range(per)] if bank else []
+        target = (per * 3 + 2) // 5 * 100  # ~60%
+        return {"level": n, "kind": kind, "questions": qs, "seconds_per_q": seconds_per_q,
+                "count": per, "target": max(100, round(per * 0.6) * 100),
+                "star2": round(per * 0.8) * 100, "star3": per * 100}
+
+    if kind == "tapper":
+        emoji = c.get("emoji") or "⚡"
+        bg = c.get("bg") or "#12141c"
+        base_duration = int(c.get("base_duration", 20))
+        base_spawn = int(c.get("base_spawn_ms", 900))
+        duration = base_duration
+        spawn_ms = max(350, base_spawn - (n - 1) * 45)
+        hits_needed = 8 + round(n * 1.5)
+        target = hits_needed * 100
+        return {"level": n, "kind": kind, "emoji": emoji, "bg": bg,
+                "duration": duration, "spawn_ms": spawn_ms,
+                "target": target, "star2": round(target * 1.35), "star3": round(target * 1.75)}
+
+    # ---- match3 (default) ----
+    base_target = int(c.get("base_target", 1500))
+    base_moves = int(c.get("base_moves", 28))
+    difficulty = float(c.get("difficulty", 1.0))
     step = round(base_target * 0.55 * difficulty)
     target = base_target + (n - 1) * step
     moves = max(12, base_moves - (n // 4))
-    types = max(4, min(6, len(game.get("tiles", DEFAULT_TILES))))
-    # Slightly fewer colors early = easier; ramps to full palette.
+    types = max(4, min(6, len(c.get("tiles", DEFAULT_TILES))))
     colors = min(types, 4 + (n // 8))
     return {
-        "level": n,
-        "target": target,
-        "star2": round(target * 1.5),
-        "star3": round(target * 2.0),
-        "moves": moves,
-        "rows": 8,
-        "cols": 8,
-        "colors": colors,
+        "level": n, "kind": "match3", "target": target,
+        "star2": round(target * 1.5), "star3": round(target * 2.0),
+        "moves": moves, "rows": 8, "cols": 8, "colors": colors,
+        "tiles": c.get("tiles", DEFAULT_TILES), "control": c.get("control", "tap"),
     }
 
 
@@ -126,7 +181,65 @@ class AIPromptBody(BaseModel):
     prompt: str = Field(min_length=2, max_length=600)
 
 
+class AIGenerateBody(BaseModel):
+    prompt: str = Field(min_length=2, max_length=1000)
+    kind: Optional[str] = None            # "auto" or a specific kind
+    difficulty: Optional[str] = None      # "easy" | "normal" | "hard"
+    control: Optional[str] = None         # match3 only: "tap" | "slide"
+    level_count: Optional[int] = Field(default=None, ge=1, le=200)
+
+
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def _validate_config(kind: str, c) -> dict:
+    """Clean + clamp a kind-specific config. Raises 502 if truly unusable."""
+    c = c if isinstance(c, dict) else {}
+    if kind == "memory":
+        emojis = [e for e in (c.get("emojis") or []) if isinstance(e, str) and e.strip()][:12]
+        if len(emojis) < 4:
+            emojis = DEFAULT_MEMORY_EMOJIS[:]
+        return {
+            "emojis": emojis,
+            "base_pairs": max(3, min(len(emojis), int(c.get("base_pairs") or 6))),
+            "base_seconds": max(20, min(180, int(c.get("base_seconds") or 60))),
+        }
+    if kind == "quiz":
+        qs = []
+        for q in (c.get("questions") or []):
+            if not isinstance(q, dict):
+                continue
+            text = str(q.get("q") or q.get("question") or "").strip()
+            choices = [str(x).strip() for x in (q.get("choices") or q.get("options") or []) if str(x).strip()][:4]
+            if not text or len(choices) < 2:
+                continue
+            try:
+                ans = int(q.get("answer"))
+            except Exception:
+                ans = 0
+            if ans < 0 or ans >= len(choices):
+                ans = 0
+            qs.append({"q": text[:220], "choices": choices, "answer": ans})
+        if len(qs) < 3:
+            raise HTTPException(502, "Sage couldn't write enough quiz questions — try a clearer topic.")
+        return {"questions": qs[:40], "seconds_per_q": max(5, min(60, int(c.get("seconds_per_q") or 15)))}
+    if kind == "tapper":
+        bg = c.get("bg") if isinstance(c.get("bg"), str) and _HEX.match(str(c.get("bg"))) else "#12141c"
+        return {
+            "emoji": str(c.get("emoji") or "⚡")[:8],
+            "bg": bg,
+            "base_duration": max(10, min(60, int(c.get("base_duration") or 20))),
+            "base_spawn_ms": max(350, min(2000, int(c.get("base_spawn_ms") or 900))),
+        }
+    # match3
+    tiles = _coerce_tiles(c.get("tiles")) or DEFAULT_TILES
+    return {
+        "tiles": tiles,
+        "base_moves": max(8, min(80, int(c.get("base_moves") or 28))),
+        "base_target": max(200, min(100000, int(c.get("base_target") or 1500))),
+        "difficulty": max(0.3, min(4.0, round(float(c.get("difficulty") or 1.0), 2))),
+        "control": c.get("control") if c.get("control") in ("tap", "slide") else "tap",
+    }
 
 
 def _coerce_tiles(raw) -> Optional[list]:
@@ -230,6 +343,102 @@ async def _ai_design(prompt: str, base: Optional[dict], logger) -> dict:
     return applied
 
 
+GEN_SYSTEM = (
+    "You are Sage, a game designer for the PostMePlex arcade. From an admin's description you design a "
+    "complete, playable game and output ONLY one compact JSON object (no prose, no markdown).\n"
+    "First choose the best-fitting `kind` for what they describe:\n"
+    '  - "match3": swap/slide tiles to match 3+ (puzzle, gems, candy, icons).\n'
+    '  - "memory": flip cards to find matching pairs (concentration, memory).\n'
+    '  - "quiz": trivia / multiple-choice questions on a topic.\n'
+    '  - "tapper": tap/whack targets that pop up fast within a time limit (reflex, arcade).\n'
+    "Then output JSON: {\n"
+    '  "kind": one of the above,\n'
+    '  "title": string (<=50), "description": string (<=180), "cover_emoji": ONE emoji,\n'
+    '  "level_count": int 1-60,\n'
+    '  "config": kind-specific object:\n'
+    '    match3 -> {"tiles":[EXACTLY 6 {"id","icon","color":"#RRGGBB"}], "base_moves":8-60, "base_target":500-20000, "difficulty":0.3-4.0, "control":"tap"|"slide"}\n'
+    '    memory -> {"emojis":[8-12 single emojis fitting the theme], "base_pairs":4-8, "base_seconds":30-120}\n'
+    '    quiz   -> {"questions":[8-20 {"q":string,"choices":[3-4 strings],"answer":index-int}], "seconds_per_q":8-30}\n'
+    '    tapper -> {"emoji":ONE emoji to tap, "bg":"#RRGGBB", "base_duration":15-40, "base_spawn_ms":500-1200}\n'
+    "For match3 tiles use ONLY these icon names: " + ", ".join(ALLOWED_ICONS) + ".\n"
+    "Make content genuinely fit the theme (real trivia answers, themed emojis). Respect difficulty hints."
+)
+
+
+async def _ai_generate(body, logger) -> dict:
+    """Design a brand-new game of ANY supported kind from a description."""
+    key = settings_store.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(503, "Sage AI isn't configured")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+    hints = {
+        "preferred_kind": body.kind if body.kind in KINDS else "auto",
+        "difficulty": body.difficulty or "normal",
+        "control": body.control or "auto",
+    }
+    user = f"Admin description: {body.prompt}\nHints: {json.dumps(hints)}\nDesign the game now. Output ONLY the JSON."
+    chat = LlmChat(api_key=key, session_id=f"sage-gen-{uuid.uuid4()}", system_message=GEN_SYSTEM).with_model(*AI_MODEL)
+    try:
+        resp = await chat.send_message(UserMessage(text=user))
+        spec = _parse_json(resp)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[games] AI generate failed: {e}")
+        raise HTTPException(502, "Sage couldn't design that — try rephrasing.")
+
+    kind = body.kind if body.kind in KINDS else spec.get("kind")
+    if kind not in KINDS:
+        kind = "match3"
+    config = _validate_config(kind, spec.get("config") or {})
+    if body.control in ("tap", "slide") and kind == "match3":
+        config["control"] = body.control
+    return {
+        "kind": kind,
+        "title": (spec.get("title") or "Sage Game").strip()[:60] or "Sage Game",
+        "description": (spec.get("description") or "").strip()[:400],
+        "cover_emoji": (spec.get("cover_emoji") or "🎮").strip()[:8] or "🎮",
+        "level_count": int(body.level_count or spec.get("level_count") or 20),
+        "config": config,
+    }
+
+
+async def _ai_edit_other(game: dict, prompt: str, logger) -> dict:
+    """Edit a non-match3 game's config via natural language. Returns a $set dict."""
+    key = settings_store.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(503, "Sage AI isn't configured")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+    kind = game.get("kind")
+    current = {"kind": kind, "title": game["title"], "description": game.get("description", ""),
+               "cover_emoji": game.get("cover_emoji", "🎮"), "level_count": game.get("level_count", 20),
+               "config": _cfg(game)}
+    system = GEN_SYSTEM + "\nYou are EDITING an existing game. Keep the SAME kind. Return the COMPLETE updated JSON including any content you are not changing."
+    user = f"Current game JSON:\n{json.dumps(current)}\n\nAdmin instruction: {prompt}\n\nReturn the full updated JSON now. Output ONLY JSON."
+    chat = LlmChat(api_key=key, session_id=f"sage-edit-{uuid.uuid4()}", system_message=system).with_model(*AI_MODEL)
+    try:
+        resp = await chat.send_message(UserMessage(text=user))
+        spec = _parse_json(resp)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[games] AI edit failed: {e}")
+        raise HTTPException(502, "Sage couldn't edit that — try rephrasing.")
+
+    upd = {"config": _validate_config(kind, spec.get("config") or current["config"])}
+    if isinstance(spec.get("title"), str) and spec["title"].strip():
+        upd["title"] = spec["title"].strip()[:60]
+    if isinstance(spec.get("description"), str):
+        upd["description"] = spec["description"].strip()[:400]
+    if isinstance(spec.get("cover_emoji"), str) and spec["cover_emoji"].strip():
+        upd["cover_emoji"] = spec["cover_emoji"].strip()[:8]
+    if isinstance(spec.get("level_count"), (int, float)):
+        upd["level_count"] = max(1, min(200, int(spec["level_count"])))
+    return upd
+
+
 def _public_game(g: dict) -> dict:
     return {
         "id": g["id"],
@@ -244,6 +453,7 @@ def _public_game(g: dict) -> dict:
         "base_target": g.get("base_target", 1500),
         "difficulty": g.get("difficulty", 1.0),
         "control": g.get("control", "tap"),
+        "config": _cfg(g),
         "is_active": g.get("is_active", True),
         "visibility": g.get("visibility", "public"),
     }
@@ -324,7 +534,7 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(404, "Game not found")
         if n < 1 or n > g.get("level_count", 30):
             raise HTTPException(404, "Level not found")
-        return {"game_id": g["id"], "tiles": g.get("tiles", DEFAULT_TILES), "control": g.get("control", "tap"), **level_params(g, n)}
+        return {"game_id": g["id"], "kind": g.get("kind", "match3"), **level_params(g, n)}
 
     @router.post("/api/games/{slug}/levels/{n}/complete")
     async def complete_level(slug: str, n: int, body: CompleteBody, current: Annotated[dict, Depends(get_current_user)]):
@@ -394,47 +604,55 @@ def build_router(ctx) -> APIRouter:
         return _public_game(doc)
 
     @router.post("/api/admin/games/ai-create")
-    async def admin_ai_create(body: AIPromptBody, current: Annotated[dict, Depends(get_current_user)]):
-        """Sage designs a brand-new match-3 game from a description. Saved PRIVATE
-        so the admin can preview it, then flip it to public when happy."""
+    async def admin_ai_create(body: AIGenerateBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Sage designs a brand-new game of ANY supported kind from a description.
+        Saved PRIVATE so the admin can preview it, then flip it public."""
         _require_admin(current)
-        patch = await _ai_design(body.prompt, None, ctx.logger)
-        title = patch.get("title") or "Sage Game"
-        slug = await _unique_slug(title)
+        spec = await _ai_generate(body, ctx.logger)
+        slug = await _unique_slug(spec["title"])
         count = await db.games.count_documents({})
         doc = {
             "id": str(uuid.uuid4()),
             "slug": slug,
-            "title": title,
-            "description": patch.get("description", ""),
-            "kind": "match3",
-            "cover_emoji": patch.get("cover_emoji", "🎮"),
-            "tiles": patch.get("tiles", DEFAULT_TILES),
-            "level_count": patch.get("level_count", 30),
-            "base_moves": patch.get("base_moves", 28),
-            "base_target": patch.get("base_target", 1500),
-            "difficulty": patch.get("difficulty", 1.0),
-            "control": patch.get("control", "tap"),
+            "title": spec["title"],
+            "description": spec["description"],
+            "kind": spec["kind"],
+            "cover_emoji": spec["cover_emoji"],
+            "level_count": spec["level_count"],
             "is_active": True,
             "visibility": "private",
             "sort": count,
             "created_at": now(),
         }
+        if spec["kind"] == "match3":
+            # match3 mirrors config to top-level fields (manual editor reads them).
+            doc.update({
+                "tiles": spec["config"]["tiles"],
+                "base_moves": spec["config"]["base_moves"],
+                "base_target": spec["config"]["base_target"],
+                "difficulty": spec["config"]["difficulty"],
+                "control": spec["config"]["control"],
+            })
+        else:
+            doc["config"] = spec["config"]
         await db.games.insert_one(doc)
         return _public_game(doc)
 
     @router.post("/api/admin/games/{game_id}/ai-edit")
     async def admin_ai_edit(game_id: str, body: AIPromptBody, current: Annotated[dict, Depends(get_current_user)]):
-        """Sage edits an existing game's settings ("physics" and theme) from a
-        natural-language instruction. Applies live — affects public players too."""
+        """Sage edits an existing game's settings ("physics", content and theme)
+        from a natural-language instruction. Applies live — affects public too."""
         _require_admin(current)
         g = await db.games.find_one({"id": game_id}, {"_id": 0})
         if not g:
             raise HTTPException(404, "Game not found")
-        patch = await _ai_design(body.prompt, g, ctx.logger)
+        if g.get("kind", "match3") == "match3":
+            patch = await _ai_design(body.prompt, g, ctx.logger)
+        else:
+            patch = await _ai_edit_other(g, body.prompt, ctx.logger)
         await db.games.update_one({"id": game_id}, {"$set": patch})
         g = await db.games.find_one({"id": game_id}, {"_id": 0})
-        return {"game": _public_game(g), "changed": list(patch.keys())}
+        return {"game": _public_game(g), "changed": [k for k in patch.keys() if k != "config"] + (["content/settings"] if "config" in patch else [])}
 
     @router.put("/api/admin/games/{game_id}")
     async def admin_update(game_id: str, body: UpdateGameBody, current: Annotated[dict, Depends(get_current_user)]):

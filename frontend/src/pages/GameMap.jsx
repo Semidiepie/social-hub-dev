@@ -5,7 +5,17 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Match3Board } from "@/components/Match3Board";
+import { MemoryGame } from "@/components/games/MemoryGame";
+import { QuizGame } from "@/components/games/QuizGame";
+import { TapperGame } from "@/components/games/TapperGame";
 import { toast } from "sonner";
+
+const INTRO_TEXT = {
+  match3: "Reach the target score before you run out of moves.",
+  memory: "Flip the cards and find every matching pair before time runs out.",
+  quiz: "Answer the questions correctly — beat the clock on each one!",
+  tapper: "Tap the targets as fast as you can before time runs out.",
+};
 
 function Stars({ n, size = 16 }) {
   return (
@@ -19,7 +29,7 @@ function Stars({ n, size = 16 }) {
 
 export default function GameMapPage() {
   const { slug } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,7 +52,7 @@ export default function GameMapPage() {
       .finally(() => setLoading(false));
   }, [slug, user]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!authLoading) load(); }, [load, authLoading]);
 
   const openLevel = async (n) => {
     if (!user) {
@@ -92,9 +102,12 @@ export default function GameMapPage() {
           <div className="rounded-3xl border border-border bg-card/70 p-8 text-center" data-testid="level-intro">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-2xl font-black text-primary">{levelN}</div>
             <h2 className="mt-4 text-2xl font-black">Level {levelN}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Reach the target score before you run out of moves.</p>
+            <p className="mt-1 text-sm text-muted-foreground">{INTRO_TEXT[levelCfg.kind] || INTRO_TEXT.match3}</p>
             <div className="mt-5 flex justify-center gap-6">
-              <div><div className="text-2xl font-black">{levelCfg.moves}</div><div className="text-[11px] uppercase text-muted-foreground">Moves</div></div>
+              {levelCfg.kind === "match3" && <div><div className="text-2xl font-black">{levelCfg.moves}</div><div className="text-[11px] uppercase text-muted-foreground">Moves</div></div>}
+              {levelCfg.kind === "memory" && <div><div className="text-2xl font-black">{levelCfg.pairs}</div><div className="text-[11px] uppercase text-muted-foreground">Pairs</div></div>}
+              {(levelCfg.kind === "memory" || levelCfg.kind === "tapper") && <div><div className="text-2xl font-black">{levelCfg.seconds || levelCfg.duration}s</div><div className="text-[11px] uppercase text-muted-foreground">Time</div></div>}
+              {levelCfg.kind === "quiz" && <div><div className="text-2xl font-black">{levelCfg.count}</div><div className="text-[11px] uppercase text-muted-foreground">Questions</div></div>}
               <div><div className="text-2xl font-black">{levelCfg.target.toLocaleString()}</div><div className="text-[11px] uppercase text-muted-foreground">Target</div></div>
             </div>
             <Button onClick={() => setPhase("play")} className="mt-6 w-full bg-primary text-primary-foreground" data-testid="level-start-btn">Start</Button>
@@ -102,7 +115,10 @@ export default function GameMapPage() {
         )}
 
         {phase === "play" && levelCfg && (
-          <Match3Board key={`${levelN}-${levelCfg.moves}`} level={levelCfg} onEnd={onEnd} />
+          levelCfg.kind === "memory" ? <MemoryGame key={levelN} level={levelCfg} onEnd={onEnd} />
+          : levelCfg.kind === "quiz" ? <QuizGame key={levelN} level={levelCfg} onEnd={onEnd} />
+          : levelCfg.kind === "tapper" ? <TapperGame key={levelN} level={levelCfg} onEnd={onEnd} />
+          : <Match3Board key={`${levelN}-${levelCfg.moves}`} level={levelCfg} onEnd={onEnd} />
         )}
 
         {phase === "result" && (
@@ -112,7 +128,7 @@ export default function GameMapPage() {
                 <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${result.won ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
                   {result.won ? <Check size={32} /> : <X size={32} />}
                 </div>
-                <h2 className="mt-4 text-2xl font-black">{result.won ? "Level complete!" : "Out of moves"}</h2>
+                <h2 className="mt-4 text-2xl font-black">{result.won ? "Level complete!" : "Not quite — try again"}</h2>
                 <div className="mt-3 flex justify-center"><Stars n={result.stars} size={28} /></div>
                 <p className="mt-3 text-sm text-muted-foreground">Score <span className="font-black text-foreground">{(result.score || 0).toLocaleString()}</span></p>
                 <div className="mt-6 flex gap-2">
