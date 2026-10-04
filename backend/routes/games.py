@@ -56,10 +56,16 @@ DEFAULT_GAME = {
 }
 
 
-KINDS = ("match3", "memory", "quiz", "tapper")
+KINDS = ("match3", "memory", "quiz", "tapper", "farm")
 
 # Starter content for AI fallbacks / defaults.
 DEFAULT_MEMORY_EMOJIS = ["⚡", "❤️", "💬", "📸", "⭐", "🎵", "🔥", "🏆", "🚀", "🌙", "🍕", "👻"]
+DEFAULT_CROPS = [
+    {"id": "c0", "name": "Wheat", "emoji": "🌾", "seed_cost": 5, "grow_seconds": 20, "sell_price": 12, "xp": 2},
+    {"id": "c1", "name": "Carrot", "emoji": "🥕", "seed_cost": 10, "grow_seconds": 40, "sell_price": 25, "xp": 3},
+    {"id": "c2", "name": "Corn", "emoji": "🌽", "seed_cost": 20, "grow_seconds": 75, "sell_price": 50, "xp": 5},
+    {"id": "c3", "name": "Tomato", "emoji": "🍅", "seed_cost": 35, "grow_seconds": 120, "sell_price": 90, "xp": 8},
+]
 
 
 def _cfg(game: dict) -> dict:
@@ -231,6 +237,27 @@ def _validate_config(kind: str, c) -> dict:
             "base_duration": max(10, min(60, int(c.get("base_duration") or 20))),
             "base_spawn_ms": max(350, min(2000, int(c.get("base_spawn_ms") or 900))),
         }
+    if kind == "farm":
+        crops = []
+        for i, cr in enumerate((c.get("crops") or [])[:8]):
+            if not isinstance(cr, dict):
+                continue
+            name = str(cr.get("name") or "").strip()[:24]
+            if not name:
+                continue
+            seed = max(1, min(5000, int(cr.get("seed_cost") or 10)))
+            grow = max(5, min(86400, int(cr.get("grow_seconds") or 30)))
+            sell = max(seed + 1, min(50000, int(cr.get("sell_price") or seed * 2)))
+            xp = max(1, min(1000, int(cr.get("xp") or 2)))
+            crops.append({"id": f"c{i}", "name": name, "emoji": str(cr.get("emoji") or "🌱")[:4],
+                          "seed_cost": seed, "grow_seconds": grow, "sell_price": sell, "xp": xp})
+        if len(crops) < 2:
+            crops = DEFAULT_CROPS
+        return {
+            "crops": crops,
+            "start_coins": max(0, min(100000, int(c.get("start_coins") or 100))),
+            "start_plots": max(2, min(12, int(c.get("start_plots") or 4))),
+        }
     # match3
     tiles = _coerce_tiles(c.get("tiles")) or DEFAULT_TILES
     return {
@@ -351,6 +378,7 @@ GEN_SYSTEM = (
     '  - "memory": flip cards to find matching pairs (concentration, memory).\n'
     '  - "quiz": trivia / multiple-choice questions on a topic.\n'
     '  - "tapper": tap/whack targets that pop up fast within a time limit (reflex, arcade).\n'
+    '  - "farm": a farming/economy SIMULATOR (like Hay Day / FarmVille): plant seeds, wait for crops to grow in real time, harvest, sell for coins, level up. Use this for any "simulator", "tycoon", "farm", "restaurant", "city builder" or "idle/economy" request.\n'
     "Then output JSON: {\n"
     '  "kind": one of the above,\n'
     '  "title": string (<=50), "description": string (<=180), "cover_emoji": ONE emoji,\n'
@@ -360,6 +388,7 @@ GEN_SYSTEM = (
     '    memory -> {"emojis":[8-12 single emojis fitting the theme], "base_pairs":4-8, "base_seconds":30-120}\n'
     '    quiz   -> {"questions":[8-20 {"q":string,"choices":[3-4 strings],"answer":index-int}], "seconds_per_q":8-30}\n'
     '    tapper -> {"emoji":ONE emoji to tap, "bg":"#RRGGBB", "base_duration":15-40, "base_spawn_ms":500-1200}\n'
+    '    farm   -> {"crops":[4-8 {"name":string,"emoji":ONE emoji,"seed_cost":int,"grow_seconds":int(10-600),"sell_price":int>seed_cost,"xp":int}], "start_coins":50-500, "start_plots":4-8}\n'
     "For match3 tiles use ONLY these icon names: " + ", ".join(ALLOWED_ICONS) + ".\n"
     "Make content genuinely fit the theme (real trivia answers, themed emojis). Respect difficulty hints."
 )
@@ -569,6 +598,134 @@ def build_router(ctx) -> APIRouter:
         return {"level": n, "score": score, "stars": earned, "won": won,
                 "target": params["target"], "unlocked": unlocked, "best": levels[key]["best"]}
 
+    # ---------- Farm simulator (not level-based) ----------
+    def _epoch() -> int:
+        return int(now().timestamp())
+
+    def _farm_level(xp: int) -> int:
+        return 1 + int(xp) // 100
+
+    def _farm_out(state: dict, game: dict) -> dict:
+        c = _cfg(game)
+        return {
+            "coins": state["coins"],
+            "xp": state["xp"],
+            "level": _farm_level(state["xp"]),
+            "plots": state["plots"],
+            "inventory": state.get("inventory", {}),
+            "crops": c.get("crops", DEFAULT_CROPS),
+            "now": _epoch(),
+        }
+
+    async def _get_farm(user_id: str, game: dict) -> dict:
+        s = await db.farm_state.find_one({"user_id": user_id, "game_id": game["id"]}, {"_id": 0})
+        if s:
+            return s
+        c = _cfg(game)
+        s = {
+            "id": str(uuid.uuid4()), "user_id": user_id, "game_id": game["id"],
+            "coins": int(c.get("start_coins", 100)), "xp": 0,
+            "plots": [{"crop": None, "ready_at": None} for _ in range(int(c.get("start_plots", 4)))],
+            "inventory": {}, "created_at": now(), "updated_at": now(),
+        }
+        await db.farm_state.insert_one(dict(s))
+        return s
+
+    async def _save_farm(state: dict):
+        state["updated_at"] = now()
+        await db.farm_state.update_one(
+            {"user_id": state["user_id"], "game_id": state["game_id"]},
+            {"$set": {k: state[k] for k in ("coins", "xp", "plots", "inventory", "updated_at")}},
+        )
+
+    async def _farm_game(slug: str, current):
+        g = await db.games.find_one({"slug": slug}, {"_id": 0})
+        if not g or not g.get("is_active", True) or g.get("kind") != "farm":
+            raise HTTPException(404, "Farm not found")
+        if g.get("visibility") == "private" and not current.get("is_super_admin"):
+            raise HTTPException(404, "Farm not found")
+        return g
+
+    @router.get("/api/games/{slug}/farm")
+    async def farm_state(slug: str, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _farm_game(slug, current)
+        s = await _get_farm(current["id"], g)
+        return _farm_out(s, g)
+
+    @router.post("/api/games/{slug}/farm/plant")
+    async def farm_plant(slug: str, body: dict, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _farm_game(slug, current)
+        s = await _get_farm(current["id"], g)
+        crops = {c["id"]: c for c in _cfg(g).get("crops", DEFAULT_CROPS)}
+        plot_i = int(body.get("plot", -1))
+        crop = crops.get(body.get("crop"))
+        if plot_i < 0 or plot_i >= len(s["plots"]):
+            raise HTTPException(400, "Invalid plot")
+        if not crop:
+            raise HTTPException(400, "Unknown crop")
+        if s["plots"][plot_i]["crop"]:
+            raise HTTPException(400, "Plot is busy")
+        if s["coins"] < crop["seed_cost"]:
+            raise HTTPException(400, "Not enough coins")
+        s["coins"] -= crop["seed_cost"]
+        s["plots"][plot_i] = {"crop": crop["id"], "ready_at": _epoch() + crop["grow_seconds"]}
+        await _save_farm(s)
+        return _farm_out(s, g)
+
+    @router.post("/api/games/{slug}/farm/harvest")
+    async def farm_harvest(slug: str, body: dict, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _farm_game(slug, current)
+        s = await _get_farm(current["id"], g)
+        crops = {c["id"]: c for c in _cfg(g).get("crops", DEFAULT_CROPS)}
+        plot_i = int(body.get("plot", -1))
+        if plot_i < 0 or plot_i >= len(s["plots"]):
+            raise HTTPException(400, "Invalid plot")
+        plot = s["plots"][plot_i]
+        if not plot["crop"]:
+            raise HTTPException(400, "Nothing planted")
+        if _epoch() < (plot["ready_at"] or 0):
+            raise HTTPException(400, "Not ready yet")
+        cid = plot["crop"]
+        s["inventory"][cid] = int(s["inventory"].get(cid, 0)) + 1
+        s["xp"] += crops.get(cid, {}).get("xp", 1)
+        s["plots"][plot_i] = {"crop": None, "ready_at": None}
+        await _save_farm(s)
+        return _farm_out(s, g)
+
+    @router.post("/api/games/{slug}/farm/sell")
+    async def farm_sell(slug: str, body: dict, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _farm_game(slug, current)
+        s = await _get_farm(current["id"], g)
+        crops = {c["id"]: c for c in _cfg(g).get("crops", DEFAULT_CROPS)}
+        cid = body.get("crop")
+        have = int(s["inventory"].get(cid, 0))
+        qty = max(1, min(int(body.get("qty", 1)), have))
+        if not crops.get(cid) or have <= 0:
+            raise HTTPException(400, "Nothing to sell")
+        s["coins"] += crops[cid]["sell_price"] * qty
+        s["xp"] += qty
+        left = have - qty
+        if left > 0:
+            s["inventory"][cid] = left
+        else:
+            s["inventory"].pop(cid, None)
+        await _save_farm(s)
+        return _farm_out(s, g)
+
+    @router.post("/api/games/{slug}/farm/buy-plot")
+    async def farm_buy_plot(slug: str, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _farm_game(slug, current)
+        s = await _get_farm(current["id"], g)
+        if len(s["plots"]) >= 16:
+            raise HTTPException(400, "Max plots reached")
+        cost = 50 * len(s["plots"])
+        if s["coins"] < cost:
+            raise HTTPException(400, "Not enough coins")
+        s["coins"] -= cost
+        s["plots"].append({"crop": None, "ready_at": None})
+        await _save_farm(s)
+        return {**_farm_out(s, g), "plot_cost": cost}
+
     # ---------- Admin ----------
     @router.get("/api/admin/games")
     async def admin_list(current: Annotated[dict, Depends(get_current_user)]):
@@ -618,7 +775,7 @@ def build_router(ctx) -> APIRouter:
             "description": spec["description"],
             "kind": spec["kind"],
             "cover_emoji": spec["cover_emoji"],
-            "level_count": spec["level_count"],
+            "level_count": 1 if spec["kind"] == "farm" else spec["level_count"],
             "is_active": True,
             "visibility": "private",
             "sort": count,
@@ -681,6 +838,7 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(404, "Game not found")
         await db.games.delete_one({"id": game_id})
         await db.game_progress.delete_many({"game_id": game_id})
+        await db.farm_state.delete_many({"game_id": game_id})
         return {"status": "deleted", "id": game_id}
 
     return router

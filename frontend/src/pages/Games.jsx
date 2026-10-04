@@ -47,7 +47,7 @@ export default function GamesPage() {
               <div className="relative flex h-36 items-center justify-center bg-gradient-to-br from-primary/25 via-primary/10 to-transparent">
                 <span className="text-6xl drop-shadow-lg">{g.cover_emoji || "🎮"}</span>
                 <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-background/70 px-2.5 py-1 text-[11px] font-bold">
-                  <Trophy size={12} className="text-primary" /> {g.level_count} levels
+                  <Trophy size={12} className="text-primary" /> {g.kind === "farm" ? "Farm sim" : `${g.level_count} levels`}
                 </div>
                 {g.visibility === "private" && (
                   <div className="absolute left-3 top-3 rounded-full bg-yellow-500/90 px-2.5 py-1 text-[11px] font-bold text-black">Private</div>

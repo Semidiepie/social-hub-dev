@@ -8,6 +8,7 @@ import { Match3Board } from "@/components/Match3Board";
 import { MemoryGame } from "@/components/games/MemoryGame";
 import { QuizGame } from "@/components/games/QuizGame";
 import { TapperGame } from "@/components/games/TapperGame";
+import { FarmGame } from "@/components/games/FarmGame";
 import { toast } from "sonner";
 
 const INTRO_TEXT = {
@@ -87,6 +88,25 @@ export default function GameMapPage() {
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!game) return null;
+
+  // ===== Farm simulator: not level-based, render the sim directly =====
+  if (game.kind === "farm") {
+    return (
+      <div className="mx-auto max-w-2xl" data-testid="farm-page">
+        <button onClick={() => navigate("/games")} className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground" data-testid="map-back">
+          <ArrowLeft size={16} /> All games
+        </button>
+        <header className="mb-4 flex items-center gap-3">
+          <span className="text-4xl">{game.cover_emoji}</span>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight">{game.title}</h1>
+            <p className="text-sm text-muted-foreground">{game.description}</p>
+          </div>
+        </header>
+        <FarmGame game={game} />
+      </div>
+    );
+  }
 
   const levels = Array.from({ length: game.level_count }, (_, i) => i + 1);
 
