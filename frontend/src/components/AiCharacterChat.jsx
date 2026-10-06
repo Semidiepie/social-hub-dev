@@ -8,6 +8,28 @@ import { toast } from "sonner";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
+// Gathers "real world" context so the character's replies are accurate: the exact
+// time shown on the user's device + (if they allow it) their location for live weather.
+let __geoCache = null; // { lat, lon } once granted, reused for the session
+function gatherContext() {
+  const now = new Date();
+  const ctx = {
+    local_time: now.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit", month: "short", day: "numeric" }),
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+  };
+  if (__geoCache) { ctx.lat = __geoCache.lat; ctx.lon = __geoCache.lon; }
+  return ctx;
+}
+function primeGeo() {
+  if (__geoCache || !navigator.geolocation) return;
+  try {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { __geoCache = { lat: pos.coords.latitude, lon: pos.coords.longitude }; },
+      () => {}, { timeout: 5000, maximumAge: 600000 }
+    );
+  } catch { /* noop */ }
+}
+
 function unlockAudio() {
   try {
     if (!window.__aiAudioEl) window.__aiAudioEl = new Audio();
@@ -62,7 +84,7 @@ export function AiCharacterChat({ characterId, onBack }) {
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", text: draft, created_at: new Date().toISOString() }]);
     setSending(true);
     try {
-      const r = await api.post(`/ai-characters/${characterId}/send`, { text: draft });
+      const r = await api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() });
       setMessages((m) => [...m, r.message]);
       playReply(r.audio_url);
     } catch (err) {
@@ -282,7 +304,7 @@ function CharacterCall({ character, onEnd }) {
       if (endedRef.current) return;
       if (!text) { listen(); return; } // heard nothing — keep listening
       setCaption(text);
-      const r = await api.post(`/ai-characters/${character.id}/voice-turn`, { text });
+      const r = await api.post(`/ai-characters/${character.id}/voice-turn`, { text, ...gatherContext() });
       if (endedRef.current) return;
       setCaption(r.reply);
       await playAudio(r.audio_url);
@@ -294,6 +316,7 @@ function CharacterCall({ character, onEnd }) {
 
   useEffect(() => {
     endedRef.current = false;
+    primeGeo();
     (async () => {
       try {
         const r = await api.post(`/ai-characters/${character.id}/voice-turn`, { greeting: true });

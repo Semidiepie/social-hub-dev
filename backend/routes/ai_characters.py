@@ -16,12 +16,24 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 import settings_store
 
 TTS_MODEL = "eleven_multilingual_v2"  # high-quality, lifelike (matches the ElevenLabs website)
+
+# WMO weather codes → plain words the character can speak naturally.
+WEATHER_CODES = {
+    0: "clear skies", 1: "mostly clear", 2: "partly cloudy", 3: "overcast",
+    45: "foggy", 48: "foggy", 51: "light drizzle", 53: "drizzle", 55: "heavy drizzle",
+    56: "freezing drizzle", 57: "freezing drizzle", 61: "light rain", 63: "raining",
+    65: "heavy rain", 66: "freezing rain", 67: "freezing rain", 71: "light snow",
+    73: "snowing", 75: "heavy snow", 77: "snow grains", 80: "rain showers",
+    81: "rain showers", 82: "heavy rain showers", 85: "snow showers", 86: "snow showers",
+    95: "a thunderstorm", 96: "a thunderstorm with hail", 99: "a severe thunderstorm",
+}
 
 
 def _now():
@@ -62,11 +74,19 @@ class MemoryBody(BaseModel):
 
 class SendBody(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
+    local_time: str = Field(default="", max_length=80)   # time as shown on the user's device
+    tz: str = Field(default="", max_length=60)
+    lat: Optional[float] = None
+    lon: Optional[float] = None
 
 
 class VoiceTurnBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     greeting: bool = False
+    local_time: str = Field(default="", max_length=80)
+    tz: str = Field(default="", max_length=60)
+    lat: Optional[float] = None
+    lon: Optional[float] = None
 
 
 def build_router(ctx) -> APIRouter:
@@ -134,7 +154,7 @@ def build_router(ctx) -> APIRouter:
             except Exception:
                 pass
 
-    def _system(c: dict, spoken: bool) -> str:
+    def _system(c: dict, spoken: bool, context: str = "") -> str:
         base = (
             f"You are {c['name']} (@{c['username']}), a character chatting inside the PostMePlex app. "
             f"Stay FULLY in character at all times and never say you are an AI or a language model.\n\n"
@@ -157,12 +177,43 @@ def build_router(ctx) -> APIRouter:
             "\nRemember the whole conversation so far and never make the person repeat themselves. "
             "Never say you can't remember. Keep replies short, natural and conversational (2-5 sentences)."
         )
+        if context:
+            base += (
+                "\n\nREAL-WORLD CONTEXT (this is actually true for the person RIGHT NOW — treat it as fact, "
+                "reference it naturally when relevant, and never contradict it):\n" + context + "\n"
+            )
         if spoken:
             base += (" You are on a VOICE call, so answer the way a person naturally speaks out loud: "
                      "short warm sentences, no markdown, no bullet lists, no emojis, easy to say aloud.")
         return base
 
-    async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool) -> str:
+    async def _realworld_context(local_time: str, tz: str, lat, lon) -> str:
+        """Builds a 'this is true right now' block from the user's device clock and live weather."""
+        parts = []
+        if local_time:
+            parts.append(f"Current local time on their phone: {local_time}" + (f" ({tz})" if tz else ""))
+        if lat is not None and lon is not None:
+            try:
+                async with httpx.AsyncClient(timeout=6) as client:
+                    r = await client.get("https://api.open-meteo.com/v1/forecast", params={
+                        "latitude": lat, "longitude": lon,
+                        "current": "temperature_2m,weather_code,is_day", "temperature_unit": "celsius"})
+                if r.status_code < 400:
+                    cur = r.json().get("current", {})
+                    desc = WEATHER_CODES.get(cur.get("weather_code"), "")
+                    temp = cur.get("temperature_2m")
+                    day = "daytime" if cur.get("is_day") else "nighttime"
+                    if desc or temp is not None:
+                        wx = f"Weather where they are right now: {desc}" if desc else "Weather where they are right now"
+                        if temp is not None:
+                            wx += f", about {round(temp)}°C"
+                        wx += f" ({day})."
+                        parts.append(wx)
+            except Exception as e:
+                logger.warning(f"weather lookup failed: {e}")
+        return "\n".join(parts)
+
+    async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "") -> str:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         history = await db.ai_char_messages.find(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
@@ -172,7 +223,7 @@ def build_router(ctx) -> APIRouter:
         chat = LlmChat(
             api_key=settings_store.get("EMERGENT_LLM_KEY"),
             session_id=f"aichar-{c['id']}-{admin_id}",
-            system_message=_system(c, spoken),
+            system_message=_system(c, spoken, context),
         ).with_model("anthropic", "claude-sonnet-4-6")
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
             f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.'
@@ -306,8 +357,9 @@ def build_router(ctx) -> APIRouter:
         _require_admin(current)
         c = await _get_char(char_id)
         await _store(char_id, current["id"], "user", body.text)
+        context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
         try:
-            reply = await _reply(c, current["id"], body.text, spoken=False)
+            reply = await _reply(c, current["id"], body.text, spoken=False, context=context)
         except Exception as e:
             logger.warning(f"ai-char reply error: {e}")
             raise HTTPException(502, f"{c['name']} is having trouble responding right now")
@@ -320,13 +372,17 @@ def build_router(ctx) -> APIRouter:
         _require_admin(current)
         c = await _get_char(char_id)
         if body.greeting:
-            reply = f"Hey! It's {c['name']}. Great to finally talk — what's on your mind?"
+            import random
+            nick = (c.get("nickname") or c.get("your_name") or "").strip()
+            word = random.choice(["Hey", "Hi", "Hiya", "Yo", "Heyy", "Hey there"])
+            reply = f"{word}, {nick}!" if nick else f"{word}!"
         else:
             if not body.text.strip():
                 raise HTTPException(400, "Nothing to respond to")
             await _store(char_id, current["id"], "user", body.text)
+            context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
             try:
-                reply = await _reply(c, current["id"], body.text, spoken=True)
+                reply = await _reply(c, current["id"], body.text, spoken=True, context=context)
             except Exception as e:
                 logger.warning(f"ai-char voice reply error: {e}")
                 raise HTTPException(502, f"{c['name']} is having trouble responding right now")

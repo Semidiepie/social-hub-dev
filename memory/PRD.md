@@ -5,6 +5,13 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — AI characters: real-world awareness + new call greeting (2026-06, web)
+- **Real-world context:** the web client now sends the device's current time (+ timezone) with every character message/voice-turn, and (if the user allows location on a call) their lat/lon. The backend injects "REAL-WORLD CONTEXT (true right now)" into the character's system prompt — exact local time + **live weather** via the free, keyless **Open-Meteo** API (WMO code → plain words like "raining"). So replies are time/weather-accurate. No API key needed.
+  - Backend: `SendBody`/`VoiceTurnBody` gained `local_time`, `tz`, `lat`, `lon`; new `_realworld_context()` + `WEATHER_CODES`; `_system()`/`_reply()` take a `context` block.
+  - Frontend (`AiCharacterChat.jsx`): `gatherContext()` (time+tz, cached geo) sent on typing-send and voice-turns; `primeGeo()` requests location once when a call starts (best-effort — weather only if granted).
+- **New call greeting:** when the character "answers the phone" it's now a quick **1-word greeting + the nickname** the user set (e.g., "Hey, superstar!"), instead of the old "Hey! It's {name}. Great to finally talk…". Falls back to the real name, then just the word, if no nickname.
+- **Verified (curl):** greeting returns "Hey, superstar!"; a voice-turn with time+coords made the character say the correct local time; Open-Meteo reachable. Lint clean. Preview-only — redeploy for production.
+
 ## Feature — Connect social accounts: TikTok import (Phase A, embed-only) (2026-06, web)
 - **Scope decision:** re-uploading/re-hosting TikTok videos is NOT possible (API gives no downloadable file, TikTok Dev Terms forbid re-hosting, licensed music = copyright). Built the **compliant embed approach**: import each video's metadata (caption, cover, official `embed_link`, create_time) and play via TikTok's official embed. No media is ever downloaded/stored.
 - **Backend (`routes/social.py`, new):** TikTok Login Kit OAuth v2 + Display API.
