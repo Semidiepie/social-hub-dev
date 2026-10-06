@@ -5,6 +5,12 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — AI voice call: stop re-asking mic permission every turn (2026-06, web)
+- **Cause:** the previous "quiet audio" fix fully released the mic each turn, so iOS re-prompted for mic permission every turn.
+- **Fix:** acquire the mic **once** per call and reuse it — during playback the mic **track is muted** (`track.enabled=false`) instead of released, then re-enabled for the next listen. No re-release → no re-prompt.
+- Lint clean, frontend only (hot-reloads). Preview-only — redeploy for production.
+- ⚠️ **Web ceiling reached (irreconcilable tradeoff):** keeping the mic open avoids the re-prompt BUT puts the phone back in "communication" mode, so her voice again plays loud through the loudspeaker and the hardware volume behaves like call volume. On mobile WEB you cannot have BOTH "no re-prompt" AND "quiet/private media audio" — holding the mic = loud; releasing = re-prompt. The ONLY way to get a true private phone-call feel (earpiece, call-like, single permission) is the **native mobile app** (AI-character call is web-only today; would need to be built on Expo). Strongly recommended as the real solution.
+
 ## Fix — AI voice call: play as media (phone-volume controlled), not speakerphone (2026-06, web)
 - **Root cause of "too loud / everyone hears her / volume keys don't work":** the call kept the mic open the entire time, which forces mobile OSes into *communication* audio mode (loud speakerphone, hardware volume keys don't control it like media).
 - **Fix:** `playAudio` now fully releases the mic (`cleanupMic()` — stops tracks + closes AudioContext) before her audio plays, so her voice plays as **normal media** controlled by the phone's volume like music; the mic is re-acquired fresh for the next listen turn (fresh stream + context each turn, which also avoids the old closed-context reuse bug). In-call volume slider retained.

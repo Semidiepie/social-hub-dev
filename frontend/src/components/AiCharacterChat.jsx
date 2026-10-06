@@ -216,11 +216,10 @@ function CharacterCall({ character, onEnd }) {
 
   const playAudio = useCallback((url) => new Promise((resolve) => {
     if (!url) return resolve();
-    // Fully release the mic during playback. While the mic is open the phone keeps
-    // the call in "communication" mode (loud speakerphone, volume keys don't act like
-    // media). Releasing it makes her voice play as normal media — controlled by the
-    // phone's volume exactly like music. The mic is re-opened afterwards to listen.
-    cleanupMic();
+    // Keep the mic session alive but MUTE it during playback. Fully releasing it would
+    // make iOS re-ask for mic permission every turn (annoying). Muting avoids the
+    // re-prompt and stops her voice feeding back into the recording.
+    try { streamRef.current?.getAudioTracks().forEach((t) => { t.enabled = false; }); } catch { /* noop */ }
     if (!window.__aiAudioEl) window.__aiAudioEl = new Audio();
     const audio = window.__aiAudioEl;
     let done = false; let watchdog;
@@ -242,6 +241,7 @@ function CharacterCall({ character, onEnd }) {
     try {
       const stream = streamRef.current || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       streamRef.current = stream;
+      try { stream.getAudioTracks().forEach((t) => { t.enabled = true; }); } catch { /* noop */ }
       let mime = "";
       for (const m of ["audio/webm", "audio/mp4", "audio/ogg"]) {
         if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
