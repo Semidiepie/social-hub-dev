@@ -168,6 +168,8 @@ function CharacterCall({ character, onEnd }) {
   const speakerRef = useRef(true);
   speakerRef.current = speaker;
   const acRef = useRef(null);
+  const analyserRef = useRef(null);
+  const srcRef = useRef(null);
   const vadRef = useRef(null);
 
   const cleanupMic = () => {
@@ -175,6 +177,9 @@ function CharacterCall({ character, onEnd }) {
     vadRef.current = null;
     try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
     recorderRef.current = null;
+    try { srcRef.current?.disconnect(); } catch { /* noop */ }
+    srcRef.current = null;
+    analyserRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     try { acRef.current?.close(); } catch { /* noop */ }
@@ -215,13 +220,18 @@ function CharacterCall({ character, onEnd }) {
       setStatus("listening");
 
       const AC = window.AudioContext || window.webkitAudioContext;
-      const ac = new AC();
-      acRef.current = ac;
+      if (!acRef.current || acRef.current.state === "closed") { acRef.current = new AC(); analyserRef.current = null; srcRef.current = null; }
+      const ac = acRef.current;
       if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
-      const src = ac.createMediaStreamSource(stream);
-      const analyser = ac.createAnalyser();
-      analyser.fftSize = 2048;
-      src.connect(analyser);
+      if (!analyserRef.current) {
+        const src = ac.createMediaStreamSource(stream);
+        const analyser = ac.createAnalyser();
+        analyser.fftSize = 2048;
+        src.connect(analyser);
+        srcRef.current = src;
+        analyserRef.current = analyser;
+      }
+      const analyser = analyserRef.current;
       const buf = new Uint8Array(analyser.fftSize);
       const started = Date.now();
       let hasSpoken = false, silenceStart = 0, frames = 0, noiseFloor = 0.01;
@@ -254,8 +264,6 @@ function CharacterCall({ character, onEnd }) {
     if (!rec) return;
     recorderRef.current = null;
     if (vadRef.current) { cancelAnimationFrame(vadRef.current); vadRef.current = null; }
-    try { acRef.current?.close(); } catch { /* noop */ }
-    acRef.current = null;
     setStatus("thinking");
     const done = new Promise((res) => { rec.onstop = res; });
     try { rec.stop(); } catch { /* noop */ }
