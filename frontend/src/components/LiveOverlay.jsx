@@ -53,6 +53,7 @@ export function LiveOverlay({
   floaters,
   chat,
   gifts,
+  balance = 0,
   onSendChat,
   onSendHeart,
   onSendGift,
@@ -141,18 +142,30 @@ export function LiveOverlay({
         </div>
 
         {giftsOpen && (
-          <div className="mb-2 grid grid-cols-4 gap-2 rounded-2xl bg-black/60 p-3 backdrop-blur sm:grid-cols-7" data-testid="live-gift-tray">
-            {gifts.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => { onSendGift(g.id); setGiftsOpen(false); }}
-                data-testid={`live-gift-${g.id}`}
-                className="flex flex-col items-center gap-0.5 rounded-xl bg-white/5 py-2 transition-transform hover:scale-110 active:scale-95"
-              >
-                <span className="text-2xl">{g.glyph}</span>
-                <span className="text-[10px] font-semibold text-amber-300">{g.coins}</span>
-              </button>
-            ))}
+          <div className="mb-2 rounded-2xl bg-black/60 p-3 backdrop-blur" data-testid="live-gift-tray">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold text-white/80">Send a gift</span>
+              <span className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-black text-amber-300" data-testid="live-token-balance">
+                🪙 {balance} tokens
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+              {gifts.map((g) => {
+                const afford = balance >= g.coins;
+                return (
+                  <button
+                    key={g.id}
+                    disabled={!afford}
+                    onClick={() => { onSendGift(g.id); setGiftsOpen(false); }}
+                    data-testid={`live-gift-${g.id}`}
+                    className={`flex flex-col items-center gap-0.5 rounded-xl py-2 transition-transform ${afford ? "bg-white/5 hover:scale-110 active:scale-95" : "cursor-not-allowed bg-white/5 opacity-40"}`}
+                  >
+                    <span className="text-2xl">{g.glyph}</span>
+                    <span className="text-[10px] font-semibold text-amber-300">🪙 {g.coins}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 

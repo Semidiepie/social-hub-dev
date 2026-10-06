@@ -1,14 +1,25 @@
-// PostMePlex Market catalog — all cosmetics are FREE to equip.
-export const FRAMES = [
+// PostMePlex Market catalog.
+// FREE_FRAMES equip for free. Premium frames are sold for tokens in the Store
+// (see backend wallet_core.STORE_FRAMES) and must be purchased before equipping.
+export const FREE_FRAMES = [
   { id: "gold", name: "Golden Glow", blurb: "Pulsing gold aura" },
   { id: "hearts", name: "Sweetheart", blurb: "Soft pink pulse" },
   { id: "emerald", name: "Emerald Aura", blurb: "Green energy" },
+];
+
+// Full list kept for name lookups by any consumer.
+export const FRAMES = [
+  ...FREE_FRAMES,
   { id: "violet", name: "Violet Pulse", blurb: "Mystic purple" },
-  { id: "neon", name: "Neon Cycle", blurb: "Spinning neon" },
-  { id: "rainbow", name: "Rainbow Spin", blurb: "Full spectrum" },
-  { id: "fire", name: "Blaze", blurb: "Spinning flames" },
-  { id: "frost", name: "Frostbite", blurb: "Icy shimmer" },
   { id: "ocean", name: "Deep Ocean", blurb: "Aqua swirl" },
+  { id: "frost", name: "Frostbite", blurb: "Icy shimmer" },
+  { id: "neon", name: "Neon Cycle", blurb: "Spinning neon" },
+  { id: "fire", name: "Blaze", blurb: "Spinning flames" },
+  { id: "aurora", name: "Aurora", blurb: "Northern-lights glow" },
+  { id: "sunset", name: "Sunset Fade", blurb: "Warm dusk gradient" },
+  { id: "rainbow", name: "Rainbow Spin", blurb: "Full spectrum" },
+  { id: "molten", name: "Molten Core", blurb: "Lava-hot ring" },
+  { id: "galaxy", name: "Galaxy", blurb: "Cosmic nebula spin" },
 ];
 
 // primary = HSL triplet matching the app's --primary variable format.

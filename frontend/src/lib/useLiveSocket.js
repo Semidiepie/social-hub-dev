@@ -24,6 +24,8 @@ export function useLiveSocket(streamId) {
   const [floaters, setFloaters] = useState([]); // {id} transient
   const [gifts, setGifts] = useState([]);
   const [ended, setEnded] = useState(false);
+  const [balance, setBalance] = useState(null);
+  const [walletError, setWalletError] = useState(null);
   const wsRef = useRef(null);
   const pingRef = useRef(null);
 
@@ -72,6 +74,12 @@ export function useLiveSocket(streamId) {
         case "ended":
           setEnded(true);
           break;
+        case "wallet":
+          setBalance(m.balance);
+          break;
+        case "error":
+          if (m.detail === "insufficient_tokens") setWalletError({ ts: Date.now() });
+          break;
         default:
           break;
       }
@@ -95,5 +103,5 @@ export function useLiveSocket(streamId) {
   const sendHeart = useCallback(() => send({ type: "heart" }), [send]);
   const sendGift = useCallback((giftId) => send({ type: "gift", gift_id: giftId }), [send]);
 
-  return { connected, chat, viewers, hearts, floaters, gifts, ended, sendChat, sendHeart, sendGift };
+  return { connected, chat, viewers, hearts, floaters, gifts, ended, balance, walletError, sendChat, sendHeart, sendGift };
 }

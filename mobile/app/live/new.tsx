@@ -128,6 +128,7 @@ export default function GoLiveScreen() {
         floaters={live.floaters}
         chat={live.chat}
         gifts={live.gifts}
+        balance={live.balance ?? user?.tokens ?? 0}
         onSendChat={live.sendChat}
         onSendHeart={live.sendHeart}
         onSendGift={live.sendGift}

@@ -7,6 +7,7 @@ import { api } from "@/src/api/client";
 import { colors, radii, spacing } from "@/src/theme";
 import { useLiveSocket } from "@/src/lib/useLiveSocket";
 import { LiveOverlay } from "@/src/components/LiveOverlay";
+import { useAuth } from "@/src/context/AuthContext";
 
 interface LiveStream {
   id: string;
@@ -28,6 +29,11 @@ export default function LiveWatchScreen() {
   const [stream, setStream] = useState<LiveStream | null>(null);
   const [loading, setLoading] = useState(true);
   const live = useLiveSocket(id);
+  const { user, patchUser } = useAuth();
+
+  useEffect(() => {
+    if (live.balance != null) patchUser({ tokens: live.balance });
+  }, [live.balance, patchUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +89,7 @@ export default function LiveWatchScreen() {
           floaters={live.floaters}
           chat={live.chat}
           gifts={live.gifts}
+          balance={live.balance ?? user?.tokens ?? 0}
           onSendChat={live.sendChat}
           onSendHeart={live.sendHeart}
           onSendGift={live.sendGift}

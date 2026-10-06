@@ -13,6 +13,7 @@ interface AuthCtx {
   register: (email: string, username: string, password: string, displayName: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  patchUser: (patch: Partial<UserPublic>) => void;
 }
 
 const Ctx = createContext<AuthCtx | undefined>(undefined);
@@ -248,8 +249,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     setUser(null);
   }, []);
 
+  const patchUser = useCallback((patch: Partial<UserPublic>) => {
+    setUser((u) => (u ? { ...u, ...patch } : u));
+  }, []);
+
   return (
-    <Ctx.Provider value={{ user, loading, login, loginWithPin, register, logout, refresh }}>
+    <Ctx.Provider value={{ user, loading, login, loginWithPin, register, logout, refresh, patchUser }}>
       {children}
     </Ctx.Provider>
   );

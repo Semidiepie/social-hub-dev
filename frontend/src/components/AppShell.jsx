@@ -21,9 +21,11 @@ import {
   User,
   Phone,
   Gamepad2,
+  Coins,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
+import { HamburgerMenu } from "@/components/HamburgerMenu";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -44,6 +46,7 @@ const NAV = [
   { to: "/pet", label: "Pet", icon: PawPrint, testId: "nav-pet" },
   { to: "/games", label: "Games", icon: Gamepad2, testId: "nav-games" },
   { to: "/market", label: "Market", icon: ShoppingBag, testId: "nav-market" },
+  { to: "/wallet", label: "Wallet", icon: Coins, testId: "nav-wallet" },
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },
   { to: "/discover", label: "Discover", icon: Compass, testId: "nav-discover" },
   { to: "/messages", label: "Messages", icon: MessageSquare, testId: "nav-messages" },
@@ -138,6 +141,9 @@ export function AppShell({ children }) {
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="truncate text-sm font-semibold">{user.display_name}</div>
                   <div className="truncate text-xs text-muted-foreground">@{user.username}</div>
+                  <div className="mt-0.5 flex items-center gap-1 text-xs font-bold text-primary" data-testid="sidebar-token-balance">
+                    <Coins size={12} /> {user.tokens ?? 0}
+                  </div>
                 </div>
               </NavLink>
               <button
@@ -204,74 +210,7 @@ export function AppShell({ children }) {
               <Send size={18} />
             </NavLink>
             {user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button data-testid="topbar-menu-trigger" className="rounded-full outline-none focus:ring-2 focus:ring-primary">
-                  <Avatar src={user.avatar_url} size={32} frame={user.frame_enabled ? user.equipped_frame : null} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel className="truncate">
-                  <div className="text-sm font-semibold">{user.display_name}</div>
-                  <div className="text-xs font-normal text-muted-foreground">@{user.username}</div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem data-testid="topbar-menu-profile" onClick={() => navigate("/profile")}>
-                  <Avatar src={user.avatar_url} size={16} /> Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-messages" onClick={() => navigate("/messages")}>
-                  <MessageSquare size={16} /> Messages
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-videos" onClick={() => navigate("/videos")}>
-                  <Video size={16} /> Videos
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-live" onClick={() => navigate("/live")}>
-                  <Radio size={16} /> Live
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-music" onClick={() => navigate("/music")}>
-                  <Music2 size={16} /> Music
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-pet" onClick={() => navigate("/pet")}>
-                  <PawPrint size={16} /> My Pet
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-games" onClick={() => navigate("/games")}>
-                  <Gamepad2 size={16} /> Games
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-blogs" onClick={() => navigate("/blogs")}>
-                  <BookText size={16} /> Blogs
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-market" onClick={() => navigate("/market")}>
-                  <ShoppingBag size={16} /> Market
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-install" onClick={() => window.dispatchEvent(new Event("open-install-guide"))}>
-                  <Download size={16} /> Install app
-                </DropdownMenuItem>
-                <DropdownMenuItem data-testid="topbar-menu-settings" onClick={() => navigate("/settings")}>
-                  <Settings size={16} /> Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild data-testid="topbar-menu-support">
-                  <a href="tel:+18005076788" className="cursor-pointer">
-                    <Phone size={16} /> Call support · Sage AI
-                  </a>
-                </DropdownMenuItem>
-                {user?.is_super_admin && (
-                  <DropdownMenuItem data-testid="topbar-menu-admin" onClick={() => navigate("/admin/verify")}>
-                    <Shield size={16} /> Admin
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  data-testid="topbar-menu-logout"
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => {
-                    logout();
-                    navigate("/login");
-                  }}
-                >
-                  <LogOut size={16} /> Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <HamburgerMenu />
           ) : (
             <Button size="sm" onClick={() => navigate("/login")} data-testid="topbar-login">
               Sign in

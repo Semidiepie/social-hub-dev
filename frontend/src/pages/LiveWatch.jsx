@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { useLiveSocket } from "@/lib/useLiveSocket";
 import { LiveOverlay } from "@/components/LiveOverlay";
+import { useAuth } from "@/context/AuthContext";
 import { whepPlay, endSession } from "@/lib/webrtc";
 import { toast } from "sonner";
 
 export default function LiveWatchPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, patchUser } = useAuth();
   const [stream, setStream] = useState(null);
   const [loading, setLoading] = useState(true);
   const videoRef = useRef(null);
@@ -20,6 +22,15 @@ export default function LiveWatchPage() {
   const hlsRef = useRef(null);
 
   const live = useLiveSocket(id);
+
+  // Keep the global token balance in sync when the live socket reports a spend.
+  useEffect(() => {
+    if (live.balance != null) patchUser({ tokens: live.balance });
+  }, [live.balance, patchUser]);
+
+  useEffect(() => {
+    if (live.walletError) toast.error("Not enough tokens — top up in your Wallet.");
+  }, [live.walletError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +116,7 @@ export default function LiveWatchPage() {
           floaters={live.floaters}
           chat={live.chat}
           gifts={live.gifts}
+          balance={live.balance ?? user?.tokens ?? 0}
           onSendChat={live.sendChat}
           onSendHeart={live.sendHeart}
           onSendGift={live.sendGift}

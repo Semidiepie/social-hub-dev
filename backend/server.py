@@ -21,6 +21,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
+import wallet_core
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
@@ -129,6 +131,8 @@ class UserPublic(BaseModel):
     active_theme: Optional[str] = None
     frame_enabled: bool = True
     theme_enabled: bool = True
+    tokens: int = 0
+    owned_frames: list[str] = Field(default_factory=list)
 
 
 class RegisterBody(BaseModel):
@@ -353,6 +357,8 @@ def user_to_public(u: dict) -> UserPublic:
         active_theme=u.get("active_theme"),
         frame_enabled=u.get("frame_enabled", True),
         theme_enabled=u.get("theme_enabled", True),
+        tokens=int(u.get("tokens", 0) or 0),
+        owned_frames=u.get("owned_frames") or [],
     )
 
 
@@ -634,6 +640,8 @@ async def register(body: RegisterBody):
         "followers": 0,
         "following": 0,
         "posts_count": 0,
+        "tokens": wallet_core.WELCOME_TOKENS,
+        "owned_frames": [],
         "created_at": now(),
     }
     await db.users.insert_one(doc)
@@ -734,7 +742,7 @@ async def me(current: Annotated[dict, Depends(get_current_user)]):
     return user_to_public(current)
 
 
-_FRAME_IDS = {"gold", "neon", "fire", "frost", "hearts", "emerald", "violet", "ocean", "rainbow"}
+_FRAME_IDS = {"gold", "neon", "fire", "frost", "hearts", "emerald", "violet", "ocean", "rainbow", "aurora", "sunset", "molten", "galaxy"}
 _THEME_IDS = {"fall", "winter", "halloween", "christmas", "valentine", "spring", "summer", "newyear", "stpatrick"}
 
 
@@ -752,6 +760,10 @@ async def update_cosmetics(body: CosmeticsBody, current: Annotated[dict, Depends
         val = body.equipped_frame or None
         if val and val not in _FRAME_IDS:
             raise HTTPException(400, "Unknown frame")
+        if val and val in wallet_core.PREMIUM_FRAME_IDS:
+            owned = (await db.users.find_one({"id": current["id"]}, {"_id": 0, "owned_frames": 1}) or {}).get("owned_frames") or []
+            if val not in owned:
+                raise HTTPException(403, "Buy this frame in the Store first")
         updates["equipped_frame"] = val
     if body.active_theme is not None:
         val = body.active_theme or None
@@ -2163,6 +2175,29 @@ async def admin_delete_user(user_id: str, current: Annotated[dict, Depends(get_c
     return {"status": "deleted", "id": user_id}
 
 
+class AdminTokensBody(BaseModel):
+    amount: int = Field(ge=1, le=1000000)
+    note: str = ""
+
+
+@app.post("/api/admin/users/{user_id}/tokens", response_model=UserPublic)
+async def admin_grant_tokens(
+    user_id: str,
+    body: AdminTokensBody,
+    current: Annotated[dict, Depends(get_current_user)],
+):
+    """Super-admin: grant tokens to a user's wallet."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Super admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    await wallet_core.grant(db, now, user_id, body.amount, "admin_grant",
+                            body.note or f"Granted by @{current['username']}")
+    fresh = await db.users.find_one({"id": user_id})
+    return user_to_public(fresh)
+
+
 @app.post("/api/admin/users/{user_id}/reset-pin")
 async def admin_set_reset_pin(
     user_id: str,
@@ -2894,6 +2929,11 @@ async def seed():
                 new_doc["reset_pin_set_at"] = now()
             await db.users.insert_one(new_doc)
     await ensure_official_follows()
+    # Backfill the token wallet for any pre-economy accounts.
+    await db.users.update_many(
+        {"tokens": {"$exists": False}},
+        {"$set": {"tokens": wallet_core.WELCOME_TOKENS, "owned_frames": []}},
+    )
     if await db.curated_clips.count_documents({}) == 0:
         await db.curated_clips.insert_many([
             {"id": str(uuid.uuid4()), "created_at": now(), **c} for c in CURATED_SEED_CLIPS
@@ -2962,6 +3002,9 @@ app.include_router(_build_keyhealth(route_ctx))
 
 from routes.games import build_router as _build_games, seed_default_game as _seed_games  # noqa: E402
 app.include_router(_build_games(route_ctx))
+
+from routes.wallet import build_router as _build_wallet  # noqa: E402
+app.include_router(_build_wallet(route_ctx))
 
 
 @app.on_event("startup")

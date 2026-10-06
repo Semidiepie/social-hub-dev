@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field
 
 import settings_store
+import wallet_core
 
 CF_BASE = "https://api.cloudflare.com/client/v4"
 
@@ -324,6 +325,19 @@ def build_router(ctx) -> APIRouter:
                     gift = GIFTS_BY_ID.get(str(data.get("gift_id")))
                     if not gift:
                         continue
+                    cost = int(gift.get("coins", 0))
+                    # Charge the sender; credit the broadcaster. Never overdraw.
+                    new_bal = await wallet_core.spend(
+                        db, now, me["user_id"], cost, "gift_sent",
+                        f"Gift {gift['name']} to @{s.get('owner_username', '')}")
+                    if new_bal is None:
+                        await websocket.send_json({"type": "error", "detail": "insufficient_tokens"})
+                        continue
+                    owner_id = s.get("owner_id")
+                    if owner_id and owner_id != me["user_id"] and cost > 0:
+                        await wallet_core.grant(db, now, owner_id, cost, "gift_received",
+                                                f"Gift {gift['name']} from @{me['username']}")
+                    await websocket.send_json({"type": "wallet", "balance": new_bal})
                     msg = {
                         "id": str(uuid.uuid4()),
                         "stream_id": stream_id,

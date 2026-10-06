@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api, FeedItem, StoryUser } from "@/src/api/client";
 import { colors, spacing } from "@/src/theme";
 import { StoryBar } from "@/src/components/StoryBar";
+import { HamburgerDrawer } from "@/src/components/HamburgerDrawer";
 import { PostCard } from "@/src/components/PostCard";
 import { VideoFeedCard } from "@/src/components/VideoFeedCard";
 import { ReelFeedCard } from "@/src/components/ReelFeedCard";
@@ -33,6 +34,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [commentTarget, setCommentTarget] = useState<FeedItem | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -113,9 +115,18 @@ export default function Home() {
             >
               <Ionicons name="paper-plane-outline" size={22} color={colors.textPrimary} />
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => setMenuOpen(true)}
+              testID="header-menu-button"
+            >
+              <Ionicons name="menu" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
           </View>
         </View>
       </SafeAreaView>
+
+      <HamburgerDrawer visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
       {loading ? (
         <View style={styles.loadingWrap}>

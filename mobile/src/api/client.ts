@@ -77,6 +77,35 @@ export interface UserPublic {
   posts_count: number;
   reset_pin_enabled?: boolean;
   blog_permission?: "granted" | "pending" | null;
+  tokens?: number;
+  owned_frames?: string[];
+  equipped_frame?: string | null;
+  frame_enabled?: boolean;
+}
+
+export interface WalletTx {
+  id: string;
+  amount: number;
+  kind: string;
+  note: string;
+  created_at: string;
+}
+
+export interface WalletInfo {
+  balance: number;
+  transactions: WalletTx[];
+  daily_reward: number;
+  can_claim_daily: boolean;
+  next_claim_at: string | null;
+}
+
+export interface StoreItem {
+  id: string;
+  name: string;
+  blurb: string;
+  price: number;
+  kind: string;
+  owned: boolean;
 }
 
 export interface AudioRoomHost {

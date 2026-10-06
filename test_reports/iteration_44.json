@@ -1,0 +1,52 @@
+{
+  "summary": "Validated the new Tokens economy end-to-end on both the shared backend and the web frontend. Backend: 18/18 pytest tests pass covering welcome 100, daily +25 and 429 cooldown, Store list/buy violet (-120)/400 on re-buy/402 insufficient/404 unknown, e-transfer (debit+credit+notification, self 400, unknown 404, overdraw 402), game level-1 first-win reward with wallet increase and zero on replay, super-admin grant 200 vs non-admin 403, premium cosmetic equip 403 unless owned (and 200 after buy), and the live WS flow charging the sender + emitting {type:'wallet',balance} and {type:'error',detail:'insufficient_tokens'} with the broadcaster credited. Web (hamburger-first UX at 390x844): hamburger-menu-trigger opens hamburger-menu-panel, menu-token-balance updates 100 -> 125 after menu-claim-daily, menu-wallet/menu-market link; /wallet renders wallet-page with wallet-balance, wallet-claim-daily, transfer-username/amount/note/submit, wallet-history, and a UI e-transfer debits 125 -> 115; /market shows market-balance-pill, store-frame-violet with store-frame-buy-violet. Mobile Expo web preview was blocked at auth by the known CORS limitation (allow_origins=['*'] + allow_credentials=True is rejected by browsers; /api/auth/me CORS'd on social-hub-dev-4.expo.preview.emergentagent.com); the mobile wallet.tsx, HamburgerDrawer.tsx, home.tsx and LiveOverlay.tsx all contain the required testIDs (wallet-balance, wallet-claim-daily, transfer-*, store-frame-buy-*, header-menu-button, hamburger-drawer-panel, drawer-token-balance, drawer-claim-daily, drawer-wallet, live-token-balance, live-gift-*).",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "CORS middleware (server.py:96)", "issue": "allow_origins=['*'] combined with allow_credentials=True is rejected by browsers for credentialed cross-origin requests. This blocks Expo web preview (different host) from calling the API. Set allow_origins to explicit list (preview + expo preview + prod) or disable credentials."}
+    ]
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [
+        {"flow": "Login / auth-me on Expo web preview", "issue": "Blocked by backend CORS (wildcard + credentials). Cannot complete mobile e2e via Expo web preview until CORS is fixed. Native build would be unaffected.", "affected_testIDs": ["header-menu-button"]}
+      ],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [
+    {"flow": "Mobile e2e via web preview", "platform": "mobile", "issue": "Could not reach authenticated screens through Expo web preview due to backend CORS limitation (pre-existing env issue, not Tokens-economy regression). Web parity confirmed via code review of testIDs.", "expected": "Mobile Expo web can log in and reach home/wallet/live.", "actual": "/api/auth/me preflight blocked by CORS; app bounces to /welcome."}
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration44_tokens.py",
+    "/app/test_reports/pytest/iteration44_tokens.xml"
+  ],
+  "action_items": [
+    "Fix backend CORS: replace allow_origins=['*']+allow_credentials=True with explicit origins list including https://social-hub-dev-4.preview.emergentagent.com, https://social-hub-dev-4.expo.preview.emergentagent.com and production hosts. Needed to unblock mobile Expo web preview auth."
+  ],
+  "critical_code_review_comments": [
+    "wallet_core.spend() is atomic via conditional $gte update — good; prevents overdraw races.",
+    "Game reward only on first win is enforced via prev.get('completed') before updating the progress doc — correct order.",
+    "Transfer notifies the recipient inside a try/except that swallows errors silently — fine for best-effort UX but consider logging the exception.",
+    "live.py gift path correctly short-circuits on insufficient balance and only credits the broadcaster when owner != sender and cost > 0 — good self-gift guard.",
+    "CORS: allow_origins=['*'] + allow_credentials=True is invalid per the spec and breaks cross-origin credentialed requests (observed on mobile preview)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration44_tokens.py"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "web 100% of validated flows; mobile not e2e-validatable in this env (CORS)"},
+  "test_credentials": "Fresh tec_* accounts registered per test; founder semidiepie/pin 7455 used for admin-grant test.",
+  "seed_data_creation": "N/A — all test accounts auto-purged on backend restart via test_/tec_ prefix.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tokens economy is solid (18/18). Web UI flows for hamburger/wallet/market verified at mobile viewport 390x844. Mobile Expo web preview auth is blocked by CORS wildcard+credentials config; validate mobile via native build or after CORS fix. All required testIDs confirmed present in mobile code (wallet.tsx, HamburgerDrawer.tsx, home.tsx, LiveOverlay.tsx).",
+  "rca of the issue": "CORS error on Expo web preview: FastAPI CORSMiddleware is configured with allow_origins=['*'] and allow_credentials=True. Per the Fetch spec, browsers reject Access-Control-Allow-Origin=* on credentialed requests, so /api/auth/me from https://social-hub-dev-4.expo.preview.emergentagent.com fails. Fix: enumerate explicit origins (preview, expo preview, production) and keep allow_credentials=True."
+}

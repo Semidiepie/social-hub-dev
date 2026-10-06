@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 import settings_store
+import wallet_core
 
 # Lucide icon names the match-3 board can render (keep in sync with Match3Board).
 ALLOWED_ICONS = [
@@ -595,8 +596,15 @@ def build_router(ctx) -> APIRouter:
              "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": current["id"], "game_id": g["id"]}},
             upsert=True,
         )
+        # Reward tokens the FIRST time a level is cleared (prevents replay farming).
+        reward = 0
+        if won and not prev.get("completed"):
+            reward = 10 + earned * 5
+            await wallet_core.grant(db, now, current["id"], reward, "game",
+                                    f"Cleared {g.get('title', 'game')} level {n}")
         return {"level": n, "score": score, "stars": earned, "won": won,
-                "target": params["target"], "unlocked": unlocked, "best": levels[key]["best"]}
+                "target": params["target"], "unlocked": unlocked, "best": levels[key]["best"],
+                "tokens_earned": reward}
 
     # ---------- Farm simulator (not level-based) ----------
     def _epoch() -> int:

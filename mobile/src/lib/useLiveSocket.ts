@@ -37,6 +37,8 @@ export function useLiveSocket(streamId?: string) {
   const [floaters, setFloaters] = useState<{ id: number }[]>([]);
   const [gifts, setGifts] = useState<LiveGift[]>([]);
   const [ended, setEnded] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [walletError, setWalletError] = useState<{ ts: number } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -88,6 +90,12 @@ export function useLiveSocket(streamId?: string) {
           case "ended":
             setEnded(true);
             break;
+          case "wallet":
+            setBalance(m.balance);
+            break;
+          case "error":
+            if (m.detail === "insufficient_tokens") setWalletError({ ts: Date.now() });
+            break;
           default:
             break;
         }
@@ -112,5 +120,5 @@ export function useLiveSocket(streamId?: string) {
   const sendHeart = useCallback(() => send({ type: "heart" }), [send]);
   const sendGift = useCallback((giftId: string) => send({ type: "gift", gift_id: giftId }), [send]);
 
-  return { connected, chat, viewers, hearts, floaters, gifts, ended, sendChat, sendHeart, sendGift };
+  return { connected, chat, viewers, hearts, floaters, gifts, ended, balance, walletError, sendChat, sendHeart, sendGift };
 }

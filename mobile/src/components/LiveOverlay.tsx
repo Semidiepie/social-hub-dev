@@ -49,6 +49,7 @@ export function LiveOverlay({
   floaters,
   chat,
   gifts,
+  balance = 0,
   onSendChat,
   onSendHeart,
   onSendGift,
@@ -63,6 +64,7 @@ export function LiveOverlay({
   floaters: { id: number }[];
   chat: LiveChatMessage[];
   gifts: LiveGift[];
+  balance?: number;
   onSendChat: (t: string) => void;
   onSendHeart: () => void;
   onSendGift: (id: string) => void;
@@ -159,17 +161,24 @@ export function LiveOverlay({
 
         {giftsOpen && (
           <View style={styles.giftTray} testID="live-gift-tray">
-            {gifts.map((g) => (
-              <TouchableOpacity
-                key={g.id}
-                style={styles.giftItem}
-                onPress={() => { onSendGift(g.id); setGiftsOpen(false); }}
-                testID={`live-gift-${g.id}`}
-              >
-                <Text style={styles.giftGlyph}>{g.glyph}</Text>
-                <Text style={styles.giftCoins}>{g.coins}</Text>
-              </TouchableOpacity>
-            ))}
+            <Text style={styles.giftBalance} testID="live-token-balance">🪙 {balance} tokens</Text>
+            <View style={styles.giftTrayRow}>
+              {gifts.map((g) => {
+                const afford = balance >= g.coins;
+                return (
+                  <TouchableOpacity
+                    key={g.id}
+                    style={[styles.giftItem, !afford && { opacity: 0.4 }]}
+                    disabled={!afford}
+                    onPress={() => { onSendGift(g.id); setGiftsOpen(false); }}
+                    testID={`live-gift-${g.id}`}
+                  >
+                    <Text style={styles.giftGlyph}>{g.glyph}</Text>
+                    <Text style={styles.giftCoins}>🪙 {g.coins}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -229,7 +238,9 @@ const styles = StyleSheet.create({
   chatName: { color: colors.primary, fontSize: 12, fontWeight: "800" },
   chatText: { color: "#fff", fontSize: 13 },
   giftText: { color: "#FCD34D", fontSize: 13, fontWeight: "700" },
-  giftTray: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: radii.lg, padding: spacing.md, marginBottom: spacing.sm },
+  giftTray: { backgroundColor: "rgba(0,0,0,0.6)", borderRadius: radii.lg, padding: spacing.md, marginBottom: spacing.sm },
+  giftTrayRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  giftBalance: { color: "#FCD34D", fontSize: 12, fontWeight: "800", marginBottom: spacing.sm },
   giftItem: { width: 56, alignItems: "center", gap: 2, backgroundColor: "rgba(255,255,255,0.06)", borderRadius: radii.md, paddingVertical: spacing.sm },
   giftGlyph: { fontSize: 24 },
   giftCoins: { color: "#FCD34D", fontSize: 10, fontWeight: "700" },

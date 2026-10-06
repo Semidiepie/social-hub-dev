@@ -30,6 +30,7 @@ import PetPage from "@/pages/Pet";
 import VideoUploadPage from "@/pages/VideoUpload";
 import VideosPage from "@/pages/Videos";
 import MarketPage from "@/pages/Market";
+import WalletPage from "@/pages/Wallet";
 import ThemeLayer from "@/components/ThemeLayer";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
@@ -105,6 +106,7 @@ export default function App() {
             <Route path="/videos" element={<VideosPage />} />
             <Route path="/videos/:id" element={<VideoWatchPage />} />
             <Route path="/market" element={<ProtectedRoute><MarketPage /></ProtectedRoute>} />
+            <Route path="/wallet" element={<ProtectedRoute><WalletPage /></ProtectedRoute>} />
             <Route path="/reels" element={<ReelsFeedPage />} />
             <Route path="/reels/new" element={<ProtectedRoute><ReelUploadPage /></ProtectedRoute>} />
             <Route path="/reels/:id" element={<ReelWatchPage />} />
