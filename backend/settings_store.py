@@ -23,6 +23,9 @@ MANAGED_KEYS = [
     {"name": "VAPID_PRIVATE_KEY_B64", "label": "Web Push VAPID Private Key (base64)", "service": "vapid", "secret": True},
     {"name": "VAPID_SUBJECT", "label": "Web Push Contact (mailto:)", "service": "vapid", "secret": False},
     {"name": "EMERGENT_LLM_KEY", "label": "Emergent LLM Key (Sage, AI pets)", "service": "emergent_llm", "secret": True},
+    {"name": "TIKTOK_CLIENT_KEY", "label": "TikTok Client Key", "service": "tiktok", "secret": False},
+    {"name": "TIKTOK_CLIENT_SECRET", "label": "TikTok Client Secret", "service": "tiktok", "secret": True},
+    {"name": "TIKTOK_REDIRECT_URI", "label": "TikTok Redirect URI (…/api/social/tiktok/callback)", "service": "tiktok", "secret": False},
 ]
 _MANAGED_NAMES = {k["name"] for k in MANAGED_KEYS}
 

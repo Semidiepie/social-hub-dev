@@ -32,6 +32,7 @@ export default function ProfilePage() {
   const [reels, setReels] = useState([]);
   const [videos, setVideos] = useState([]);
   const [blogs, setBlogs] = useState([]);
+  const [tiktok, setTiktok] = useState([]);
   const [loading, setLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(true);
   const [following, setFollowing] = useState(false);
@@ -56,16 +57,18 @@ export default function ProfilePage() {
       setFollowing(u.follows_them);
       setLoading(false);
       const rid = u.id;
-      const [p, r, v, b] = await Promise.all([
+      const [p, r, v, b, tk] = await Promise.all([
         api.get(`/users/${rid}/posts`).catch(() => []),
         api.get(`/users/${rid}/reels`).catch(() => []),
         api.get(`/users/${rid}/videos`).catch(() => []),
         api.get(`/blogs/user/${rid}`).catch(() => []),
+        api.get(`/social/videos/${rid}?platform=tiktok`).catch(() => []),
       ]);
       setPosts(p);
       setReels(r);
       setVideos(v);
       setBlogs(b);
+      setTiktok(Array.isArray(tk) ? tk : []);
     } catch (e) {
       toast.error(e.message || "User not found");
       navigate("/discover");
@@ -241,6 +244,9 @@ export default function ProfilePage() {
           <TabsTrigger value="posts" data-testid="profile-tab-posts">Posts{contentLoading ? "" : ` · ${posts.length}`}</TabsTrigger>
           <TabsTrigger value="reels" data-testid="profile-tab-reels">Reels{contentLoading ? "" : ` · ${reels.length}`}</TabsTrigger>
           <TabsTrigger value="videos" data-testid="profile-tab-videos">Videos{contentLoading ? "" : ` · ${videos.length}`}</TabsTrigger>
+          {tiktok.length > 0 && (
+            <TabsTrigger value="tiktok" data-testid="profile-tab-tiktok">TikTok{contentLoading ? "" : ` · ${tiktok.length}`}</TabsTrigger>
+          )}
           <TabsTrigger value="blogs" data-testid="profile-tab-blogs">Blogs{contentLoading ? "" : ` · ${blogs.length}`}</TabsTrigger>
         </TabsList>
         <TabsContent value="posts">
@@ -251,6 +257,9 @@ export default function ProfilePage() {
         </TabsContent>
         <TabsContent value="videos">
           {contentLoading ? <VideosSkeleton /> : <VideosGrid videos={videos} />}
+        </TabsContent>
+        <TabsContent value="tiktok">
+          {contentLoading ? <TileGridSkeleton aspect="reel" /> : <TikTokGrid videos={tiktok} />}
         </TabsContent>
         <TabsContent value="blogs">
           {contentLoading ? <BlogsSkeleton /> : <BlogsList blogs={blogs} />}
@@ -321,6 +330,54 @@ function PostsGrid({ posts }) {
           )}
         </Link>
       ))}
+    </div>
+  );
+}
+
+function TikTokGrid({ videos }) {
+  if (!videos || videos.length === 0) return <Empty msg="No TikTok videos imported yet." />;
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+      {videos.map((v) => (
+        <TikTokTile key={v.id} video={v} />
+      ))}
+    </div>
+  );
+}
+
+function TikTokTile({ video }) {
+  const [playing, setPlaying] = useState(false);
+  const embed = video.embed_link || (video.id ? `https://www.tiktok.com/player/v1/${video.id}` : null);
+  return (
+    <div className="group relative aspect-[9/16] overflow-hidden rounded-xl bg-secondary" data-testid={`tiktok-tile-${video.id}`}>
+      {playing && embed ? (
+        <iframe
+          src={embed}
+          title={video.caption || "TikTok video"}
+          className="h-full w-full"
+          allow="autoplay; fullscreen"
+          loading="lazy"
+        />
+      ) : (
+        <button type="button" onClick={() => setPlaying(true)} className="h-full w-full" data-testid={`tiktok-play-${video.id}`}>
+          {video.cover_image_url ? (
+            <img src={video.cover_image_url} alt={video.caption || ""} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+          ) : (
+            <div className="flex h-full items-center justify-center p-3 text-center text-xs text-muted-foreground">{video.caption || "TikTok"}</div>
+          )}
+          <span className="absolute inset-0 flex items-center justify-center">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60">
+              <Play size={18} className="fill-white text-white" />
+            </span>
+          </span>
+          {video.caption && (
+            <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent p-2 text-left text-[11px] font-medium text-white">
+              {video.caption}
+            </span>
+          )}
+          <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">TikTok</span>
+        </button>
+      )}
     </div>
   );
 }

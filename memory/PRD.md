@@ -5,6 +5,18 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — Connect social accounts: TikTok import (Phase A, embed-only) (2026-06, web)
+- **Scope decision:** re-uploading/re-hosting TikTok videos is NOT possible (API gives no downloadable file, TikTok Dev Terms forbid re-hosting, licensed music = copyright). Built the **compliant embed approach**: import each video's metadata (caption, cover, official `embed_link`, create_time) and play via TikTok's official embed. No media is ever downloaded/stored.
+- **Backend (`routes/social.py`, new):** TikTok Login Kit OAuth v2 + Display API.
+  - `GET /api/social/connections` (status + `tiktok_configured`), `GET /api/social/tiktok/login?token=` (JWT via query like live WS → redirect to TikTok), `GET /api/social/tiktok/callback` (token exchange → store connection → auto-import → redirect `/settings?tiktok=connected`), `POST /api/social/tiktok/import`, `DELETE /api/social/tiktok`, `GET /api/social/videos/{user_id}`.
+  - Tokens stored in `social_connections`, video metadata in `social_videos`; refresh-token handling with rotation; scopes `user.info.basic,video.list`.
+  - **Gated:** when keys absent, connect shows a friendly "not set up yet" page — nothing breaks (same pattern as Cloudflare demo mode).
+  - Keys added to settings store (admin-editable, per-env): `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REDIRECT_URI` (= `{backend}/api/social/tiktok/callback`).
+- **Frontend:** Settings → "Connected accounts" card (Connect/Re-import/Disconnect TikTok; shows "Coming soon" until configured). Profile → new **TikTok tab** (shown only if imported videos exist) rendering official embed tiles (cover → tap → TikTok iframe player).
+- **Verified (curl + UI):** gated endpoints return correct state; Settings TikTok row renders; lint clean (py + js). Preview-only — redeploy for production.
+- **BLOCKED on user:** needs a TikTok developer app + approval (days–2 weeks) + keys entered in Admin → Keys before OAuth/import can run. OAuth round-trip is UNTESTED (no keys yet).
+- **Future:** YouTube → Videos tab, Facebook Page → posts (same embed model). Phase B = optional copyright/music fingerprint gate on uploads (needs a service like ACRCloud + keys/cost). Phase C = finish live audio / co-host.
+
 ## Feature — Co-host "join on stage" + live audio fix + join/share messages (2026-06, web)
 - **Co-host / join on stage (NEW):** built on the existing Cloudflare WHIP/WHEP infra (no new paid service). Viewers tap the ✋ button to request the stage; the host sees a request panel and Adds/Denies. On approval the backend provisions a per-co-host Cloudflare live input and sends the WHIP publish URL **only** to that co-host (never broadcast); everyone else gets the co-host's WHEP play URL via a `stage_update` and renders a co-host tile strip. Co-hosts can Leave; the host can Remove; dropping the socket frees the slot and disables the CF input. Works for video and audio-only.
   - WS protocol (new): `stage_request`, `stage_approve`, `stage_deny`, `stage_leave`, `stage_remove`; server→client `stage_request`, `stage_grant`, `stage_update`, `stage_deny`. Hub now routes to a specific user (`send_to_user`).

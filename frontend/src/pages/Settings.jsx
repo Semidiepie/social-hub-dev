@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles, Link2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { getToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,44 @@ export default function SettingsPage() {
   const [pushBusy, setPushBusy] = useState(false);
   const [remBusy, setRemBusy] = useState(false);
   const [cosmeticBusy, setCosmeticBusy] = useState(false);
+
+  const [social, setSocial] = useState({ connections: [], tiktok_configured: false });
+  const [socialBusy, setSocialBusy] = useState(false);
+
+  const loadSocial = useCallback(async () => {
+    try { setSocial(await api.get("/social/connections")); } catch { /* noop */ }
+  }, []);
+
+  useEffect(() => { loadSocial(); }, [loadSocial]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tiktok") === "connected") {
+      toast.success("TikTok connected — your videos are importing to your profile!");
+      loadSocial();
+      window.history.replaceState({}, "", "/settings");
+    }
+  }, [loadSocial]);
+
+  const connectTikTok = () => {
+    const token = getToken();
+    window.location.href = `${process.env.REACT_APP_BACKEND_URL}/api/social/tiktok/login?token=${encodeURIComponent(token || "")}`;
+  };
+  const reimportTikTok = async () => {
+    setSocialBusy(true);
+    try {
+      const { imported } = await api.post("/social/tiktok/import", {});
+      toast.success(`Imported ${imported} TikTok video${imported === 1 ? "" : "s"}.`);
+      loadSocial();
+    } catch (e) { toast.error(e.message || "Import failed"); }
+    finally { setSocialBusy(false); }
+  };
+  const disconnectTikTok = async () => {
+    setSocialBusy(true);
+    try { await api.del("/social/tiktok"); toast.success("TikTok disconnected."); loadSocial(); }
+    catch (e) { toast.error(e.message || "Failed"); }
+    finally { setSocialBusy(false); }
+  };
+  const tiktokConn = social.connections.find((c) => c.platform === "tiktok");
 
   const saveCosmetic = async (payload) => {
     setCosmeticBusy(true);
@@ -344,6 +383,49 @@ export default function SettingsPage() {
             >
               {user?.theme_enabled ? "Turn off" : "Turn on"}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Link2 size={18} /> Connected accounts</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4" data-testid="settings-tiktok-row">
+            <div className="min-w-0">
+              <div className="font-semibold">TikTok</div>
+              {tiktokConn ? (
+                <p className="text-xs text-muted-foreground">
+                  Connected{tiktokConn.video_count ? ` · ${tiktokConn.video_count} video${tiktokConn.video_count === 1 ? "" : "s"} on your profile` : ""}.
+                  {tiktokConn.needs_reconnect ? " Reconnect needed." : ""} Your videos show on your profile and play via TikTok&apos;s official player.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {social.tiktok_configured
+                    ? "Connect to show your TikTok videos on your PostMePlex profile (played via TikTok's official embed)."
+                    : "TikTok import turns on once the TikTok developer app is approved and its keys are added in Admin → Keys."}
+                </p>
+              )}
+            </div>
+            {tiktokConn ? (
+              <div className="flex flex-shrink-0 gap-2">
+                <Button type="button" variant="outline" disabled={socialBusy} onClick={reimportTikTok} data-testid="settings-tiktok-reimport">
+                  {socialBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Re-import"}
+                </Button>
+                <Button type="button" variant="outline" disabled={socialBusy} onClick={disconnectTikTok} className="text-rose-500" data-testid="settings-tiktok-disconnect">
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                disabled={!social.tiktok_configured}
+                onClick={connectTikTok}
+                className="flex-shrink-0 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                data-testid="settings-tiktok-connect"
+              >
+                {social.tiktok_configured ? "Connect TikTok" : "Coming soon"}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
