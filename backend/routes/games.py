@@ -506,7 +506,8 @@ STUDIO_SYSTEM = (
 
 async def _studio_turn(transcript, logger) -> dict:
     """One conversational studio turn. Replays the stored transcript (stateless-safe)
-    and returns Sage's parsed JSON ({mode: ask|ready, ...})."""
+    and returns Sage's parsed JSON ({mode: ask|ready, ...}). Resilient: retries on a
+    hiccup and degrades to a plain 'ask' reply rather than hard-failing the chat."""
     key = settings_store.get("EMERGENT_LLM_KEY")
     if not key:
         raise HTTPException(503, "Sage AI isn't configured")
@@ -519,18 +520,32 @@ async def _studio_turn(transcript, logger) -> dict:
         "Conversation so far:\n" + convo +
         "\n\nRespond now with the next JSON object (mode 'ask' with one question, or mode 'ready' with the full spec). Output ONLY JSON."
     )
-    chat = LlmChat(api_key=key, session_id=f"sage-studio-{uuid.uuid4()}", system_message=STUDIO_SYSTEM).with_model(*AI_MODEL)
-    try:
-        resp = await chat.send_message(UserMessage(text=user))
-        data = _parse_json(resp)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning(f"[games] studio turn failed: {e}")
-        raise HTTPException(502, "Sage had trouble responding — try again.")
-    if not isinstance(data, dict) or data.get("mode") not in ("ask", "ready"):
-        raise HTTPException(502, "Sage returned an unexpected response — try rephrasing.")
-    return data
+    last_text = ""
+    for attempt in range(2):
+        try:
+            chat = LlmChat(api_key=key, session_id=f"sage-studio-{uuid.uuid4()}", system_message=STUDIO_SYSTEM).with_model(*AI_MODEL)
+            resp = await chat.send_message(UserMessage(text=user))
+            last_text = (resp or "").strip()
+            data = _parse_json(last_text)
+            if isinstance(data, dict) and data.get("mode") in ("ask", "ready"):
+                return data
+            if isinstance(data, dict) and data.get("message"):
+                # Valid JSON but missing/odd mode — treat as a question.
+                return {"mode": "ask", "message": str(data["message"]), "summary": str(data.get("summary") or "")}
+        except Exception as e:
+            logger.warning(f"[games] studio turn attempt {attempt + 1} failed: {e}")
+    # Graceful degrade: if Sage replied with plain prose (no usable JSON), show it as a question
+    # so the conversation keeps flowing instead of throwing an error at the admin.
+    cleaned = last_text
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+    if cleaned and "{" not in cleaned and len(cleaned) < 600:
+        return {"mode": "ask", "message": cleaned, "summary": ""}
+    return {
+        "mode": "ask",
+        "message": "Hmm, I lost my train of thought for a sec — could you tell me a bit more about the game you want (theme, difficulty, or number of levels)?",
+        "summary": "",
+    }
 
 
 
@@ -911,9 +926,11 @@ def build_router(ctx) -> APIRouter:
                 "config": _validate_config(kind, raw.get("config") or {}),
             }
         transcript.append({"role": "assistant", "content": (data.get("message") or data.get("summary") or "")[:1000]})
+        # Keep the last ready spec available even if Sage asks another refining question.
+        final_spec = spec if spec is not None else sess.get("spec")
         await db.game_studio_sessions.update_one(
             {"id": sess["id"]},
-            {"$set": {"transcript": transcript, "spec": spec, "updated_at": now()}},
+            {"$set": {"transcript": transcript, "spec": final_spec, "updated_at": now()}},
         )
         return {
             "session_id": sess["id"],
@@ -921,8 +938,8 @@ def build_router(ctx) -> APIRouter:
             "message": data.get("message") or "",
             "summary": data.get("summary") or "",
             "reply": reply,
-            "spec_ready": spec is not None,
-            "spec_preview": spec and {"kind": spec["kind"], "title": spec["title"], "description": spec["description"], "cover_emoji": spec["cover_emoji"], "level_count": spec["level_count"]},
+            "spec_ready": final_spec is not None,
+            "spec_preview": final_spec and {"kind": final_spec["kind"], "title": final_spec["title"], "description": final_spec["description"], "cover_emoji": final_spec["cover_emoji"], "level_count": final_spec["level_count"]},
         }
 
     @router.post("/api/admin/games/studio/build")
