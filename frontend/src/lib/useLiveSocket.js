@@ -26,6 +26,10 @@ export function useLiveSocket(streamId) {
   const [ended, setEnded] = useState(false);
   const [balance, setBalance] = useState(null);
   const [walletError, setWalletError] = useState(null);
+  const [cohosts, setCohosts] = useState([]);
+  const [stageRequests, setStageRequests] = useState([]); // host-side: pending join requests
+  const [stageGrant, setStageGrant] = useState(null);     // { whip_url } when I'm invited on stage
+  const [stageDenied, setStageDenied] = useState(null);
   const wsRef = useRef(null);
   const pingRef = useRef(null);
 
@@ -55,6 +59,7 @@ export function useLiveSocket(streamId) {
           setHearts(m.hearts || 0);
           setGifts(m.gifts || []);
           if (typeof m.balance === "number") setBalance(m.balance);
+          setCohosts(m.cohosts || []);
           break;
         case "viewers":
           setViewers(m.count || 0);
@@ -77,6 +82,18 @@ export function useLiveSocket(streamId) {
           break;
         case "wallet":
           setBalance(m.balance);
+          break;
+        case "stage_update":
+          setCohosts(m.cohosts || []);
+          break;
+        case "stage_request":
+          setStageRequests((r) => (r.some((x) => x.user_id === m.user.user_id) ? r : [...r, m.user]));
+          break;
+        case "stage_grant":
+          setStageGrant({ whip_url: m.whip_url });
+          break;
+        case "stage_deny":
+          setStageDenied({ ts: Date.now() });
           break;
         case "error":
           if (m.detail === "insufficient_tokens") setWalletError({ ts: Date.now() });
@@ -103,6 +120,23 @@ export function useLiveSocket(streamId) {
   const sendChat = useCallback((text) => text.trim() && send({ type: "chat", text: text.trim() }), [send]);
   const sendHeart = useCallback(() => send({ type: "heart" }), [send]);
   const sendGift = useCallback((giftId) => send({ type: "gift", gift_id: giftId }), [send]);
+  const sendShare = useCallback(() => send({ type: "share" }), [send]);
+  const requestStage = useCallback(() => send({ type: "stage_request" }), [send]);
+  const approveStage = useCallback((userId) => {
+    send({ type: "stage_approve", user_id: userId });
+    setStageRequests((r) => r.filter((x) => x.user_id !== userId));
+  }, [send]);
+  const denyStage = useCallback((userId) => {
+    send({ type: "stage_deny", user_id: userId });
+    setStageRequests((r) => r.filter((x) => x.user_id !== userId));
+  }, [send]);
+  const leaveStage = useCallback(() => { send({ type: "stage_leave" }); setStageGrant(null); }, [send]);
+  const removeCohost = useCallback((userId) => send({ type: "stage_remove", user_id: userId }), [send]);
 
-  return { connected, chat, viewers, hearts, floaters, gifts, ended, balance, walletError, sendChat, sendHeart, sendGift };
+  return {
+    connected, chat, viewers, hearts, floaters, gifts, ended, balance, walletError,
+    cohosts, stageRequests, stageGrant, stageDenied,
+    sendChat, sendHeart, sendGift, sendShare,
+    requestStage, approveStage, denyStage, leaveStage, removeCohost,
+  };
 }

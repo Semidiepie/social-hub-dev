@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Heart, Send, Gift, Eye, X, BadgeCheck, Share2 } from "lucide-react";
+import { Heart, Send, Gift, Eye, X, BadgeCheck, Share2, Hand, Check } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { badgeCls, badgeStyle } from "@/lib/format";
 
@@ -63,6 +63,13 @@ export function LiveOverlay({
   onShare,
   chatEnabled = true,
   giftsEnabled = true,
+  onRequestStage,
+  onLeaveStage,
+  stageRequests = [],
+  onApproveStage,
+  onDenyStage,
+  isCohost = false,
+  stageRequested = false,
 }) {
   const [text, setText] = useState("");
   const [giftsOpen, setGiftsOpen] = useState(false);
@@ -143,6 +150,34 @@ export function LiveOverlay({
           )}
         </div>
 
+        {isOwner && stageRequests.length > 0 && (
+          <div className="mb-2 rounded-2xl bg-black/60 p-3 backdrop-blur" data-testid="live-stage-requests">
+            <div className="mb-2 text-xs font-bold text-white/80">Requests to join the stage</div>
+            <div className="flex flex-col gap-1.5">
+              {stageRequests.map((u) => (
+                <div key={u.user_id} className="flex items-center gap-2" data-testid={`live-stage-request-${u.user_id}`}>
+                  <Avatar src={u.avatar_url} size={28} className="flex-shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-white">{u.display_name || u.username}</span>
+                  <button
+                    onClick={() => onApproveStage(u.user_id)}
+                    data-testid={`live-stage-approve-${u.user_id}`}
+                    className="flex h-8 items-center gap-1 rounded-full bg-primary px-3 text-xs font-bold text-primary-foreground hover:bg-primary/90"
+                  >
+                    <Check size={14} /> Add
+                  </button>
+                  <button
+                    onClick={() => onDenyStage(u.user_id)}
+                    data-testid={`live-stage-deny-${u.user_id}`}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-rose-600"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {giftsOpen && (
           <div className="mb-2 rounded-2xl bg-black/60 p-3 backdrop-blur" data-testid="live-gift-tray">
             <div className="mb-2 flex items-center justify-between">
@@ -207,6 +242,29 @@ export function LiveOverlay({
           >
             <Heart size={18} className="fill-white" />
           </button>
+          {!isOwner && !isCohost && onRequestStage && (
+            <button
+              type="button"
+              onClick={onRequestStage}
+              disabled={stageRequested}
+              data-testid="live-request-stage-btn"
+              title={stageRequested ? "Request sent" : "Ask to join the stage"}
+              className={`flex h-11 w-11 items-center justify-center rounded-full text-white transition-transform active:scale-90 ${stageRequested ? "bg-white/20" : "bg-indigo-600 hover:bg-indigo-500"}`}
+            >
+              <Hand size={18} />
+            </button>
+          )}
+          {isCohost && onLeaveStage && (
+            <button
+              type="button"
+              onClick={onLeaveStage}
+              data-testid="live-leave-stage-btn"
+              title="Leave the stage"
+              className="flex h-11 items-center gap-1 rounded-full bg-white/15 px-3 text-xs font-bold text-white hover:bg-rose-600"
+            >
+              Leave stage
+            </button>
+          )}
         </form>
         <div className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-white/70">
           <Heart size={12} className="fill-rose-500 text-rose-500" /> {hearts.toLocaleString()} hearts

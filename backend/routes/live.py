@@ -60,9 +60,13 @@ class LiveHub:
 
     def __init__(self):
         self.rooms: dict[str, set[WebSocket]] = {}
+        self.user_ws: dict[str, dict[str, WebSocket]] = {}  # sid -> user_id -> ws
 
     def add(self, sid: str, ws: WebSocket):
         self.rooms.setdefault(sid, set()).add(ws)
+
+    def set_user(self, sid: str, user_id: str, ws: WebSocket):
+        self.user_ws.setdefault(sid, {})[user_id] = ws
 
     def remove(self, sid: str, ws: WebSocket):
         conns = self.rooms.get(sid)
@@ -70,9 +74,24 @@ class LiveHub:
             conns.discard(ws)
             if not conns:
                 self.rooms.pop(sid, None)
+        users = self.user_ws.get(sid)
+        if users:
+            for uid, w in list(users.items()):
+                if w is ws:
+                    users.pop(uid, None)
+            if not users:
+                self.user_ws.pop(sid, None)
 
     def count(self, sid: str) -> int:
         return len(self.rooms.get(sid, ()))
+
+    async def send_to_user(self, sid: str, user_id: str, payload: dict):
+        ws = self.user_ws.get(sid, {}).get(user_id)
+        if ws:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                self.remove(sid, ws)
 
     async def broadcast(self, sid: str, payload: dict):
         for ws in list(self.rooms.get(sid, ())):
@@ -109,6 +128,50 @@ def build_router(ctx) -> APIRouter:
 
     router = APIRouter(tags=["live"])
 
+    def pub_cohosts(s: dict) -> list:
+        # Co-host info safe to share with everyone (never exposes the WHIP publish URL / input id).
+        out = []
+        for c in (s.get("cohosts") or []):
+            out.append({
+                "user_id": c.get("user_id"),
+                "username": c.get("username"),
+                "display_name": c.get("display_name"),
+                "avatar_url": _av(c.get("avatar_url")),
+                "is_verified": c.get("is_verified", False),
+                "verified_color": c.get("verified_color"),
+                "whep_url": c.get("whep_url"),
+            })
+        return out
+
+    async def provision_cohost_input(stream_id: str, title: str):
+        # Reuse the Cloudflare live-input flow to give a co-host their own WHIP/WHEP pair.
+        if not (settings_store.get("CLOUDFLARE_ACCOUNT_ID") and settings_store.get("CLOUDFLARE_API_TOKEN")):
+            return None, None, None  # demo mode — co-host joins the stage UI without media
+        try:
+            res = await _cf("POST", "/stream/live_inputs", json={
+                "meta": {"name": f"cohost:{title}"}, "preferLowLatency": True})
+            return (res["uid"], (res.get("webRTC") or {}).get("url"), (res.get("webRTCPlayback") or {}).get("url"))
+        except Exception as e:
+            logger.warning(f"cohost input creation failed: {e}")
+            return None, None, None
+
+    async def remove_cohost(stream_id: str, user_id: str, reason_name: str = ""):
+        s = await db.live_streams.find_one({"id": stream_id}, {"_id": 0, "cohosts": 1})
+        cohosts = (s or {}).get("cohosts") or []
+        target = next((c for c in cohosts if c.get("user_id") == user_id), None)
+        if not target:
+            return
+        if target.get("input_id") and settings_store.get("CLOUDFLARE_ACCOUNT_ID") and settings_store.get("CLOUDFLARE_API_TOKEN"):
+            try:
+                await _cf("PUT", f"/stream/live_inputs/{target['input_id']}", json={"enabled": False})
+            except Exception as e:
+                logger.warning(f"cohost input disable failed: {e}")
+        await db.live_streams.update_one({"id": stream_id}, {"$pull": {"cohosts": {"user_id": user_id}}})
+        fresh = await db.live_streams.find_one({"id": stream_id}, {"_id": 0})
+        await hub.broadcast(stream_id, {"type": "stage_update", "cohosts": pub_cohosts(fresh)})
+        name = reason_name or target.get("display_name") or target.get("username")
+        await hub.broadcast(stream_id, {"type": "system", "text": f"{name} left the stage"})
+
     def public_stream(s: dict) -> dict:
         return {
             "id": s["id"],
@@ -125,6 +188,7 @@ def build_router(ctx) -> APIRouter:
             "viewer_count": hub.count(s["id"]) if s.get("status") == "live" else 0,
             "hearts": s.get("hearts", 0),
             "featured": bool(s.get("featured", False)),
+            "cohosts": pub_cohosts(s),
             "owner": {
                 "id": s.get("owner_id"),
                 "username": s.get("owner_username"),
@@ -271,6 +335,12 @@ def build_router(ctx) -> APIRouter:
                 await _cf("PUT", f"/stream/live_inputs/{s['input_id']}", json={"enabled": False})
             except Exception as e:
                 logger.warning(f"Cloudflare stop failed: {e}")
+            for c in (s.get("cohosts") or []):
+                if c.get("input_id"):
+                    try:
+                        await _cf("PUT", f"/stream/live_inputs/{c['input_id']}", json={"enabled": False})
+                    except Exception as e:
+                        logger.warning(f"Cloudflare cohost stop failed: {e}")
         await db.live_streams.update_one({"id": stream_id}, {"$set": {"status": "ended", "ended_at": now()}})
         await db.users.update_one({"id": current["id"]}, {"$set": {"is_live": False, "live_stream_id": None}})
         await hub.broadcast(stream_id, {"type": "ended"})
@@ -292,6 +362,8 @@ def build_router(ctx) -> APIRouter:
             return
 
         hub.add(stream_id, websocket)
+        hub.set_user(stream_id, user["id"], websocket)
+        owner_id = s.get("owner_id")
         me = {
             "user_id": user["id"],
             "username": user["username"],
@@ -308,20 +380,72 @@ def build_router(ctx) -> APIRouter:
                 if isinstance(m.get("created_at"), datetime):
                     m["created_at"] = m["created_at"].isoformat()
             bal = await wallet_core.get_balance(db, me["user_id"])
-            await websocket.send_json({"type": "init", "chat": backlog, "hearts": s.get("hearts", 0), "gifts": GIFTS, "balance": bal})
+            await websocket.send_json({"type": "init", "chat": backlog, "hearts": s.get("hearts", 0), "gifts": GIFTS, "balance": bal, "cohosts": pub_cohosts(s)})
             count = hub.count(stream_id)
             await db.live_streams.update_one(
                 {"id": stream_id},
                 {"$set": {"viewer_count": count}, "$max": {"peak_viewers": count}},
             )
             await hub.broadcast(stream_id, {"type": "viewers", "count": count})
-            await hub.broadcast(stream_id, {"type": "system", "text": f"{me['display_name']} joined"})
+            if me["user_id"] != s.get("owner_id"):
+                await hub.broadcast(stream_id, {"type": "system", "text": f"{me['display_name']} joined"})
 
             while True:
                 data = await websocket.receive_json()
                 t = data.get("type")
                 if t == "ping":
                     await websocket.send_json({"type": "pong"})
+                elif t == "share":
+                    await hub.broadcast(stream_id, {"type": "system", "text": f"{me['display_name']} shared the live"})
+                elif t == "stage_request":
+                    # A viewer asks to come on stage — notify the host only.
+                    if me["user_id"] == owner_id:
+                        continue
+                    await hub.send_to_user(stream_id, owner_id, {"type": "stage_request", "user": {
+                        "user_id": me["user_id"], "username": me["username"],
+                        "display_name": me["display_name"], "avatar_url": me["avatar_url"],
+                        "is_verified": me["is_verified"], "verified_color": me["verified_color"],
+                    }})
+                elif t == "stage_approve":
+                    # Only the host can approve; provisions a WHIP/WHEP pair for the co-host.
+                    if me["user_id"] != owner_id:
+                        continue
+                    target_id = str(data.get("user_id") or "")
+                    if not target_id:
+                        continue
+                    cur = await db.live_streams.find_one({"id": stream_id}, {"_id": 0, "cohosts": 1})
+                    if any(c.get("user_id") == target_id for c in (cur or {}).get("cohosts") or []):
+                        continue  # already on stage
+                    tu = await db.users.find_one({"id": target_id}, {"_id": 0})
+                    if not tu:
+                        continue
+                    input_id, whip_url, whep_url = await provision_cohost_input(stream_id, s.get("title", "Live"))
+                    entry = {
+                        "user_id": target_id,
+                        "username": tu["username"],
+                        "display_name": tu.get("display_name", tu["username"]),
+                        "avatar_url": _av(tu.get("avatar_url")),
+                        "is_verified": tu.get("is_verified", False),
+                        "verified_color": tu.get("verified_color"),
+                        "input_id": input_id,
+                        "whep_url": whep_url,
+                    }
+                    await db.live_streams.update_one({"id": stream_id}, {"$push": {"cohosts": entry}})
+                    # The WHIP publish URL goes ONLY to the approved co-host.
+                    await hub.send_to_user(stream_id, target_id, {"type": "stage_grant", "whip_url": whip_url})
+                    fresh = await db.live_streams.find_one({"id": stream_id}, {"_id": 0})
+                    await hub.broadcast(stream_id, {"type": "stage_update", "cohosts": pub_cohosts(fresh)})
+                    await hub.broadcast(stream_id, {"type": "system", "text": f"{entry['display_name']} joined the stage"})
+                elif t == "stage_deny":
+                    if me["user_id"] != owner_id:
+                        continue
+                    await hub.send_to_user(stream_id, str(data.get("user_id") or ""), {"type": "stage_deny"})
+                elif t == "stage_leave":
+                    await remove_cohost(stream_id, me["user_id"])
+                elif t == "stage_remove":
+                    if me["user_id"] != owner_id:
+                        continue
+                    await remove_cohost(stream_id, str(data.get("user_id") or ""))
                 elif t == "chat":
                     if not s.get("chat_enabled", True):
                         continue
@@ -382,6 +506,13 @@ def build_router(ctx) -> APIRouter:
             logger.warning(f"live ws error: {e}")
         finally:
             hub.remove(stream_id, websocket)
+            # If a co-host dropped, free their stage slot and tell everyone.
+            try:
+                cur = await db.live_streams.find_one({"id": stream_id}, {"_id": 0, "cohosts": 1})
+                if cur and any(c.get("user_id") == me["user_id"] for c in (cur.get("cohosts") or [])):
+                    await remove_cohost(stream_id, me["user_id"])
+            except Exception as e:
+                logger.warning(f"cohost cleanup failed: {e}")
             count = hub.count(stream_id)
             await db.live_streams.update_one({"id": stream_id}, {"$set": {"viewer_count": count}})
             await hub.broadcast(stream_id, {"type": "viewers", "count": count})

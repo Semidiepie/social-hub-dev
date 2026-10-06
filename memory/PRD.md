@@ -5,6 +5,23 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — Co-host "join on stage" + live audio fix + join/share messages (2026-06, web)
+- **Co-host / join on stage (NEW):** built on the existing Cloudflare WHIP/WHEP infra (no new paid service). Viewers tap the ✋ button to request the stage; the host sees a request panel and Adds/Denies. On approval the backend provisions a per-co-host Cloudflare live input and sends the WHIP publish URL **only** to that co-host (never broadcast); everyone else gets the co-host's WHEP play URL via a `stage_update` and renders a co-host tile strip. Co-hosts can Leave; the host can Remove; dropping the socket frees the slot and disables the CF input. Works for video and audio-only.
+  - WS protocol (new): `stage_request`, `stage_approve`, `stage_deny`, `stage_leave`, `stage_remove`; server→client `stage_request`, `stage_grant`, `stage_update`, `stage_deny`. Hub now routes to a specific user (`send_to_user`).
+  - New files/edits: `components/LiveStage.jsx` (tile strip, WHEP players, local tile), `LiveOverlay.jsx` (✋ request / host approve panel / leave), `useLiveSocket.js` (stage state + senders), `LiveWatch.jsx` (publish-on-grant via `whipPublish`), `GoLive.jsx` (owner stage strip + approvals), `routes/live.py`.
+  - **Verified (3-client WS test):** request→approve→grant(only viewer)→stage_update(all)→leave→slot freed; provisioned REAL Cloudflare URLs (CF is configured in preview too).
+- **Live audio fix:** browsers block autoplay-with-sound → viewer media starts **muted** with a "Tap for sound" button that unmutes+plays (video & audio-only).
+- **Join/share messages:** owner's own "joined" is suppressed (viewers' joins show); new `share` WS event posts "X shared the live" when anyone taps Share.
+- Lint clean (py + js). Preview-only — redeploy for production.
+- ⚠️ Co-host media (actual multi-cam/mic publish) can only be validated on real devices (2+), not headlessly. Signaling + CF provisioning are verified. **Mobile live has no co-host (web-only).**
+
+## Fix/feature — live audio playback + join & share messages (2026-06, web)
+- **Audio didn't work (video & audio-only):** root cause was browser autoplay policy — the viewer's media element played with sound before any user gesture, so the browser blocked it (silence). Fix: `LiveWatch` now starts the stream **muted** (so it reliably plays) and shows a **"Tap for sound"** button that unmutes + plays on tap. Works for both video and audio-only streams.
+- **"X joined" messages:** the backend already broadcast them; now it suppresses the **owner's own** join so only real viewer joins show in chat.
+- **"X shared the live":** new WS `share` event — broadcast when anyone taps Share (viewer or broadcaster). Verified over a WS client ("semidiepie shared the live"). Added `sendShare` to `useLiveSocket`; wired in `LiveWatch` + `GoLive`.
+- Lint clean (py + js). Preview-only — redeploy for production.
+- **Co-host / "join on stage" is NOT yet built** — it requires a real-time multi-publisher SFU (Cloudflare Realtime/Calls or Agora/LiveKit) and multi-device testing that can't be validated in preview. Deferred pending an integration decision.
+
 ## Fix — live gift tray showed "0 tokens" despite a funded wallet (2026-06, web)
 - **Root cause:** `LiveWatch` fed the gift tray `live.balance ?? user?.tokens ?? 0`, but the live WS never sent a balance on connect, so it fell back to the **stale client `user.tokens`** (not refreshed after an admin top-up) → tray showed 0 and disabled every gift button, even with 100K in the wallet (which the Wallet page reads fresh from the DB).
 - **Fix:** the live WS now sends the authoritative DB balance in its `init` payload (`wallet_core.get_balance`), and `useLiveSocket` seeds `balance` from it. The tray now always shows the real balance.

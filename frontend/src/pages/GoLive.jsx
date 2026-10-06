@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { useLiveSocket } from "@/lib/useLiveSocket";
 import { LiveOverlay } from "@/components/LiveOverlay";
+import { LiveStage } from "@/components/LiveStage";
 import { whipPublish, endSession } from "@/lib/webrtc";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -71,6 +72,7 @@ export default function GoLivePage() {
         await navigator.clipboard.writeText(url);
         toast.success("Live link copied — share it so people can watch!");
       }
+      live.sendShare();
     } catch { /* user cancelled share */ }
   };
 
@@ -185,6 +187,14 @@ export default function GoLivePage() {
             : "Video provider not configured — you can see yourself and the live chat/hearts/gifts work, but viewers won't receive the video feed until Cloudflare keys are added."}
         </div>
       )}
+      <LiveStage
+        cohosts={live.cohosts}
+        audioOnly={stream.audio_only}
+        isOwner
+        myId={user?.id}
+        onRemove={live.removeCohost}
+        showLocal={false}
+      />
       <LiveOverlay
         owner={stream.owner}
         title={stream.title}
@@ -199,6 +209,9 @@ export default function GoLivePage() {
         chatEnabled={stream.chat_enabled !== false}
         giftsEnabled={stream.gifts_enabled !== false}
         isOwner
+        stageRequests={live.stageRequests}
+        onApproveStage={live.approveStage}
+        onDenyStage={live.denyStage}
         onEnd={endStream}
         onShare={shareLink}
       />

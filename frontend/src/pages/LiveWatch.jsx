@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Hls from "hls.js";
-import { Loader2, Radio } from "lucide-react";
+import { Loader2, Radio, Volume2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { useLiveSocket } from "@/lib/useLiveSocket";
 import { LiveOverlay } from "@/components/LiveOverlay";
 import { useAuth } from "@/context/AuthContext";
-import { whepPlay, endSession } from "@/lib/webrtc";
+import { whepPlay, whipPublish, endSession } from "@/lib/webrtc";
+import { LiveStage } from "@/components/LiveStage";
 import { toast } from "sonner";
 
 export default function LiveWatchPage() {
@@ -20,8 +21,56 @@ export default function LiveWatchPage() {
   const videoRef = useRef(null);
   const rtcRef = useRef(null);
   const hlsRef = useRef(null);
+  const [soundOn, setSoundOn] = useState(false);
+  const [localStream, setLocalStream] = useState(null);
+  const [stageRequested, setStageRequested] = useState(false);
+  const stageRtcRef = useRef(null);
 
   const live = useLiveSocket(id);
+
+  const isCohost = !!(stream && live.cohosts.some((c) => c.user_id === user?.id));
+
+  // When the host brings me on stage, publish my camera/mic to the slot they provisioned.
+  useEffect(() => {
+    if (!live.stageGrant || !stream) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const media = await navigator.mediaDevices.getUserMedia(
+          stream.audio_only ? { audio: true } : { video: { facingMode: "user" }, audio: true }
+        );
+        if (cancelled) { media.getTracks().forEach((t) => t.stop()); return; }
+        setLocalStream(media);
+        if (live.stageGrant.whip_url) stageRtcRef.current = await whipPublish(live.stageGrant.whip_url, media);
+      } catch {
+        toast.error("Couldn't start your camera/microphone for the stage.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [live.stageGrant, stream]);
+
+  // Tear down my publish when I leave the stage or get removed by the host.
+  const stopPublishing = () => {
+    endSession(stageRtcRef.current?.session);
+    stageRtcRef.current?.pc?.close();
+    stageRtcRef.current = null;
+    setLocalStream((s) => { s?.getTracks().forEach((t) => t.stop()); return null; });
+  };
+  useEffect(() => {
+    if (localStream && stream && !isCohost && !live.stageGrant) stopPublishing();
+  }, [isCohost, live.stageGrant]);
+
+  useEffect(() => {
+    if (live.stageDenied) { setStageRequested(false); toast("The host didn't add you this time."); }
+  }, [live.stageDenied]);
+
+  // Browsers block autoplay of media WITH sound until a user gesture, so we start
+  // muted (video shows / audio connects) and let the viewer tap to turn on sound.
+  const enableSound = () => {
+    const el = videoRef.current;
+    if (el) { el.muted = false; el.volume = 1; el.play().catch(() => {}); }
+    setSoundOn(true);
+  };
 
   // Keep the global token balance in sync when the live socket reports a spend.
   useEffect(() => {
@@ -53,6 +102,7 @@ export default function LiveWatchPage() {
   useEffect(() => {
     if (!stream || !videoRef.current) return;
     const el = videoRef.current;
+    el.muted = true; // start muted so playback is allowed without a gesture
     if (stream.whep_url) {
       whepPlay(stream.whep_url, el)
         .then((r) => { rtcRef.current = r; el.play().catch(() => {}); })
@@ -95,6 +145,7 @@ export default function LiveWatchPage() {
           ref={videoRef}
           autoPlay
           playsInline
+          muted={!soundOn}
           className={audioOnly ? "absolute h-px w-px opacity-0" : "h-full w-full object-cover"}
           data-testid="live-video"
         />
@@ -111,6 +162,27 @@ export default function LiveWatchPage() {
             <span className="text-sm font-semibold">{audioOnly ? "Audio live" : "Waiting for video…"}</span>
           </div>
         </div>
+      )}
+
+      <LiveStage
+        cohosts={live.cohosts}
+        audioOnly={audioOnly}
+        isOwner={stream.is_owner}
+        myId={user?.id}
+        onRemove={live.removeCohost}
+        localStream={localStream}
+        showLocal={isCohost || !!live.stageGrant}
+        myAvatar={user?.avatar_url}
+      />
+
+      {hasStream && !soundOn && !live.ended && (
+        <button
+          onClick={enableSound}
+          data-testid="live-enable-sound"
+          className="absolute inset-x-0 bottom-32 z-20 mx-auto flex w-fit items-center gap-2 rounded-full bg-white/95 px-5 py-2.5 text-sm font-black text-black shadow-lg active:scale-95"
+        >
+          <Volume2 size={16} /> Tap for sound
+        </button>
       )}
 
       {live.ended ? (
@@ -136,6 +208,13 @@ export default function LiveWatchPage() {
           chatEnabled={stream.chat_enabled !== false}
           giftsEnabled={stream.gifts_enabled !== false}
           isOwner={stream.is_owner}
+          isCohost={isCohost}
+          stageRequested={stageRequested}
+          stageRequests={live.stageRequests}
+          onApproveStage={live.approveStage}
+          onDenyStage={live.denyStage}
+          onRequestStage={() => { live.requestStage(); setStageRequested(true); toast.success("Request sent to the host."); }}
+          onLeaveStage={() => { live.leaveStage(); stopPublishing(); }}
           onEnd={async () => { try { await api.post(`/live/${id}/stop`); } catch { /* noop */ } navigate("/live"); }}
           onClose={() => navigate("/live")}
           onShare={async () => {
@@ -143,6 +222,7 @@ export default function LiveWatchPage() {
             try {
               if (navigator.share) await navigator.share({ title: stream.title, url });
               else { await navigator.clipboard.writeText(url); toast.success("Live link copied!"); }
+              live.sendShare();
             } catch { /* cancelled */ }
           }}
         />
