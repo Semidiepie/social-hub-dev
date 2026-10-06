@@ -54,6 +54,7 @@ def _member_public(m: dict) -> dict:
         "is_live": bool(m.get("is_live", False)),
         "remembering": bool(m.get("remembering", False)),
         "equipped_frame": m.get("equipped_frame"),
+        "custom_frame": m.get("custom_frame"),
         "frame_enabled": m.get("frame_enabled", True),
     }
 

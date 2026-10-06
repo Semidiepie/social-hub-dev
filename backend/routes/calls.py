@@ -152,6 +152,7 @@ def build_router(ctx) -> APIRouter:
             "verified_color": user.get("verified_color"),
             "remembering": user.get("remembering", False),
             "equipped_frame": user.get("equipped_frame") if user.get("frame_enabled", True) else None,
+            "custom_frame": user.get("custom_frame") if user.get("frame_enabled", True) else None,
             "agora_uid": agora_uid(uid),
         }
         active_calls: set[str] = set()

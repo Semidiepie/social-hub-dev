@@ -5,6 +5,11 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — custom Market frame now renders everywhere (2026-06, web)
+- **Root cause:** the Sage-designed `custom_frame` spec was only returned by the profile/`UserPublic` endpoint, so every other author serializer (feed/posts/reels, comments + the batch comment query, videos, messages peer/member, calls) sent `equipped_frame:"custom"` with NO spec → `frameOf()` returned `"custom"` and `Avatar` couldn't draw it anywhere but your own profile.
+- **Fix:** added `custom_frame` alongside `equipped_frame` in all those serializers (`server.py` post/comment author + batch comment query, `routes/videos.py` x3, `routes/messages.py` `_member_public`, `routes/calls.py`). Frontend: `frameOf(u)` now returns the `custom_frame` spec object when `equipped_frame==="custom"`; `Avatar` accepts a preset-id string OR a spec object (back-compat with `frame="custom"`+`frameStyle` on Profile/AppShell/Market kept).
+- **Verified (curl):** founder equipped a custom frame → feed author AND comment author both return the full `custom_frame` spec. Lint clean (py + js). Preview-only — redeploy for production.
+
 ## Update — Audio live + advanced Go Live options; AI characters look like real accounts; voice-call fixes (2026-06, web)
 - **Session close-out (2026-06):** cleaned 3 unused `eslint-disable` directives in `AiCharacterChat.jsx` → file lints clean. Per user request (low credits), did NOT run the testing agent on the combined changes. All items below are **agent-tested in preview during prior sessions** (not re-tested this session); the AI-character microphone/VAD fix remains **NOT confirmed by real browser/device mic testing** — treat as unverified until the user validates on preview with a real mic.
 - **AI characters de-"AI"-ified:** removed "AI Characters" section label, Sparkles badges and "· AI character" subtitle in Messages + chat header — they now read as normal accounts (avatar, name, persona snippet, subtle + add / edit-on-hover).

@@ -61,7 +61,9 @@ export function videoPath(v) {
 export function frameOf(u) {
   if (!u) return null;
   const enabled = u.frame_enabled !== false; // default true
-  return enabled ? u.equipped_frame || null : null;
+  if (!enabled) return null;
+  if (u.equipped_frame === "custom") return u.custom_frame || null; // Sage-designed spec object
+  return u.equipped_frame || null;
 }
 
 // Verified-badge color: RED for approved "Remembering" accounts, brand otherwise.

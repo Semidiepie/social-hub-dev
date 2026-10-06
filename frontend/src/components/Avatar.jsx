@@ -21,21 +21,23 @@ export function Avatar({ src, alt, size = 40, className = "", ring = false, fram
     </div>
   );
   // Custom (Sage-designed) frame renders from an inline spec; preset frames use a CSS class.
-  const customRing =
-    frame === "custom" && frameStyle
-      ? {
-          background: `conic-gradient(from 0deg, ${frameStyle.c1}, ${frameStyle.c2}, ${frameStyle.c3}, ${frameStyle.c1})`,
-          animation: `pmp-spin ${frameStyle.speed || 3}s linear infinite`,
-          boxShadow: frameStyle.glow ? `0 0 14px 3px ${frameStyle.c1}99` : "none",
-        }
-      : null;
-  const showFrame = frame && (frame !== "custom" || customRing);
+  // `frame` may be a preset id string, "custom" (with frameStyle), or a custom spec object.
+  const customSpec = frame && typeof frame === "object" ? frame : (frame === "custom" ? frameStyle : null);
+  const customRing = customSpec
+    ? {
+        background: `conic-gradient(from 0deg, ${customSpec.c1}, ${customSpec.c2}, ${customSpec.c3}, ${customSpec.c1})`,
+        animation: `pmp-spin ${customSpec.speed || 3}s linear infinite`,
+        boxShadow: customSpec.glow ? `0 0 14px 3px ${customSpec.c1}99` : "none",
+      }
+    : null;
+  const presetFrame = typeof frame === "string" && frame !== "custom" ? frame : null;
+  const showFrame = !!customRing || !!presetFrame;
   const core = !showFrame ? inner : (
     <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       {customRing ? (
         <span className="pmp-frame" style={customRing} aria-hidden />
       ) : (
-        <span className={`pmp-frame pmp-frame-${frame}`} aria-hidden />
+        <span className={`pmp-frame pmp-frame-${presetFrame}`} aria-hidden />
       )}
       {inner}
     </span>

@@ -611,7 +611,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
             "is_live": author.get("is_live", False),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
-            "equipped_frame": author.get("equipped_frame"),
+            "equipped_frame": author.get("equipped_frame"), "custom_frame": author.get("custom_frame"),
             "frame_enabled": author.get("frame_enabled", True),
         } if author else None,
     }
@@ -1451,7 +1451,7 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
             "is_live": author.get("is_live", False),
             "remembering": author.get("remembering", False),
             "is_streamer": author.get("is_streamer", False),
-            "equipped_frame": author.get("equipped_frame"),
+            "equipped_frame": author.get("equipped_frame"), "custom_frame": author.get("custom_frame"),
             "frame_enabled": author.get("frame_enabled", True),
         } if author else None,
     }
@@ -1926,11 +1926,11 @@ async def list_comments(post_id: str):
     colors: dict[str, Optional[str]] = {}
     lives: dict[str, bool] = {}
     if user_ids:
-        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1, "equipped_frame": 1, "frame_enabled": 1, "verified_color": 1, "is_live": 1}):
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "is_verified": 1, "avatar_url": 1, "remembering": 1, "equipped_frame": 1, "custom_frame": 1, "frame_enabled": 1, "verified_color": 1, "is_live": 1}):
             verified[u["id"]] = bool(u.get("is_verified", False))
             avatars[u["id"]] = u.get("avatar_url") or ""
             remembering[u["id"]] = bool(u.get("remembering", False))
-            frames[u["id"]] = {"equipped_frame": u.get("equipped_frame"), "frame_enabled": u.get("frame_enabled", True)}
+            frames[u["id"]] = {"equipped_frame": u.get("equipped_frame"), "custom_frame": u.get("custom_frame"), "frame_enabled": u.get("frame_enabled", True)}
             colors[u["id"]] = u.get("verified_color")
             lives[u["id"]] = bool(u.get("is_live", False))
     for c in rows:
@@ -1943,6 +1943,7 @@ async def list_comments(post_id: str):
         c["avatar_url"] = avatar_or_default(c.get("avatar_url") or avatars.get(c.get("user_id")))
         fr = frames.get(c.get("user_id"), {})
         c["equipped_frame"] = fr.get("equipped_frame")
+        c["custom_frame"] = fr.get("custom_frame")
         c["frame_enabled"] = fr.get("frame_enabled", True)
     return rows
 
@@ -1974,6 +1975,7 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
         "verified_color": current.get("verified_color"),
         "remembering": bool(current.get("remembering", False)),
         "equipped_frame": current.get("equipped_frame"),
+        "custom_frame": current.get("custom_frame"),
         "frame_enabled": current.get("frame_enabled", True),
         "text": body.text,
         "created_at": now(),
