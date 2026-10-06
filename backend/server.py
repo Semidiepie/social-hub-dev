@@ -373,6 +373,8 @@ async def get_current_user(token: Annotated[Optional[str], Depends(oauth2_scheme
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if user.get("banned"):
+        raise HTTPException(status_code=403, detail="Your account has been banned from PostMePlex.")
     return user
 
 
@@ -691,6 +693,8 @@ async def login(body: LoginBody):
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not verify_pw(body.password, user["password_hash"]):
         raise HTTPException(400, "Incorrect email or password")
+    if user.get("banned"):
+        raise HTTPException(403, "This account has been banned from PostMePlex.")
     return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(user))
 
 
@@ -734,6 +738,8 @@ async def login_pin(body: LoginPinBody):
             {"id": user["id"]},
             {"$set": {"reset_pin_failed_attempts": 0, "reset_pin_locked_until": None}},
         )
+    if user.get("banned"):
+        raise HTTPException(403, "This account has been banned from PostMePlex.")
     return TokenResponse(access_token=make_token(user["id"]), user=user_to_public(user))
 
 
@@ -2151,7 +2157,7 @@ async def admin_search_users(q: str = "", current: Annotated[dict, Depends(get_c
     filt = {} if not q else {"$or": [{"username": rx}, {"display_name": rx}, {"email": rx}]}
     rows = await db.users.find(filt, {"_id": 0, "password_hash": 0}).limit(40).to_list(40)
     return [
-        {**user_to_public(u).model_dump(), "email": u.get("email"), "has_reset_pin": bool(u.get("reset_pin_hash"))}
+        {**user_to_public(u).model_dump(), "email": u.get("email"), "has_reset_pin": bool(u.get("reset_pin_hash")), "banned": bool(u.get("banned"))}
         for u in rows
     ]
 
@@ -2176,7 +2182,8 @@ async def admin_delete_user(user_id: str, current: Annotated[dict, Depends(get_c
 
 
 class AdminTokensBody(BaseModel):
-    amount: int = Field(ge=1, le=1000000)
+    amount: int = Field(ge=0, le=100000000)
+    op: str = "add"  # "add" | "remove" | "set"
     note: str = ""
 
 
@@ -2186,16 +2193,64 @@ async def admin_grant_tokens(
     body: AdminTokensBody,
     current: Annotated[dict, Depends(get_current_user)],
 ):
-    """Super-admin: grant tokens to a user's wallet."""
+    """Super-admin: full control over a user's token balance — add, remove or set an exact amount."""
     if not current.get("is_super_admin"):
         raise HTTPException(403, "Super admin only")
     target = await db.users.find_one({"id": user_id})
     if not target:
         raise HTTPException(404, "User not found")
-    await wallet_core.grant(db, now, user_id, body.amount, "admin_grant",
-                            body.note or f"Granted by @{current['username']}")
+    by = body.note or f"by @{current['username']}"
+    op = body.op if body.op in ("add", "remove", "set") else "add"
+    if op == "add":
+        await wallet_core.grant(db, now, user_id, body.amount, "admin_grant", f"Admin added {by}")
+    elif op == "remove":
+        await wallet_core.adjust(db, now, user_id, -body.amount, "admin_remove", f"Admin removed {by}")
+    else:
+        await wallet_core.set_balance(db, now, user_id, body.amount, "admin_set", f"Admin set balance {by}")
     fresh = await db.users.find_one({"id": user_id})
     return user_to_public(fresh)
+
+
+class AdminBanBody(BaseModel):
+    reason: str = ""
+
+
+def _ban_protected(target: dict, current: dict) -> None:
+    if target.get("is_official") or target.get("is_super_admin") or target.get("is_admin") or target["id"] == current["id"]:
+        raise HTTPException(400, "This account is protected and cannot be banned")
+
+
+@app.post("/api/admin/users/{user_id}/ban")
+async def admin_ban_user(user_id: str, body: AdminBanBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Super-admin: ban a user — blocks login and invalidates their active session."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Super admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    _ban_protected(target, current)
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"banned": True, "ban_reason": (body.reason or "").strip()[:200], "banned_at": now()}},
+    )
+    logger.info("[admin] banned user %s (@%s)", user_id, target.get("username"))
+    return {"status": "banned", "id": user_id}
+
+
+@app.post("/api/admin/users/{user_id}/unban")
+async def admin_unban_user(user_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    """Super-admin: lift a ban and restore access."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Super admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"banned": False}, "$unset": {"ban_reason": "", "banned_at": ""}},
+    )
+    logger.info("[admin] unbanned user %s (@%s)", user_id, target.get("username"))
+    return {"status": "unbanned", "id": user_id}
 
 
 @app.post("/api/admin/users/{user_id}/reset-pin")

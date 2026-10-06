@@ -196,6 +196,15 @@ class AIGenerateBody(BaseModel):
     level_count: Optional[int] = Field(default=None, ge=1, le=200)
 
 
+class StudioChatBody(BaseModel):
+    session_id: Optional[str] = None
+    message: str = Field(min_length=1, max_length=1000)
+
+
+class StudioBuildBody(BaseModel):
+    session_id: str
+
+
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
@@ -467,6 +476,63 @@ async def _ai_edit_other(game: dict, prompt: str, logger) -> dict:
     if isinstance(spec.get("level_count"), (int, float)):
         upd["level_count"] = max(1, min(200, int(spec["level_count"])))
     return upd
+
+STUDIO_SYSTEM = (
+    "You are Sage, a friendly expert game designer running an interactive studio for the PostMePlex arcade. "
+    "You collaborate with an admin over several short turns to design the PERFECT game, then output a build spec.\n"
+    "You can ONLY build these engine kinds (the app renders exactly these): match3 (swap/match-3 puzzle), "
+    "memory (flip-card pairs), quiz (trivia), tapper (tap/whack reflex), farm (farming/economy simulator). "
+    "Map the admin's idea to the best-fitting kind.\n"
+    "RULES:\n"
+    "1. Respond with ONLY one compact JSON object every turn. No prose, no markdown.\n"
+    "2. Ask ONE focused question at a time to refine the design (theme, difficulty, number of levels, visual style, "
+    "special mechanics/content). Always propose a smart default in the question so the admin can just say 'yes'.\n"
+    "3. Ask AT MOST 4 questions total. As soon as you have enough to make a great game, switch to ready.\n"
+    "4. While gathering info, output: {\"mode\":\"ask\",\"message\":\"<your question with a suggested default>\","
+    "\"summary\":\"<one-line running summary of the design so far>\"}\n"
+    "5. When ready to build, output: {\"mode\":\"ready\",\"summary\":\"<friendly recap of the final game>\",\"spec\":{...}}\n"
+    "The spec object schema (same as a full game design):\n"
+    "  {\"kind\":<one kind>, \"title\":string(<=50), \"description\":string(<=180), \"cover_emoji\":ONE emoji, "
+    "\"level_count\":int 1-60, \"config\": kind-specific object:\n"
+    "    match3 -> {\"tiles\":[EXACTLY 6 {\"id\",\"icon\",\"color\":\"#RRGGBB\"}], \"base_moves\":8-60, \"base_target\":500-20000, \"difficulty\":0.3-4.0, \"control\":\"tap\"|\"slide\"}\n"
+    "    memory -> {\"emojis\":[8-12 single emojis], \"base_pairs\":4-8, \"base_seconds\":30-120}\n"
+    "    quiz   -> {\"questions\":[8-20 {\"q\",\"choices\":[3-4],\"answer\":index}], \"seconds_per_q\":8-30}\n"
+    "    tapper -> {\"emoji\":ONE emoji, \"bg\":\"#RRGGBB\", \"base_duration\":15-40, \"base_spawn_ms\":500-1200}\n"
+    "    farm   -> {\"crops\":[4-8 {\"name\",\"emoji\",\"seed_cost\",\"grow_seconds\":10-600,\"sell_price\":>seed_cost,\"xp\"}], \"start_coins\":50-500, \"start_plots\":4-8}}\n"
+    "For match3 tiles use ONLY these icon names: " + ", ".join(ALLOWED_ICONS) + ".\n"
+    "Make content genuinely themed and high quality (real trivia, fitting emojis/crops). Respect the admin's choices."
+)
+
+
+async def _studio_turn(transcript, logger) -> dict:
+    """One conversational studio turn. Replays the stored transcript (stateless-safe)
+    and returns Sage's parsed JSON ({mode: ask|ready, ...})."""
+    key = settings_store.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(503, "Sage AI isn't configured")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+    convo = "\n".join(
+        f"{'ADMIN' if m['role'] == 'user' else 'SAGE'}: {m['content']}" for m in transcript
+    )
+    user = (
+        "Conversation so far:\n" + convo +
+        "\n\nRespond now with the next JSON object (mode 'ask' with one question, or mode 'ready' with the full spec). Output ONLY JSON."
+    )
+    chat = LlmChat(api_key=key, session_id=f"sage-studio-{uuid.uuid4()}", system_message=STUDIO_SYSTEM).with_model(*AI_MODEL)
+    try:
+        resp = await chat.send_message(UserMessage(text=user))
+        data = _parse_json(resp)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[games] studio turn failed: {e}")
+        raise HTTPException(502, "Sage had trouble responding — try again.")
+    if not isinstance(data, dict) or data.get("mode") not in ("ask", "ready"):
+        raise HTTPException(502, "Sage returned an unexpected response — try rephrasing.")
+    return data
+
+
 
 
 def _public_game(g: dict) -> dict:
@@ -768,12 +834,8 @@ def build_router(ctx) -> APIRouter:
         await db.games.insert_one(doc)
         return _public_game(doc)
 
-    @router.post("/api/admin/games/ai-create")
-    async def admin_ai_create(body: AIGenerateBody, current: Annotated[dict, Depends(get_current_user)]):
-        """Sage designs a brand-new game of ANY supported kind from a description.
-        Saved PRIVATE so the admin can preview it, then flip it public."""
-        _require_admin(current)
-        spec = await _ai_generate(body, ctx.logger)
+    async def _create_from_spec(spec: dict) -> dict:
+        """Persist a validated game spec as a PRIVATE game doc and return its public form."""
         slug = await _unique_slug(spec["title"])
         count = await db.games.count_documents({})
         doc = {
@@ -790,7 +852,6 @@ def build_router(ctx) -> APIRouter:
             "created_at": now(),
         }
         if spec["kind"] == "match3":
-            # match3 mirrors config to top-level fields (manual editor reads them).
             doc.update({
                 "tiles": spec["config"]["tiles"],
                 "base_moves": spec["config"]["base_moves"],
@@ -802,6 +863,81 @@ def build_router(ctx) -> APIRouter:
             doc["config"] = spec["config"]
         await db.games.insert_one(doc)
         return _public_game(doc)
+
+    @router.post("/api/admin/games/ai-create")
+    async def admin_ai_create(body: AIGenerateBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Sage designs a brand-new game of ANY supported kind from a description.
+        Saved PRIVATE so the admin can preview it, then flip it public."""
+        _require_admin(current)
+        spec = await _ai_generate(body, ctx.logger)
+        return await _create_from_spec(spec)
+
+    @router.post("/api/admin/games/studio/chat")
+    async def admin_studio_chat(body: StudioChatBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Conversational AI Game Studio — Sage asks the admin questions back and forth,
+        then proposes a complete build spec. Transcript is stored so it survives requests."""
+        _require_admin(current)
+        msg = (body.message or "").strip()
+        if not msg:
+            raise HTTPException(400, "Say something to Sage")
+        if body.session_id:
+            sess = await db.game_studio_sessions.find_one({"id": body.session_id, "admin_id": current["id"]})
+            if not sess:
+                raise HTTPException(404, "Studio session not found")
+        else:
+            sess = {
+                "id": str(uuid.uuid4()),
+                "admin_id": current["id"],
+                "transcript": [],
+                "spec": None,
+                "created_at": now(),
+            }
+            await db.game_studio_sessions.insert_one({**sess})
+        transcript = list(sess.get("transcript") or [])
+        transcript.append({"role": "user", "content": msg[:1000]})
+        data = await _studio_turn(transcript, ctx.logger)
+
+        spec = None
+        reply = (data.get("summary") or data.get("message") or "").strip()
+        if data.get("mode") == "ready":
+            raw = data.get("spec") or {}
+            kind = raw.get("kind") if raw.get("kind") in KINDS else "match3"
+            spec = {
+                "kind": kind,
+                "title": (raw.get("title") or "Sage Game").strip()[:60] or "Sage Game",
+                "description": (raw.get("description") or "").strip()[:400],
+                "cover_emoji": (raw.get("cover_emoji") or "🎮").strip()[:8] or "🎮",
+                "level_count": int(raw.get("level_count") or 20),
+                "config": _validate_config(kind, raw.get("config") or {}),
+            }
+        transcript.append({"role": "assistant", "content": (data.get("message") or data.get("summary") or "")[:1000]})
+        await db.game_studio_sessions.update_one(
+            {"id": sess["id"]},
+            {"$set": {"transcript": transcript, "spec": spec, "updated_at": now()}},
+        )
+        return {
+            "session_id": sess["id"],
+            "mode": data.get("mode"),
+            "message": data.get("message") or "",
+            "summary": data.get("summary") or "",
+            "reply": reply,
+            "spec_ready": spec is not None,
+            "spec_preview": spec and {"kind": spec["kind"], "title": spec["title"], "description": spec["description"], "cover_emoji": spec["cover_emoji"], "level_count": spec["level_count"]},
+        }
+
+    @router.post("/api/admin/games/studio/build")
+    async def admin_studio_build(body: StudioBuildBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Build the game Sage proposed in a studio session (saved private)."""
+        _require_admin(current)
+        sess = await db.game_studio_sessions.find_one({"id": body.session_id, "admin_id": current["id"]})
+        if not sess:
+            raise HTTPException(404, "Studio session not found")
+        spec = sess.get("spec")
+        if not spec:
+            raise HTTPException(400, "Sage hasn't finished designing yet — keep chatting until it's ready.")
+        game = await _create_from_spec(spec)
+        await db.game_studio_sessions.delete_one({"id": sess["id"]})
+        return game
 
     @router.post("/api/admin/games/{game_id}/ai-edit")
     async def admin_ai_edit(game_id: str, body: AIPromptBody, current: Annotated[dict, Depends(get_current_user)]):

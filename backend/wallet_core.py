@@ -71,3 +71,28 @@ async def spend(db, now, user_id: str, amount: int, kind: str, note: str = ""):
         return None
     await _log(db, now, user_id, -amount, kind, note)
     return await get_balance(db, user_id)
+
+
+async def adjust(db, now, user_id: str, delta: int, kind: str, note: str = "") -> int:
+    """Admin delta that may be negative, clamped so balance never goes below 0.
+    Logs the ACTUAL change applied. Returns new balance."""
+    delta = int(delta)
+    cur = await get_balance(db, user_id)
+    if delta < 0:
+        delta = max(delta, -cur)  # never overdraw
+    if delta == 0:
+        return cur
+    await db.users.update_one({"id": user_id}, {"$inc": {"tokens": delta}})
+    await _log(db, now, user_id, delta, kind, note)
+    return await get_balance(db, user_id)
+
+
+async def set_balance(db, now, user_id: str, target: int, kind: str, note: str = "") -> int:
+    """Admin sets an exact balance. Logs the signed difference. Returns new balance."""
+    target = max(0, int(target))
+    cur = await get_balance(db, user_id)
+    diff = target - cur
+    await db.users.update_one({"id": user_id}, {"$set": {"tokens": target}})
+    if diff != 0:
+        await _log(db, now, user_id, diff, kind, note)
+    return target

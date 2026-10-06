@@ -159,10 +159,13 @@ export default function AdminGamesPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiKind, setAiKind] = useState("auto");
-  const [aiDifficulty, setAiDifficulty] = useState("normal");
-  const [aiBusy, setAiBusy] = useState(false);
+  // Conversational AI Game Studio
+  const [msgs, setMsgs] = useState([]);
+  const [session, setSession] = useState(null);
+  const [studioInput, setStudioInput] = useState("");
+  const [studioBusy, setStudioBusy] = useState(false);
+  const [specReady, setSpecReady] = useState(null);
+  const [building, setBuilding] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -196,23 +199,48 @@ export default function AdminGamesPage() {
     }
   };
 
-  const aiCreate = async () => {
-    if (!aiPrompt.trim()) return;
-    setAiBusy(true);
+  const sendStudio = async () => {
+    const text = studioInput.trim();
+    if (!text || studioBusy) return;
+    setMsgs((m) => [...m, { role: "user", text }]);
+    setStudioInput("");
+    setStudioBusy(true);
     try {
-      const g = await api.post("/admin/games/ai-create", {
-        prompt: aiPrompt.trim(),
-        kind: aiKind === "auto" ? undefined : aiKind,
-        difficulty: aiDifficulty,
-      });
-      setGames((list) => [...list, g]);
-      setAiPrompt("");
-      toast.success(`Sage created "${g.title}" (${g.kind}, private) — review it, then publish.`);
+      const r = await api.post("/admin/games/studio/chat", { session_id: session, message: text });
+      setSession(r.session_id);
+      const reply = r.mode === "ready" ? (r.summary || "I've got a great design ready to build!") : (r.message || r.summary);
+      setMsgs((m) => [...m, { role: "sage", text: reply }]);
+      setSpecReady(r.spec_ready ? r.spec_preview : null);
     } catch (e) {
-      toast.error(e.message || "Sage couldn't create that");
+      toast.error(e.message || "Sage had trouble — try again");
+      setMsgs((m) => [...m, { role: "sage", text: "Sorry, I had trouble with that. Could you rephrase?" }]);
     } finally {
-      setAiBusy(false);
+      setStudioBusy(false);
     }
+  };
+
+  const buildStudio = async () => {
+    if (!session) return;
+    setBuilding(true);
+    try {
+      const g = await api.post("/admin/games/studio/build", { session_id: session });
+      setGames((list) => [...list, g]);
+      setMsgs([]);
+      setSession(null);
+      setSpecReady(null);
+      toast.success(`Built "${g.title}" (${g.kind}, private) — review it below, then publish.`);
+    } catch (e) {
+      toast.error(e.message || "Couldn't build the game");
+    } finally {
+      setBuilding(false);
+    }
+  };
+
+  const resetStudio = () => {
+    setMsgs([]);
+    setSession(null);
+    setSpecReady(null);
+    setStudioInput("");
   };
 
   return (
@@ -228,42 +256,76 @@ export default function AdminGamesPage() {
 
       <Card className="border-primary/40">
         <CardContent className="space-y-3 pt-6">
-          <div className="flex items-center gap-2">
-            <Sparkles size={18} className="text-primary" />
-            <h2 className="text-lg font-bold">AI Game Studio</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles size={18} className="text-primary" />
+              <h2 className="text-lg font-bold">AI Game Studio</h2>
+            </div>
+            {msgs.length > 0 && (
+              <button onClick={resetStudio} className="text-xs font-semibold text-muted-foreground hover:text-foreground" data-testid="studio-reset">
+                Start over
+              </button>
+            )}
           </div>
-          <p className="text-sm text-muted-foreground">Describe the game you want in your own words. Sage picks the best game type and builds the full thing — theme, content, difficulty and levels. Saved <b>private</b> so you can play-test, then flip it public.</p>
-          <textarea
-            value={aiPrompt}
-            onChange={(e) => setAiPrompt(e.target.value)}
-            placeholder={'e.g. "a trivia game about 90s hip-hop" · "a memory game with cute sea creatures" · "a fast tap game popping balloons" · "a chill ocean gem match-3"'}
-            className="min-h-[88px] w-full resize-y rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary"
-            data-testid="admin-game-ai-input"
-          />
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <div className="mb-1 text-[10px] uppercase text-muted-foreground">Game type</div>
-              <select value={aiKind} onChange={(e) => setAiKind(e.target.value)} className="h-9 rounded-lg border border-border bg-background px-2 text-sm" data-testid="admin-game-ai-kind">
-                <option value="auto">Auto (let Sage choose)</option>
-                <option value="match3">Match-3</option>
-                <option value="memory">Memory match</option>
-                <option value="quiz">Trivia quiz</option>
-                <option value="tapper">Tap reflex</option>
-              </select>
+          <p className="text-sm text-muted-foreground">
+            Chat with Sage to craft the perfect game. Describe your idea — Sage asks a few questions, then builds it (saved <b>private</b> to play-test, then publish). Builds within the app's engines: match-3, memory, trivia, tap-reflex & farm/sim.
+          </p>
+
+          {/* transcript */}
+          <div className="max-h-80 space-y-2 overflow-y-auto rounded-xl border border-border bg-background/60 p-3" data-testid="studio-transcript">
+            {msgs.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                <Sparkles size={22} className="mx-auto mb-2 text-primary/60" />
+                Say hi to Sage and describe the game you dream of. <br />e.g. <i>"a chill ocean gem match-3"</i> or <i>"90s hip-hop trivia"</i>
+              </div>
+            ) : (
+              msgs.map((m, i) => (
+                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`} data-testid={`studio-msg-${m.role}`}>
+                  <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"}`}>
+                    {m.role === "sage" && <span className="mb-0.5 block text-[10px] font-black uppercase tracking-wide text-primary">Sage</span>}
+                    {m.text}
+                  </div>
+                </div>
+              ))
+            )}
+            {studioBusy && (
+              <div className="flex justify-start" data-testid="studio-thinking">
+                <div className="rounded-2xl bg-secondary px-3.5 py-2 text-sm text-muted-foreground">
+                  <Loader2 size={14} className="inline animate-spin" /> Sage is thinking…
+                </div>
+              </div>
+            )}
+          </div>
+
+          {specReady && (
+            <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-3" data-testid="studio-ready">
+              <div className="flex items-center gap-2 text-sm font-bold">
+                <span className="text-xl">{specReady.cover_emoji}</span>
+                <span>{specReady.title}</span>
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">{specReady.kind}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{specReady.description}</p>
+              <Button onClick={buildStudio} disabled={building} className="mt-2 h-9 w-full gap-1.5 bg-green-600 text-white hover:bg-green-700" data-testid="studio-build">
+                {building ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} Build &amp; save (private)
+              </Button>
             </div>
-            <div>
-              <div className="mb-1 text-[10px] uppercase text-muted-foreground">Difficulty</div>
-              <select value={aiDifficulty} onChange={(e) => setAiDifficulty(e.target.value)} className="h-9 rounded-lg border border-border bg-background px-2 text-sm" data-testid="admin-game-ai-difficulty">
-                <option value="easy">Easy</option>
-                <option value="normal">Normal</option>
-                <option value="hard">Hard</option>
-              </select>
-            </div>
-            <Button onClick={aiCreate} disabled={aiBusy || !aiPrompt.trim()} className="ml-auto h-10 gap-1.5 bg-primary text-primary-foreground" data-testid="admin-game-ai-create">
-              {aiBusy ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />} Generate game
+          )}
+
+          <div className="flex gap-2">
+            <Input
+              value={studioInput}
+              onChange={(e) => setStudioInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendStudio()}
+              placeholder={msgs.length === 0 ? "Describe the game you want…" : "Reply to Sage…"}
+              className="h-10 flex-1"
+              disabled={studioBusy}
+              data-testid="studio-input"
+            />
+            <Button onClick={sendStudio} disabled={studioBusy || !studioInput.trim()} className="h-10 gap-1.5 bg-primary text-primary-foreground" data-testid="studio-send">
+              {studioBusy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} Send
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">Uses your Emergent LLM credits each time you generate.</p>
+          <p className="text-[11px] text-muted-foreground">Each message uses a little Emergent LLM credit.</p>
         </CardContent>
       </Card>
 
