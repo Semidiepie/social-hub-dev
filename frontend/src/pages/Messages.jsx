@@ -232,11 +232,31 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
   const [name, setName] = useState(character?.name || "");
   const [username, setUsername] = useState(character?.username || "");
   const [persona, setPersona] = useState(character?.persona || "");
+  const [yourName, setYourName] = useState(character?.your_name || "");
+  const [nickname, setNickname] = useState(character?.nickname || "");
+  const [relationship, setRelationship] = useState(character?.relationship || "");
+  const [memories, setMemories] = useState(character?.memories || []);
+  const [newMem, setNewMem] = useState("");
   const [voice, setVoice] = useState(character?.voice_id || "");
   const [avatarUrl, setAvatarUrl] = useState(character?.avatar_url || "");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const editing = !!character;
+
+  const addMemory = async () => {
+    if (!newMem.trim() || !editing) return;
+    try {
+      const r = await api.post(`/ai-characters/${character.id}/memory`, { text: newMem.trim() });
+      setMemories(r.memories);
+      setNewMem("");
+    } catch (e) { toast.error(e.message || "Couldn't save memory"); }
+  };
+  const removeMemory = async (mid) => {
+    try {
+      const r = await api.del(`/ai-characters/${character.id}/memory/${mid}`);
+      setMemories(r.memories);
+    } catch (e) { toast.error(e.message || "Couldn't remove"); }
+  };
 
   const pickAvatar = async (file) => {
     if (!file) return;
@@ -252,7 +272,7 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
     if (!name.trim() || !username.trim() || !persona.trim()) return toast.error("Name, username and personality are required");
     setSaving(true);
     try {
-      const body = { name: name.trim(), username: username.trim(), persona: persona.trim(), voice: voice.trim(), avatar_url: avatarUrl };
+      const body = { name: name.trim(), username: username.trim(), persona: persona.trim(), voice: voice.trim(), avatar_url: avatarUrl, your_name: yourName.trim(), nickname: nickname.trim(), relationship: relationship.trim() };
       if (editing) await api.put(`/ai-characters/${character.id}`, body);
       else await api.post("/ai-characters", body);
       toast.success(editing ? "Character updated" : "Character created");
@@ -300,7 +320,42 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
         <input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={30} placeholder="nova" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-username" />
 
         <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">Personality / how they talk</label>
-        <textarea value={persona} onChange={(e) => setPersona(e.target.value)} maxLength={1500} rows={4} placeholder="e.g. A witty, upbeat music lover who hypes people up, loves 90s hip-hop and always keeps it playful." className="mt-1 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary" data-testid="aichar-persona" />
+        <textarea value={persona} onChange={(e) => setPersona(e.target.value)} maxLength={1500} rows={3} placeholder="e.g. A witty, upbeat music lover who hypes people up, loves 90s hip-hop and always keeps it playful." className="mt-1 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary" data-testid="aichar-persona" />
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-muted-foreground">Your name</label>
+            <input value={yourName} onChange={(e) => setYourName(e.target.value)} maxLength={60} placeholder="e.g. Alex" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-yourname" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-muted-foreground">What they call you</label>
+            <input value={nickname} onChange={(e) => setNickname(e.target.value)} maxLength={60} placeholder="e.g. champ, babe" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-nickname" />
+          </div>
+        </div>
+
+        <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">How they know you</label>
+        <textarea value={relationship} onChange={(e) => setRelationship(e.target.value)} maxLength={500} rows={2} placeholder="e.g. We've been best friends since college and talk every day." className="mt-1 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary" data-testid="aichar-relationship" />
+
+        {editing ? (
+          <div className="mt-3 rounded-xl border border-border p-2.5">
+            <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-muted-foreground"><Sparkles size={12} className="text-primary" /> Memory / training — things it never forgets</label>
+            <div className="mt-2 space-y-1.5">
+              {memories.length === 0 && <p className="text-[11px] text-muted-foreground">No memories yet. Add facts it should always remember.</p>}
+              {memories.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 rounded-lg bg-secondary/60 px-2.5 py-1.5" data-testid={`aichar-memory-${m.id}`}>
+                  <span className="flex-1 text-xs">{m.text}</span>
+                  <button onClick={() => removeMemory(m.id)} className="text-muted-foreground hover:text-destructive" data-testid={`aichar-memory-remove-${m.id}`}><X size={13} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex gap-2">
+              <input value={newMem} onChange={(e) => setNewMem(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addMemory())} maxLength={400} placeholder="e.g. I have a dog named Max" className="h-9 flex-1 rounded-lg border border-border bg-background px-2.5 text-xs outline-none focus:border-primary" data-testid="aichar-memory-input" />
+              <Button onClick={addMemory} disabled={!newMem.trim()} size="sm" className="h-9 bg-primary text-primary-foreground" data-testid="aichar-memory-add">Add</Button>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-muted-foreground">Tip: after creating, open the character again to <b>train</b> it with memories it will never forget.</p>
+        )}
 
         <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">ElevenLabs voice (ID or link)</label>
         <input value={voice} onChange={(e) => setVoice(e.target.value)} placeholder="Paste Voice ID or ElevenLabs voice link" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-voice" />

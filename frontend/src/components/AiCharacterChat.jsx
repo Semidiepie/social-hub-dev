@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Volume2, VolumeX, Trash2, Sparkles } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Volume2, VolumeX, Trash2, Sparkles, Brain } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,13 @@ export function AiCharacterChat({ characterId, onBack }) {
     catch (err) { toast.error(err.message || "Failed"); }
   };
 
+  const teach = async () => {
+    const fact = window.prompt(`Teach ${character?.name} something to always remember:`);
+    if (!fact || !fact.trim()) return;
+    try { await api.post(`/ai-characters/${characterId}/memory`, { text: fact.trim() }); toast.success(`${character.name} will remember that 🧠`); }
+    catch (err) { toast.error(err.message || "Couldn't save memory"); }
+  };
+
   if (loading) return <section className="flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-border bg-card"><Loader2 className="h-6 w-6 animate-spin text-primary" /></section>;
   if (!character) return null;
 
@@ -98,6 +105,9 @@ export function AiCharacterChat({ characterId, onBack }) {
             <Phone size={18} />
           </button>
         )}
+        <button onClick={teach} title="Teach a memory" className="flex h-9 w-9 items-center justify-center rounded-full text-primary hover:bg-primary/10" data-testid="aichar-teach-btn">
+          <Brain size={17} />
+        </button>
         <button onClick={clearThread} title="Clear chat" className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary" data-testid="aichar-clear-btn">
           <Trash2 size={16} />
         </button>

@@ -51,6 +51,13 @@ class CreateCharacterBody(BaseModel):
     avatar_url: Optional[str] = None
     persona: str = Field(min_length=1, max_length=1500)
     voice: str = Field(default="", max_length=400)  # raw voice id or ElevenLabs link
+    your_name: str = Field(default="", max_length=60)      # the person's real name
+    nickname: str = Field(default="", max_length=60)       # what the character calls them
+    relationship: str = Field(default="", max_length=500)  # how they know each other
+
+
+class MemoryBody(BaseModel):
+    text: str = Field(min_length=1, max_length=400)
 
 
 class SendBody(BaseModel):
@@ -87,6 +94,10 @@ def build_router(ctx) -> APIRouter:
             "username": c["username"],
             "avatar_url": c.get("avatar_url") or default_avatar,
             "persona": c.get("persona", ""),
+            "your_name": c.get("your_name", ""),
+            "nickname": c.get("nickname", ""),
+            "relationship": c.get("relationship", ""),
+            "memories": c.get("memories", []),
             "voice_id": c.get("voice_id", ""),
             "voice_enabled": bool(c.get("voice_id") and settings_store.get("ELEVENLABS_API_KEY")),
             "voice_valid": c.get("voice_valid", None),
@@ -127,8 +138,24 @@ def build_router(ctx) -> APIRouter:
         base = (
             f"You are {c['name']} (@{c['username']}), a character chatting inside the PostMePlex app. "
             f"Stay FULLY in character at all times and never say you are an AI or a language model.\n\n"
-            f"Your personality and how you talk:\n{c.get('persona', '')}\n\n"
-            "Keep replies short, natural and conversational (2-5 sentences). Match the user's energy and keep the chat flowing."
+            f"Your personality and how you talk:\n{c.get('persona', '')}\n"
+        )
+        who = []
+        if c.get("your_name"):
+            who.append(f"The person you're talking to is named {c['your_name']}.")
+        if c.get("nickname"):
+            who.append(f'You affectionately call them "{c["nickname"]}" — use it naturally now and then.')
+        if c.get("relationship"):
+            who.append(f"How you two know each other: {c['relationship']}")
+        if who:
+            base += "\nAbout the person you're talking to:\n" + "\n".join(who) + "\n"
+        mems = [m.get("text", "") for m in c.get("memories", []) if m.get("text")]
+        if mems:
+            base += ("\nThings you ALWAYS remember about them (treat as established fact, weave in naturally, "
+                     "and NEVER ask about them again):\n" + "\n".join(f"- {m}" for m in mems) + "\n")
+        base += (
+            "\nRemember the whole conversation so far and never make the person repeat themselves. "
+            "Never say you can't remember. Keep replies short, natural and conversational (2-5 sentences)."
         )
         if spoken:
             base += (" You are on a VOICE call, so answer the way a person naturally speaks out loud: "
@@ -139,7 +166,7 @@ def build_router(ctx) -> APIRouter:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         history = await db.ai_char_messages.find(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
-        ).sort("created_at", -1).limit(20).to_list(20)
+        ).sort("created_at", -1).limit(40).to_list(40)
         history.reverse()
         transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in history)
         chat = LlmChat(
@@ -202,6 +229,10 @@ def build_router(ctx) -> APIRouter:
             "username": body.username.strip().lstrip("@")[:30],
             "avatar_url": (body.avatar_url or "").strip() or default_avatar,
             "persona": body.persona.strip(),
+            "your_name": body.your_name.strip(),
+            "nickname": body.nickname.strip(),
+            "relationship": body.relationship.strip(),
+            "memories": [],
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
             "created_by": current["id"],
@@ -220,10 +251,28 @@ def build_router(ctx) -> APIRouter:
             "username": body.username.strip().lstrip("@")[:30],
             "avatar_url": (body.avatar_url or "").strip() or default_avatar,
             "persona": body.persona.strip(),
+            "your_name": body.your_name.strip(),
+            "nickname": body.nickname.strip(),
+            "relationship": body.relationship.strip(),
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
         }
         await db.ai_characters.update_one({"id": char_id}, {"$set": upd})
+        return _char_public(await _get_char(char_id))
+
+    @router.post("/api/ai-characters/{char_id}/memory")
+    async def add_memory(char_id: str, body: MemoryBody, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        await _get_char(char_id)
+        mem = {"id": str(uuid.uuid4()), "text": body.text.strip(), "created_at": _now().isoformat()}
+        await db.ai_characters.update_one({"id": char_id}, {"$push": {"memories": mem}})
+        return _char_public(await _get_char(char_id))
+
+    @router.delete("/api/ai-characters/{char_id}/memory/{mem_id}")
+    async def delete_memory(char_id: str, mem_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        await _get_char(char_id)
+        await db.ai_characters.update_one({"id": char_id}, {"$pull": {"memories": {"id": mem_id}}})
         return _char_public(await _get_char(char_id))
 
     @router.delete("/api/ai-characters/{char_id}")

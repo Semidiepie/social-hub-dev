@@ -5,6 +5,14 @@
 
 # PostMePlex — Product Requirements
 
+## Update — AI character memory + relationship profile (2026-06, web)
+- Extended `ai_characters`: `your_name`, `nickname` (what the character calls the admin), `relationship` (how they know each other), and `memories` (trainable fact list `{id,text,created_at}`).
+- Endpoints: `POST /api/ai-characters/{id}/memory`, `DELETE .../memory/{mem_id}` (admin-only). Create/PUT persist the new relationship fields.
+- `_system()` injects name/nickname/relationship + all memories ("treat as fact, never ask again, never say you can't remember"); conversation history window raised 20→40. Full per-character+admin thread already persisted, so it remembers the conversation.
+- UI: `CharacterFormDialog` adds Your name / What they call you / How they know you + a Memory/Training manager (edit mode). `AiCharacterChat` header gains a 🧠 Teach button to add a memory mid-chat.
+- **Verified (agent, curl + screenshot):** created Maya (your_name Alex, nickname "sunshine", relationship), trained 2 memories (dog Max, marathon) → reply used "sunshine" + recalled Max + marathon unprompted, and persisted the dog across a follow-up turn. Edit form renders all fields + memory manager; character shows 🔊 voice (new key validated `X8ye6rf6ZloQ3SE3PQNM`). Preview-only; web-only.
+
+
 ## Update — Admin custom AI characters in Messages + admin reset-spins (2026-06, web)
 - **Admin "Reset Spins":** `POST /api/admin/users/{id}/reset-spins` refills a user's slot `energy` to each game's `energy_cap` across all their `slots_state`. Button added to Admin → Accounts (per-user "Spins"). Verified 0→50.
 - **Admin-only custom AI characters** (`backend/routes/ai_characters.py`, new router): admins create voice AI characters that live in Messages. Fields: display name, @username, avatar (Cloudinary), personality/persona, ElevenLabs voice. Endpoints (all super-admin gated): POST/GET/PUT/DELETE `/api/ai-characters`, `GET/DELETE .../{id}/thread`, `POST .../{id}/send` (LLM reply via Emergent key Claude-sonnet-4-6, in-character + ElevenLabs TTS audio), `POST .../{id}/voice-turn` (greeting/spoken reply + audio), `POST /api/ai-characters/stt` (ElevenLabs STT). Reuses the proven Sage voice stack but **per-character** — Sage's own voice (`SAGE_VOICE_ID`) is untouched.
