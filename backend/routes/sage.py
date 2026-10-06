@@ -28,7 +28,7 @@ import settings_store
 load_dotenv()
 
 SAGE_VOICE_ID = os.environ.get("SAGE_VOICE_ID", "hpp4J3VqNfWAUOO0d1Us")  # user-provided Sage voice
-SAGE_TTS_MODEL = os.environ.get("SAGE_TTS_MODEL", "eleven_turbo_v2_5")
+SAGE_TTS_MODEL = os.environ.get("SAGE_TTS_MODEL", "eleven_multilingual_v2")
 
 SAGE_ID = "sage-ai"
 SAGE_NAME = "Sage AI"
@@ -128,6 +128,7 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(503, "Voice isn't configured yet")
 
         def _synth() -> bytes:
+            from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
             stream = client.text_to_speech.convert(
@@ -135,6 +136,7 @@ def build_router(ctx) -> APIRouter:
                 voice_id=SAGE_VOICE_ID,
                 model_id=SAGE_TTS_MODEL,
                 output_format="mp3_44100_128",
+                voice_settings=VoiceSettings(stability=0.45, similarity_boost=0.85, style=0.15, use_speaker_boost=True),
             )
             return b"".join(stream)
 

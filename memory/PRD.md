@@ -5,6 +5,11 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — more realistic AI voice (2026-06)
+- Root cause: TTS used `eleven_turbo_v2_5` (low-latency, less natural). Switched both AI characters (`routes/ai_characters.py` TTS_MODEL) and Sage (`routes/sage.py` SAGE_TTS_MODEL) to **`eleven_multilingual_v2`** (lifelike, matches the ElevenLabs website) + `VoiceSettings(stability=0.45, similarity_boost=0.85, style=0.15, use_speaker_boost=True)`.
+- Verified: voice-turn returns valid mp3 and payload ~3x larger (richer audio). Slight latency increase vs turbo is the tradeoff for realism. Preview-only until redeploy.
+
+
 ## Update — AI character memory + relationship profile (2026-06, web)
 - Extended `ai_characters`: `your_name`, `nickname` (what the character calls the admin), `relationship` (how they know each other), and `memories` (trainable fact list `{id,text,created_at}`).
 - Endpoints: `POST /api/ai-characters/{id}/memory`, `DELETE .../memory/{mem_id}` (admin-only). Create/PUT persist the new relationship fields.

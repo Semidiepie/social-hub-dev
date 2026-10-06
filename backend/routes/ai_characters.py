@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 import settings_store
 
-TTS_MODEL = "eleven_turbo_v2_5"
+TTS_MODEL = "eleven_multilingual_v2"  # high-quality, lifelike (matches the ElevenLabs website)
 
 
 def _now():
@@ -187,10 +187,12 @@ def build_router(ctx) -> APIRouter:
             return None
 
         def _synth() -> bytes:
+            from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
             stream = client.text_to_speech.convert(
                 text=text, voice_id=voice_id, model_id=TTS_MODEL, output_format="mp3_44100_128",
+                voice_settings=VoiceSettings(stability=0.45, similarity_boost=0.85, style=0.15, use_speaker_boost=True),
             )
             return b"".join(stream)
 
