@@ -13,6 +13,8 @@ annotations break closure-local `Depends` in these routers).
 import json
 import re
 import uuid
+import random as _random
+from collections import Counter
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -57,7 +59,7 @@ DEFAULT_GAME = {
 }
 
 
-KINDS = ("match3", "memory", "quiz", "tapper", "farm")
+KINDS = ("match3", "memory", "quiz", "tapper", "farm", "slots")
 
 # Starter content for AI fallbacks / defaults.
 DEFAULT_MEMORY_EMOJIS = ["⚡", "❤️", "💬", "📸", "⭐", "🎵", "🔥", "🏆", "🚀", "🌙", "🍕", "👻"]
@@ -66,6 +68,23 @@ DEFAULT_CROPS = [
     {"id": "c1", "name": "Carrot", "emoji": "🥕", "seed_cost": 10, "grow_seconds": 40, "sell_price": 25, "xp": 3},
     {"id": "c2", "name": "Corn", "emoji": "🌽", "seed_cost": 20, "grow_seconds": 75, "sell_price": 50, "xp": 5},
     {"id": "c3", "name": "Tomato", "emoji": "🍅", "seed_cost": 35, "grow_seconds": 120, "sell_price": 90, "xp": 8},
+]
+
+# Slots / Spin & Raid (Coin Master-style). EXACTLY these 6 symbol roles are rendered.
+SLOT_ROLES = ("coin", "jackpot", "energy", "shield", "attack", "raid")
+DEFAULT_SYMBOLS = [
+    {"id": "coin", "emoji": "🪙", "label": "Coins", "role": "coin", "value": 1000},
+    {"id": "jackpot", "emoji": "💰", "label": "Jackpot", "role": "jackpot", "value": 5000},
+    {"id": "energy", "emoji": "⚡", "label": "Free Spins", "role": "energy", "value": 10},
+    {"id": "shield", "emoji": "🛡️", "label": "Shield", "role": "shield", "value": 1},
+    {"id": "attack", "emoji": "⚔️", "label": "Attack", "role": "attack", "value": 0},
+    {"id": "raid", "emoji": "🐾", "label": "Raid", "role": "raid", "value": 0},
+]
+DEFAULT_BUILDINGS = [
+    {"id": "b0", "name": "Town Hall", "emoji": "🏛️"},
+    {"id": "b1", "name": "Market", "emoji": "🏪"},
+    {"id": "b2", "name": "Barracks", "emoji": "⛺"},
+    {"id": "b3", "name": "Treasury", "emoji": "🏦"},
 ]
 
 
@@ -268,6 +287,38 @@ def _validate_config(kind: str, c) -> dict:
             "start_coins": max(0, min(100000, int(c.get("start_coins") or 100))),
             "start_plots": max(2, min(12, int(c.get("start_plots") or 4))),
         }
+    if kind == "slots":
+        by_role = {s.get("role"): s for s in (c.get("symbols") or []) if isinstance(s, dict)}
+        symbols = []
+        for d in DEFAULT_SYMBOLS:
+            s = by_role.get(d["role"]) or {}
+            emoji = (str(s.get("emoji") or "").strip()[:4]) or d["emoji"]
+            label = (str(s.get("label") or "").strip()[:20]) or d["label"]
+            if d["role"] in ("coin", "jackpot", "energy"):
+                value = max(1, min(1_000_000, int(s.get("value") or d["value"])))
+            else:
+                value = d["value"]
+            symbols.append({"id": d["role"], "emoji": emoji, "label": label, "role": d["role"], "value": value})
+        buildings = []
+        for i, b in enumerate((c.get("buildings") or [])[:6]):
+            if not isinstance(b, dict):
+                continue
+            name = str(b.get("name") or "").strip()[:24]
+            if not name:
+                continue
+            buildings.append({"id": f"b{i}", "name": name, "emoji": (str(b.get("emoji") or "").strip()[:4]) or "🏠"})
+        if len(buildings) < 3:
+            buildings = [dict(b) for b in DEFAULT_BUILDINGS]
+        accent = c.get("accent") if isinstance(c.get("accent"), str) and _HEX.match(str(c.get("accent"))) else "#4FC3F7"
+        return {
+            "theme": str(c.get("theme") or "").strip()[:40],
+            "accent": accent,
+            "symbols": symbols,
+            "buildings": buildings,
+            "spin_cost": max(1, min(100000, int(c.get("spin_cost") or 5))),
+            "start_coins": max(1000, min(10_000_000, int(c.get("start_coins") or 5000))),
+            "energy_cap": max(20, min(200, int(c.get("energy_cap") or 50))),
+        }
     # match3
     tiles = _coerce_tiles(c.get("tiles")) or DEFAULT_TILES
     return {
@@ -389,6 +440,7 @@ GEN_SYSTEM = (
     '  - "quiz": trivia / multiple-choice questions on a topic.\n'
     '  - "tapper": tap/whack targets that pop up fast within a time limit (reflex, arcade).\n'
     '  - "farm": a farming/economy SIMULATOR (like Hay Day / FarmVille): plant seeds, wait for crops to grow in real time, harvest, sell for coins, level up. Use this for any "simulator", "tycoon", "farm", "restaurant", "city builder" or "idle/economy" request.\n'
+    '  - "slots": a Coin Master-style SPIN & RAID game: a 3-reel lucky slot machine where matching symbols award coins, free spins, shields, attacks and raids; the player upgrades a village and spins a daily wheel. Use this for ANY "coin master", "slot machine", "slots", "spin", "spin and raid", "casino" or "village + slots" request.\n'
     "Then output JSON: {\n"
     '  "kind": one of the above,\n'
     '  "title": string (<=50), "description": string (<=180), "cover_emoji": ONE emoji,\n'
@@ -399,6 +451,7 @@ GEN_SYSTEM = (
     '    quiz   -> {"questions":[8-20 {"q":string,"choices":[3-4 strings],"answer":index-int}], "seconds_per_q":8-30}\n'
     '    tapper -> {"emoji":ONE emoji to tap, "bg":"#RRGGBB", "base_duration":15-40, "base_spawn_ms":500-1200}\n'
     '    farm   -> {"crops":[4-8 {"name":string,"emoji":ONE emoji,"seed_cost":int,"grow_seconds":int(10-600),"sell_price":int>seed_cost,"xp":int}], "start_coins":50-500, "start_plots":4-8}\n'
+    '    slots  -> {"theme":string, "accent":"#RRGGBB" (fits the theme), "spin_cost":int 1-1000, "start_coins":int 1000-50000, "energy_cap":int 20-100, "symbols":[EXACTLY 6 objects, ONE for EACH role coin/jackpot/energy/shield/attack/raid: {"role":<the role>,"emoji":ONE themed emoji,"label":short string,"value":int (coins for coin/jackpot, free-spins for energy; omit/0 for shield/attack/raid)}], "buildings":[4-6 {"name":themed building name,"emoji":ONE emoji}]}\n'
     "For match3 tiles use ONLY these icon names: " + ", ".join(ALLOWED_ICONS) + ".\n"
     "Make content genuinely fit the theme (real trivia answers, themed emojis). Respect difficulty hints."
 )
@@ -481,7 +534,8 @@ STUDIO_SYSTEM = (
     "You are Sage, a friendly expert game designer running an interactive studio for the PostMePlex arcade. "
     "You collaborate with an admin over several short turns to design the PERFECT game, then output a build spec.\n"
     "You can ONLY build these engine kinds (the app renders exactly these): match3 (swap/match-3 puzzle), "
-    "memory (flip-card pairs), quiz (trivia), tapper (tap/whack reflex), farm (farming/economy simulator). "
+    "memory (flip-card pairs), quiz (trivia), tapper (tap/whack reflex), farm (farming/economy simulator), "
+    "slots (Coin Master-style spin & raid: 3-reel lucky slots + village building + daily wheel). "
     "Map the admin's idea to the best-fitting kind.\n"
     "RULES:\n"
     "1. Respond with ONLY one compact JSON object every turn. No prose, no markdown.\n"
@@ -498,7 +552,8 @@ STUDIO_SYSTEM = (
     "    memory -> {\"emojis\":[8-12 single emojis], \"base_pairs\":4-8, \"base_seconds\":30-120}\n"
     "    quiz   -> {\"questions\":[8-20 {\"q\",\"choices\":[3-4],\"answer\":index}], \"seconds_per_q\":8-30}\n"
     "    tapper -> {\"emoji\":ONE emoji, \"bg\":\"#RRGGBB\", \"base_duration\":15-40, \"base_spawn_ms\":500-1200}\n"
-    "    farm   -> {\"crops\":[4-8 {\"name\",\"emoji\",\"seed_cost\",\"grow_seconds\":10-600,\"sell_price\":>seed_cost,\"xp\"}], \"start_coins\":50-500, \"start_plots\":4-8}}\n"
+    "    farm   -> {\"crops\":[4-8 {\"name\",\"emoji\",\"seed_cost\",\"grow_seconds\":10-600,\"sell_price\":>seed_cost,\"xp\"}], \"start_coins\":50-500, \"start_plots\":4-8}\n"
+    "    slots  -> {\"theme\":string, \"accent\":\"#RRGGBB\", \"spin_cost\":int 1-1000, \"start_coins\":int 1000-50000, \"energy_cap\":int 20-100, \"symbols\":[EXACTLY 6, ONE per role coin|jackpot|energy|shield|attack|raid {\"role\",\"emoji\":ONE themed emoji,\"label\",\"value\":int for coin/jackpot/energy}], \"buildings\":[4-6 {\"name\":themed building,\"emoji\":ONE emoji}]}}\n"
     "For match3 tiles use ONLY these icon names: " + ", ".join(ALLOWED_ICONS) + ".\n"
     "Make content genuinely themed and high quality (real trivia, fitting emojis/crops). Respect the admin's choices."
 )
@@ -815,6 +870,204 @@ def build_router(ctx) -> APIRouter:
         await _save_farm(s)
         return {**_farm_out(s, g), "plot_cost": cost}
 
+    # ---------- Slots / Spin & Raid (Coin Master-style, not level-based) ----------
+    ENERGY_REGEN_SEC = 300   # +1 free spin every 5 minutes
+    WHEEL_COOLDOWN = 72000   # daily wheel every 20h
+    SPIN_WEIGHTS = {"coin": 34, "energy": 22, "shield": 16, "attack": 12, "raid": 11, "jackpot": 5}
+
+    async def _slots_game(slug: str, current):
+        g = await db.games.find_one({"slug": slug}, {"_id": 0})
+        if not g or not g.get("is_active", True) or g.get("kind") != "slots":
+            raise HTTPException(404, "Game not found")
+        if g.get("visibility") == "private" and not current.get("is_super_admin"):
+            raise HTTPException(404, "Game not found")
+        return g
+
+    async def _get_slots(user_id: str, game: dict) -> dict:
+        s = await db.slots_state.find_one({"user_id": user_id, "game_id": game["id"]}, {"_id": 0})
+        if s:
+            return s
+        c = _cfg(game)
+        cap = int(c.get("energy_cap", 50))
+        s = {
+            "id": str(uuid.uuid4()), "user_id": user_id, "game_id": game["id"],
+            "coins": int(c.get("start_coins", 5000)), "energy": cap, "shields": 0,
+            "fish": 0, "trophies": 0,
+            "village": [{"id": b["id"], "level": 0} for b in c.get("buildings", DEFAULT_BUILDINGS)],
+            "last_energy_at": _epoch(), "last_wheel_at": 0,
+            "created_at": now(), "updated_at": now(),
+        }
+        await db.slots_state.insert_one(dict(s))
+        return s
+
+    async def _save_slots(s: dict):
+        s["updated_at"] = now()
+        await db.slots_state.update_one(
+            {"user_id": s["user_id"], "game_id": s["game_id"]},
+            {"$set": {k: s[k] for k in ("coins", "energy", "shields", "fish", "trophies", "village", "last_energy_at", "last_wheel_at", "updated_at")}},
+        )
+
+    def _slots_regen(s: dict, cap: int):
+        el = _epoch()
+        if s["energy"] >= cap:
+            s["last_energy_at"] = el
+            return
+        last = int(s.get("last_energy_at") or el)
+        gained = (el - last) // ENERGY_REGEN_SEC
+        if gained > 0:
+            s["energy"] = min(cap, s["energy"] + gained)
+            s["last_energy_at"] = el if s["energy"] >= cap else last + gained * ENERGY_REGEN_SEC
+
+    def _slots_out(s: dict, game: dict) -> dict:
+        c = _cfg(game)
+        cap = int(c.get("energy_cap", 50))
+        bmeta = {b["id"]: b for b in c.get("buildings", DEFAULT_BUILDINGS)}
+        village = []
+        for v in s.get("village", []):
+            m = bmeta.get(v["id"])
+            if m:
+                village.append({"id": v["id"], "name": m["name"], "emoji": m["emoji"], "level": int(v.get("level", 0))})
+        next_in = 0
+        if s["energy"] < cap:
+            next_in = max(0, ENERGY_REGEN_SEC - (_epoch() - int(s.get("last_energy_at") or _epoch())))
+        return {
+            "coins": s["coins"], "energy": s["energy"], "energy_cap": cap,
+            "shields": s["shields"], "fish": s["fish"], "trophies": s["trophies"],
+            "level": 1 + int(s["trophies"]),
+            "village": village,
+            "symbols": c.get("symbols", DEFAULT_SYMBOLS),
+            "spin_cost": int(c.get("spin_cost", 5)),
+            "accent": c.get("accent", "#4FC3F7"),
+            "wheel_ready": (_epoch() - int(s.get("last_wheel_at") or 0)) >= WHEEL_COOLDOWN,
+            "next_energy_in": next_in,
+            "now": _epoch(),
+        }
+
+    def _pick_symbol(symbols: list) -> dict:
+        pool = []
+        for sy in symbols:
+            pool += [sy] * SPIN_WEIGHTS.get(sy.get("role"), 10)
+        return _random.choice(pool or symbols)
+
+    @router.get("/api/games/{slug}/slots")
+    async def slots_state_get(slug: str, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _slots_game(slug, current)
+        s = await _get_slots(current["id"], g)
+        _slots_regen(s, int(_cfg(g).get("energy_cap", 50)))
+        await _save_slots(s)
+        return _slots_out(s, g)
+
+    @router.post("/api/games/{slug}/slots/spin")
+    async def slots_spin(slug: str, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _slots_game(slug, current)
+        s = await _get_slots(current["id"], g)
+        c = _cfg(g)
+        cap = int(c.get("energy_cap", 50))
+        _slots_regen(s, cap)
+        symbols = c.get("symbols", DEFAULT_SYMBOLS)
+        cost = int(c.get("spin_cost", 5))
+        used_energy = False
+        if s["energy"] >= 1:
+            if s["energy"] >= cap:
+                s["last_energy_at"] = _epoch()
+            s["energy"] -= 1
+            used_energy = True
+        elif s["coins"] >= cost:
+            s["coins"] -= cost
+        else:
+            raise HTTPException(400, "Out of spins and coins — wait for your energy to refill.")
+        reels = [_pick_symbol(symbols) for _ in range(3)]
+        roles = [r["role"] for r in reels]
+        rewards = {"coins": 0, "energy": 0, "shields": 0, "fish": 0}
+        events = []
+        outcome = "none"
+        by_role = {sy["role"]: sy for sy in symbols}
+        if roles[0] == roles[1] == roles[2]:
+            role = roles[0]
+            sv = by_role.get(role, {})
+            outcome = role
+            if role == "coin":
+                rewards["coins"] += int(sv.get("value", 1000))
+            elif role == "jackpot":
+                rewards["coins"] += int(sv.get("value", 5000))
+            elif role == "energy":
+                add = int(sv.get("value", 10))
+                s["energy"] = min(cap, s["energy"] + add)
+                s["fish"] += add
+                rewards["energy"] = add
+                rewards["fish"] = add
+            elif role == "shield":
+                s["shields"] = min(3, s["shields"] + 1)
+                rewards["shields"] = 1
+            elif role == "attack":
+                steal = _random.randint(300, 1200) + s["trophies"] * 60
+                rewards["coins"] += steal
+                events.append({"type": "attack", "amount": steal})
+            elif role == "raid":
+                dig = _random.randint(600, 2500) + s["trophies"] * 90
+                rewards["coins"] += dig
+                events.append({"type": "raid", "amount": dig})
+        else:
+            cnt = Counter(roles)
+            role, n = cnt.most_common(1)[0]
+            if n == 2 and role in ("coin", "jackpot"):
+                val = int(by_role.get(role, {}).get("value", 1000)) // 4
+                rewards["coins"] += val
+                outcome = "pair"
+        s["coins"] += rewards["coins"]
+        await _save_slots(s)
+        return {
+            "reels": [{"id": r["id"], "emoji": r["emoji"], "role": r["role"]} for r in reels],
+            "outcome": outcome, "rewards": rewards, "events": events,
+            "used_energy": used_energy, "state": _slots_out(s, g),
+        }
+
+    @router.post("/api/games/{slug}/slots/build")
+    async def slots_build(slug: str, body: dict, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _slots_game(slug, current)
+        s = await _get_slots(current["id"], g)
+        v = next((x for x in s["village"] if x["id"] == body.get("building")), None)
+        if not v:
+            raise HTTPException(400, "Unknown building")
+        lvl = int(v.get("level", 0))
+        if lvl >= 5:
+            raise HTTPException(400, "Already at max level")
+        cost = 1000 * (lvl + 1) * (s["trophies"] + 1)
+        if s["coins"] < cost:
+            raise HTTPException(400, "Not enough coins to upgrade")
+        s["coins"] -= cost
+        v["level"] = lvl + 1
+        gained_trophy = False
+        if all(int(x.get("level", 0)) >= 5 for x in s["village"]):
+            s["trophies"] += 1
+            gained_trophy = True
+            for x in s["village"]:
+                x["level"] = 0
+            s["coins"] += 5000  # village-complete bonus
+        await _save_slots(s)
+        return {"cost": cost, "gained_trophy": gained_trophy, "state": _slots_out(s, g)}
+
+    @router.post("/api/games/{slug}/slots/wheel")
+    async def slots_wheel(slug: str, current: Annotated[dict, Depends(get_current_user)]):
+        g = await _slots_game(slug, current)
+        s = await _get_slots(current["id"], g)
+        cap = int(_cfg(g).get("energy_cap", 50))
+        if (_epoch() - int(s.get("last_wheel_at") or 0)) < WHEEL_COOLDOWN:
+            raise HTTPException(400, "Daily wheel isn't ready yet")
+        prizes = [{"kind": "coins", "amount": a} for a in (500, 1000, 2000, 5000)] + \
+                 [{"kind": "energy", "amount": a} for a in (5, 10, 20)] + \
+                 [{"kind": "shields", "amount": 1}]
+        p = _random.choice(prizes)
+        if p["kind"] == "coins":
+            s["coins"] += p["amount"]
+        elif p["kind"] == "energy":
+            s["energy"] = min(cap, s["energy"] + p["amount"])
+        else:
+            s["shields"] = min(3, s["shields"] + p["amount"])
+        s["last_wheel_at"] = _epoch()
+        await _save_slots(s)
+        return {"prize": p, "state": _slots_out(s, g)}
+
     # ---------- Admin ----------
     @router.get("/api/admin/games")
     async def admin_list(current: Annotated[dict, Depends(get_current_user)]):
@@ -860,7 +1113,7 @@ def build_router(ctx) -> APIRouter:
             "description": spec["description"],
             "kind": spec["kind"],
             "cover_emoji": spec["cover_emoji"],
-            "level_count": 1 if spec["kind"] == "farm" else spec["level_count"],
+            "level_count": 1 if spec["kind"] in ("farm", "slots") else spec["level_count"],
             "is_active": True,
             "visibility": "private",
             "sort": count,
@@ -1000,6 +1253,7 @@ def build_router(ctx) -> APIRouter:
         await db.games.delete_one({"id": game_id})
         await db.game_progress.delete_many({"game_id": game_id})
         await db.farm_state.delete_many({"game_id": game_id})
+        await db.slots_state.delete_many({"game_id": game_id})
         return {"status": "deleted", "id": game_id}
 
     return router

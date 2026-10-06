@@ -9,6 +9,7 @@ import { MemoryGame } from "@/components/games/MemoryGame";
 import { QuizGame } from "@/components/games/QuizGame";
 import { TapperGame } from "@/components/games/TapperGame";
 import { FarmGame } from "@/components/games/FarmGame";
+import { SlotsGame } from "@/components/games/SlotsGame";
 import { toast } from "sonner";
 
 const INTRO_TEXT = {
@@ -104,6 +105,25 @@ export default function GameMapPage() {
           </div>
         </header>
         <FarmGame game={game} />
+      </div>
+    );
+  }
+
+  // ===== Slots / Spin & Raid (Coin Master-style): not level-based =====
+  if (game.kind === "slots") {
+    return (
+      <div className="mx-auto max-w-md" data-testid="slots-page">
+        <button onClick={() => navigate("/games")} className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground" data-testid="map-back">
+          <ArrowLeft size={16} /> All games
+        </button>
+        <header className="mb-4 flex items-center gap-3">
+          <span className="text-4xl">{game.cover_emoji}</span>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight">{game.title}</h1>
+            <p className="text-sm text-muted-foreground">{game.description}</p>
+          </div>
+        </header>
+        <SlotsGame game={game} />
       </div>
     );
   }
