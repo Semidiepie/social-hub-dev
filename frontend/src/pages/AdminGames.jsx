@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Gamepad2, Loader2, Plus, Save, Trash2, Sparkles, Eye, EyeOff, Wand2 } from "lucide-react";
+import { Gamepad2, Loader2, Plus, Save, Trash2, Sparkles, Eye, EyeOff, Wand2, ImagePlus } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { uploadToCloudinary, cloudinaryAvailable } from "@/lib/cloudinary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +23,7 @@ function GameRow({ g, onSaved, onDeleted }) {
   const [saving, setSaving] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [tileBusy, setTileBusy] = useState(null);
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
   useEffect(() => { setDraft(g); }, [g]);
@@ -85,6 +87,26 @@ function GameRow({ g, onSaved, onDeleted }) {
 
   const isPrivate = draft.visibility === "private";
 
+  const tiles = draft.tiles || g.tiles || [];
+  const uploadTileImage = async (idx, file) => {
+    if (!file) return;
+    if (!cloudinaryAvailable) { toast.error("Image uploads aren't configured."); return; }
+    setTileBusy(idx);
+    try {
+      const res = await uploadToCloudinary(file, { resourceType: "image" });
+      const next = tiles.map((t, i) => (i === idx ? { ...t, image: res.secure_url } : t));
+      await save({ tiles: next });
+    } catch (e) {
+      toast.error(e.message || "Upload failed");
+    } finally {
+      setTileBusy(null);
+    }
+  };
+  const clearTileImage = async (idx) => {
+    const next = tiles.map((t, i) => (i === idx ? { id: t.id, icon: t.icon, color: t.color } : t));
+    await save({ tiles: next });
+  };
+
   return (
     <div className="rounded-xl border border-border p-3" data-testid={`admin-game-${g.slug}`}>
       <div className="flex items-center gap-2">
@@ -126,6 +148,37 @@ function GameRow({ g, onSaved, onDeleted }) {
           </Button>
         </div>
       </div>
+
+      {/* Custom tile images (match3 only) */}
+      {g.kind === "match3" && (
+        <div className="mt-3 rounded-lg border border-border p-2.5" data-testid={`tile-editor-${g.slug}`}>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+            <ImagePlus size={13} /> Custom tile images (optional)
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {tiles.map((t, i) => (
+              <div key={t.id || i} className="flex flex-col items-center gap-1">
+                <div className="relative h-12 w-12 overflow-hidden rounded-lg border border-border" style={{ background: t.color }}>
+                  {t.image ? (
+                    <img src={t.image} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center px-0.5 text-center text-[8px] font-bold leading-tight text-white/90">{t.icon}</span>
+                  )}
+                  {tileBusy === i && <div className="absolute inset-0 flex items-center justify-center bg-black/50"><Loader2 size={14} className="animate-spin text-white" /></div>}
+                </div>
+                <label className="cursor-pointer text-[10px] font-semibold text-primary hover:underline" data-testid={`tile-upload-${g.slug}-${i}`}>
+                  {t.image ? "Change" : "Upload"}
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadTileImage(i, e.target.files?.[0])} />
+                </label>
+                {t.image && (
+                  <button onClick={() => clearTileImage(i)} className="text-[10px] font-semibold text-muted-foreground hover:text-destructive" data-testid={`tile-clear-${g.slug}-${i}`}>Remove</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[10px] text-muted-foreground">Upload a square image per tile — it replaces the icon live for all players. Remove to fall back to the icon.</p>
+        </div>
+      )}
 
       {/* Sage AI editor */}
       <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-2.5">

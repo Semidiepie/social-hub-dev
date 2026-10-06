@@ -44,6 +44,8 @@ function CandyTile({ id, cell, tile, size, r, c, selected, popping, armedHammer,
       >
         {special === "bomb" ? (
           <Sparkles size={size * 0.46} color="#fff" strokeWidth={2.2} />
+        ) : tile?.image ? (
+          <img src={tile.image} alt="" draggable={false} className="h-full w-full rounded-[inherit] object-cover" style={{ pointerEvents: "none" }} />
         ) : (
           <Icon size={size * 0.42} color="#fff" strokeWidth={2.6} />
         )}

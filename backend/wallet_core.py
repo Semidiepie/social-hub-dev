@@ -7,11 +7,18 @@ go through grant()/spend() so every change is written to an auditable ledger
 (`token_tx`). spend() is an atomic conditional debit — it can never overdraw.
 """
 import uuid
+from datetime import timedelta
 
 WELCOME_TOKENS = 100
 DAILY_REWARD = 25
 # 20h (not a strict 24h) so a daily-habit user is never blocked by clock drift.
 DAILY_COOLDOWN_SECONDS = 20 * 60 * 60
+
+# Games are a METERED token faucet: a user can earn at most this many tokens
+# from gameplay (level clears + slots) per rolling 20h window, so tokens stay
+# scarce enough to hold cash-out value.
+GAME_DAILY_CAP = 50
+GAME_EARN_KINDS = ("game", "slots")
 
 # Premium profile frames sold for tokens (reuse the existing frame visuals).
 STORE_FRAMES = [
@@ -45,6 +52,37 @@ async def _log(db, now, user_id, amount, kind, note):
         "balance_after": await get_balance(db, user_id),
         "created_at": now(),
     })
+
+
+async def game_earned_recently(db, now_dt, user_id: str, window_s: int = DAILY_COOLDOWN_SECONDS) -> int:
+    """Total tokens a user has earned from games in the last `window_s` seconds."""
+    cutoff = now_dt - timedelta(seconds=window_s)
+    total = 0
+    cur = db.token_tx.find(
+        {"user_id": user_id, "kind": {"$in": list(GAME_EARN_KINDS)},
+         "amount": {"$gt": 0}, "created_at": {"$gte": cutoff}},
+        {"_id": 0, "amount": 1},
+    )
+    async for tx in cur:
+        total += int(tx.get("amount", 0))
+    return total
+
+
+async def grant_capped(db, now, user_id: str, amount: int, kind: str, note: str = "",
+                       daily_cap: int = GAME_DAILY_CAP) -> dict:
+    """Grant game tokens but never let a user exceed `daily_cap` earned per 20h.
+    Returns {granted, balance, capped, remaining}."""
+    amount = int(amount)
+    if amount <= 0:
+        return {"granted": 0, "balance": await get_balance(db, user_id), "capped": False, "remaining": daily_cap}
+    earned = await game_earned_recently(db, now(), user_id)
+    remaining = max(0, daily_cap - earned)
+    give = min(amount, remaining)
+    if give > 0:
+        await db.users.update_one({"id": user_id}, {"$inc": {"tokens": give}})
+        await _log(db, now, user_id, give, kind, note)
+    bal = await get_balance(db, user_id)
+    return {"granted": give, "balance": bal, "capped": give < amount, "remaining": max(0, remaining - give)}
 
 
 async def grant(db, now, user_id: str, amount: int, kind: str, note: str = "") -> int:

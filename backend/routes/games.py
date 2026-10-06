@@ -60,7 +60,6 @@ DEFAULT_GAME = {
 
 
 KINDS = ("match3", "memory", "quiz", "tapper", "farm", "slots")
-
 # Starter content for AI fallbacks / defaults.
 DEFAULT_MEMORY_EMOJIS = ["⚡", "❤️", "💬", "📸", "⭐", "🎵", "🔥", "🏆", "🚀", "🌙", "🍕", "👻"]
 DEFAULT_CROPS = [
@@ -71,21 +70,44 @@ DEFAULT_CROPS = [
 ]
 
 # Slots / Spin & Raid (Coin Master-style). EXACTLY these 6 symbol roles are rendered.
-SLOT_ROLES = ("coin", "jackpot", "energy", "shield", "attack", "raid")
+# `token` is the REAL PostMePlex-token faucet (small, daily-capped); everything else is in-game.
+SLOT_ROLES = ("coin", "jackpot", "token", "shield", "attack", "raid")
 DEFAULT_SYMBOLS = [
-    {"id": "coin", "emoji": "🪙", "label": "Coins", "role": "coin", "value": 1000},
-    {"id": "jackpot", "emoji": "💰", "label": "Jackpot", "role": "jackpot", "value": 5000},
-    {"id": "energy", "emoji": "⚡", "label": "Free Spins", "role": "energy", "value": 10},
+    {"id": "coin", "emoji": "💬", "label": "Coins", "role": "coin", "value": 1000},
+    {"id": "jackpot", "emoji": "🔥", "label": "Jackpot", "role": "jackpot", "value": 5000},
+    {"id": "token", "emoji": "🪙", "label": "PMP Tokens", "role": "token", "value": 2},
     {"id": "shield", "emoji": "🛡️", "label": "Shield", "role": "shield", "value": 1},
-    {"id": "attack", "emoji": "⚔️", "label": "Attack", "role": "attack", "value": 0},
-    {"id": "raid", "emoji": "🐾", "label": "Raid", "role": "raid", "value": 0},
+    {"id": "attack", "emoji": "⚡", "label": "Attack", "role": "attack", "value": 0},
+    {"id": "raid", "emoji": "🚀", "label": "Raid", "role": "raid", "value": 0},
 ]
 DEFAULT_BUILDINGS = [
-    {"id": "b0", "name": "Town Hall", "emoji": "🏛️"},
-    {"id": "b1", "name": "Market", "emoji": "🏪"},
-    {"id": "b2", "name": "Barracks", "emoji": "⛺"},
-    {"id": "b3", "name": "Treasury", "emoji": "🏦"},
+    {"id": "b0", "name": "Feed Tower", "emoji": "📱"},
+    {"id": "b1", "name": "Live Studio", "emoji": "🎥"},
+    {"id": "b2", "name": "Creator HQ", "emoji": "🏢"},
+    {"id": "b3", "name": "Token Vault", "emoji": "🏦"},
 ]
+
+# Default PostMePlex-branded Spin & Raid slot game (seeded public).
+DEFAULT_SLOTS = {
+    "slug": "postmeplex-spin",
+    "title": "PostMePlex Spin",
+    "description": "Spin the Lucky Slots, raid rivals and build your creator empire. Land 🪙 PMP Tokens to earn real tokens (daily-capped)!",
+    "kind": "slots",
+    "cover_emoji": "🎰",
+    "level_count": 1,
+    "is_active": True,
+    "visibility": "public",
+    "sort": 1,
+    "config": {
+        "theme": "PostMePlex",
+        "accent": "#FF6B3D",
+        "spin_cost": 5,
+        "start_coins": 5000,
+        "energy_cap": 50,
+        "symbols": [dict(s) for s in DEFAULT_SYMBOLS],
+        "buildings": [dict(b) for b in DEFAULT_BUILDINGS],
+    },
+}
 
 
 def _cfg(game: dict) -> dict:
@@ -294,8 +316,10 @@ def _validate_config(kind: str, c) -> dict:
             s = by_role.get(d["role"]) or {}
             emoji = (str(s.get("emoji") or "").strip()[:4]) or d["emoji"]
             label = (str(s.get("label") or "").strip()[:20]) or d["label"]
-            if d["role"] in ("coin", "jackpot", "energy"):
+            if d["role"] in ("coin", "jackpot"):
                 value = max(1, min(1_000_000, int(s.get("value") or d["value"])))
+            elif d["role"] == "token":
+                value = max(1, min(10, int(s.get("value") or d["value"])))  # real tokens: keep small
             else:
                 value = d["value"]
             symbols.append({"id": d["role"], "emoji": emoji, "label": label, "role": d["role"], "value": value})
@@ -309,7 +333,7 @@ def _validate_config(kind: str, c) -> dict:
             buildings.append({"id": f"b{i}", "name": name, "emoji": (str(b.get("emoji") or "").strip()[:4]) or "🏠"})
         if len(buildings) < 3:
             buildings = [dict(b) for b in DEFAULT_BUILDINGS]
-        accent = c.get("accent") if isinstance(c.get("accent"), str) and _HEX.match(str(c.get("accent"))) else "#4FC3F7"
+        accent = c.get("accent") if isinstance(c.get("accent"), str) and _HEX.match(str(c.get("accent"))) else "#FF6B3D"
         return {
             "theme": str(c.get("theme") or "").strip()[:40],
             "accent": accent,
@@ -331,8 +355,9 @@ def _validate_config(kind: str, c) -> dict:
 
 
 def _coerce_tiles(raw) -> Optional[list]:
-    """Validate an AI-proposed tile set: 4–6 tiles, each with an allowed lucide
-    icon and a valid hex color. Returns None if unusable (keep the old tiles)."""
+    """Validate a tile set: 4–6 tiles, each with an allowed lucide icon + hex color,
+    and an OPTIONAL `image` (https URL) that the board renders instead of the icon.
+    Returns None if unusable (keep the old tiles)."""
     if not isinstance(raw, list) or len(raw) < 4:
         return None
     out = []
@@ -346,7 +371,11 @@ def _coerce_tiles(raw) -> Optional[list]:
         if not (isinstance(color, str) and _HEX.match(color)):
             color = PALETTE[i % len(PALETTE)]
         tid = str(t.get("id") or icon.lower())[:20]
-        out.append({"id": tid, "icon": icon, "color": color})
+        tile = {"id": tid, "icon": icon, "color": color}
+        img = t.get("image")
+        if isinstance(img, str) and img.startswith("https://") and len(img) <= 500:
+            tile["image"] = img
+        out.append(tile)
     return out if len(out) >= 4 else None
 
 
@@ -451,7 +480,7 @@ GEN_SYSTEM = (
     '    quiz   -> {"questions":[8-20 {"q":string,"choices":[3-4 strings],"answer":index-int}], "seconds_per_q":8-30}\n'
     '    tapper -> {"emoji":ONE emoji to tap, "bg":"#RRGGBB", "base_duration":15-40, "base_spawn_ms":500-1200}\n'
     '    farm   -> {"crops":[4-8 {"name":string,"emoji":ONE emoji,"seed_cost":int,"grow_seconds":int(10-600),"sell_price":int>seed_cost,"xp":int}], "start_coins":50-500, "start_plots":4-8}\n'
-    '    slots  -> {"theme":string, "accent":"#RRGGBB" (fits the theme), "spin_cost":int 1-1000, "start_coins":int 1000-50000, "energy_cap":int 20-100, "symbols":[EXACTLY 6 objects, ONE for EACH role coin/jackpot/energy/shield/attack/raid: {"role":<the role>,"emoji":ONE themed emoji,"label":short string,"value":int (coins for coin/jackpot, free-spins for energy; omit/0 for shield/attack/raid)}], "buildings":[4-6 {"name":themed building name,"emoji":ONE emoji}]}\n'
+    '    slots  -> {"theme":string (DEFAULT to the PostMePlex brand — orange energy, social/creator vibe — unless the admin explicitly asks for another theme), "accent":"#RRGGBB" (fits the theme; default "#FF6B3D"), "spin_cost":int 1-1000, "start_coins":int 1000-50000, "energy_cap":int 20-100, "symbols":[EXACTLY 6 objects, ONE for EACH role coin/jackpot/token/shield/attack/raid: {"role":<the role>,"emoji":ONE themed emoji,"label":short string,"value":int}]. coin/jackpot value = in-game coins; token value = REAL PostMePlex tokens so keep it SMALL (1-5); shield/attack/raid value 0. "buildings":[4-6 {"name":themed building name,"emoji":ONE emoji}]}\n'
     "For match3 tiles use ONLY these icon names: " + ", ".join(ALLOWED_ICONS) + ".\n"
     "Make content genuinely fit the theme (real trivia answers, themed emojis). Respect difficulty hints."
 )
@@ -553,7 +582,7 @@ STUDIO_SYSTEM = (
     "    quiz   -> {\"questions\":[8-20 {\"q\",\"choices\":[3-4],\"answer\":index}], \"seconds_per_q\":8-30}\n"
     "    tapper -> {\"emoji\":ONE emoji, \"bg\":\"#RRGGBB\", \"base_duration\":15-40, \"base_spawn_ms\":500-1200}\n"
     "    farm   -> {\"crops\":[4-8 {\"name\",\"emoji\",\"seed_cost\",\"grow_seconds\":10-600,\"sell_price\":>seed_cost,\"xp\"}], \"start_coins\":50-500, \"start_plots\":4-8}\n"
-    "    slots  -> {\"theme\":string, \"accent\":\"#RRGGBB\", \"spin_cost\":int 1-1000, \"start_coins\":int 1000-50000, \"energy_cap\":int 20-100, \"symbols\":[EXACTLY 6, ONE per role coin|jackpot|energy|shield|attack|raid {\"role\",\"emoji\":ONE themed emoji,\"label\",\"value\":int for coin/jackpot/energy}], \"buildings\":[4-6 {\"name\":themed building,\"emoji\":ONE emoji}]}}\n"
+    "    slots  -> {\"theme\":string (default PostMePlex brand unless asked), \"accent\":\"#RRGGBB\" (default #FF6B3D), \"spin_cost\":int 1-1000, \"start_coins\":int 1000-50000, \"energy_cap\":int 20-100, \"symbols\":[EXACTLY 6, ONE per role coin|jackpot|token|shield|attack|raid {\"role\",\"emoji\":ONE themed emoji,\"label\",\"value\":int}], coin/jackpot value=in-game coins, token value=REAL tokens keep SMALL 1-5, shield/attack/raid value 0, \"buildings\":[4-6 {\"name\":themed building,\"emoji\":ONE emoji}]}}\n"
     "For match3 tiles use ONLY these icon names: " + ", ".join(ALLOWED_ICONS) + ".\n"
     "Make content genuinely themed and high quality (real trivia, fitting emojis/crops). Respect the admin's choices."
 )
@@ -627,9 +656,11 @@ def _public_game(g: dict) -> dict:
 
 async def seed_default_game(db, now):
     existing = await db.games.find_one({"slug": DEFAULT_GAME["slug"]})
-    if existing:
-        return
-    await db.games.insert_one({"id": str(uuid.uuid4()), "created_at": now(), **DEFAULT_GAME})
+    if not existing:
+        await db.games.insert_one({"id": str(uuid.uuid4()), "created_at": now(), **DEFAULT_GAME})
+    # Default PostMePlex-themed Spin & Raid slot game.
+    if not await db.games.find_one({"slug": DEFAULT_SLOTS["slug"]}):
+        await db.games.insert_one({"id": str(uuid.uuid4()), "created_at": now(), **DEFAULT_SLOTS})
 
 
 def build_router(ctx) -> APIRouter:
@@ -732,15 +763,19 @@ def build_router(ctx) -> APIRouter:
              "$setOnInsert": {"id": str(uuid.uuid4()), "user_id": current["id"], "game_id": g["id"]}},
             upsert=True,
         )
-        # Reward tokens the FIRST time a level is cleared (prevents replay farming).
+        # Reward tokens the FIRST time a level is cleared (prevents replay farming),
+        # subject to the shared daily game-earning cap.
         reward = 0
+        capped = False
         if won and not prev.get("completed"):
-            reward = 10 + earned * 5
-            await wallet_core.grant(db, now, current["id"], reward, "game",
-                                    f"Cleared {g.get('title', 'game')} level {n}")
+            want = 10 + earned * 5
+            res = await wallet_core.grant_capped(db, now, current["id"], want, "game",
+                                                 f"Cleared {g.get('title', 'game')} level {n}")
+            reward = res["granted"]
+            capped = res["capped"]
         return {"level": n, "score": score, "stars": earned, "won": won,
                 "target": params["target"], "unlocked": unlocked, "best": levels[key]["best"],
-                "tokens_earned": reward}
+                "tokens_earned": reward, "daily_capped": capped}
 
     # ---------- Farm simulator (not level-based) ----------
     def _epoch() -> int:
@@ -873,7 +908,7 @@ def build_router(ctx) -> APIRouter:
     # ---------- Slots / Spin & Raid (Coin Master-style, not level-based) ----------
     ENERGY_REGEN_SEC = 300   # +1 free spin every 5 minutes
     WHEEL_COOLDOWN = 72000   # daily wheel every 20h
-    SPIN_WEIGHTS = {"coin": 34, "energy": 22, "shield": 16, "attack": 12, "raid": 11, "jackpot": 5}
+    SPIN_WEIGHTS = {"coin": 34, "token": 16, "shield": 14, "attack": 14, "raid": 14, "jackpot": 6}
 
     async def _slots_game(slug: str, current):
         g = await db.games.find_one({"slug": slug}, {"_id": 0})
@@ -937,7 +972,8 @@ def build_router(ctx) -> APIRouter:
             "village": village,
             "symbols": c.get("symbols", DEFAULT_SYMBOLS),
             "spin_cost": int(c.get("spin_cost", 5)),
-            "accent": c.get("accent", "#4FC3F7"),
+            "accent": c.get("accent", "#FF6B3D"),
+            "token_cap": wallet_core.GAME_DAILY_CAP,
             "wheel_ready": (_epoch() - int(s.get("last_wheel_at") or 0)) >= WHEEL_COOLDOWN,
             "next_energy_in": next_in,
             "now": _epoch(),
@@ -955,7 +991,9 @@ def build_router(ctx) -> APIRouter:
         s = await _get_slots(current["id"], g)
         _slots_regen(s, int(_cfg(g).get("energy_cap", 50)))
         await _save_slots(s)
-        return _slots_out(s, g)
+        out = _slots_out(s, g)
+        out["token_earned_today"] = await wallet_core.game_earned_recently(db, now(), current["id"])
+        return out
 
     @router.post("/api/games/{slug}/slots/spin")
     async def slots_spin(slug: str, current: Annotated[dict, Depends(get_current_user)]):
@@ -978,7 +1016,8 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(400, "Out of spins and coins — wait for your energy to refill.")
         reels = [_pick_symbol(symbols) for _ in range(3)]
         roles = [r["role"] for r in reels]
-        rewards = {"coins": 0, "energy": 0, "shields": 0, "fish": 0}
+        rewards = {"coins": 0, "shields": 0, "tokens": 0}
+        token_win = 0  # REAL PostMePlex tokens to grant (capped below)
         events = []
         outcome = "none"
         by_role = {sy["role"]: sy for sy in symbols}
@@ -990,12 +1029,8 @@ def build_router(ctx) -> APIRouter:
                 rewards["coins"] += int(sv.get("value", 1000))
             elif role == "jackpot":
                 rewards["coins"] += int(sv.get("value", 5000))
-            elif role == "energy":
-                add = int(sv.get("value", 10))
-                s["energy"] = min(cap, s["energy"] + add)
-                s["fish"] += add
-                rewards["energy"] = add
-                rewards["fish"] = add
+            elif role == "token":
+                token_win += int(sv.get("value", 2))
             elif role == "shield":
                 s["shields"] = min(3, s["shields"] + 1)
                 rewards["shields"] = 1
@@ -1011,15 +1046,28 @@ def build_router(ctx) -> APIRouter:
             cnt = Counter(roles)
             role, n = cnt.most_common(1)[0]
             if n == 2 and role in ("coin", "jackpot"):
-                val = int(by_role.get(role, {}).get("value", 1000)) // 4
-                rewards["coins"] += val
+                rewards["coins"] += int(by_role.get(role, {}).get("value", 1000)) // 4
                 outcome = "pair"
+            elif n == 2 and role == "token":
+                token_win += 1
+                outcome = "token-pair"
         s["coins"] += rewards["coins"]
+        granted = 0
+        capped = False
+        if token_win > 0:
+            res = await wallet_core.grant_capped(db, now, current["id"], token_win, "slots",
+                                                 f"Slots win — {g.get('title', 'game')}")
+            granted = res["granted"]
+            capped = res["capped"]
+        rewards["tokens"] = granted
         await _save_slots(s)
+        out = _slots_out(s, g)
+        out["token_earned_today"] = await wallet_core.game_earned_recently(db, now(), current["id"])
         return {
             "reels": [{"id": r["id"], "emoji": r["emoji"], "role": r["role"]} for r in reels],
             "outcome": outcome, "rewards": rewards, "events": events,
-            "used_energy": used_energy, "state": _slots_out(s, g),
+            "tokens_earned": granted, "token_capped": capped,
+            "used_energy": used_energy, "state": out,
         }
 
     @router.post("/api/games/{slug}/slots/build")
@@ -1080,7 +1128,7 @@ def build_router(ctx) -> APIRouter:
         _require_admin(current)
         slug = await _unique_slug(body.title)
         count = await db.games.count_documents({})
-        tiles = body.tiles if (body.tiles and len(body.tiles) >= 4) else DEFAULT_TILES
+        tiles = _coerce_tiles(body.tiles) or DEFAULT_TILES
         doc = {
             "id": str(uuid.uuid4()),
             "slug": slug,
@@ -1233,10 +1281,11 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(404, "Game not found")
         upd = {k: v for k, v in body.model_dump(exclude_none=True).items()}
         if "tiles" in upd:
-            if not upd["tiles"] or len(upd["tiles"]) < 4:
-                upd.pop("tiles")
+            coerced = _coerce_tiles(upd["tiles"])
+            if coerced:
+                upd["tiles"] = coerced
             else:
-                upd["tiles"] = upd["tiles"][:6]
+                upd.pop("tiles")
         if "visibility" in upd and upd["visibility"] not in ("public", "private"):
             upd.pop("visibility")
         if upd:

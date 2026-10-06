@@ -13,6 +13,7 @@ export function SlotsGame({ game }) {
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
   const [reels, setReels] = useState([null, null, null]);
+  const [stoppedReels, setStoppedReels] = useState([true, true, true]);
   const [flash, setFlash] = useState(null); // {type:'attack'|'raid', amount} | 'win'
   const [villageOpen, setVillageOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -32,33 +33,49 @@ export function SlotsGame({ game }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const accent = state?.accent || "#4FC3F7";
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const accent = state?.accent || "#FF6B3D";
   const symByRole = state ? Object.fromEntries(state.symbols.map((s) => [s.role, s])) : {};
 
   const spin = async () => {
     if (spinning || !state) return;
     setSpinning(true);
     setFlash(null);
-    // quick reel animation while we await the server result
     const pool = state.symbols.map((s) => s.emoji);
-    let n = 0;
+    const stopped = [false, false, false];
+    setStoppedReels([false, false, false]);
+    // roll every non-stopped reel fast
     tickRef.current = setInterval(() => {
-      setReels([0, 1, 2].map(() => pool[Math.floor(Math.random() * pool.length)]));
-      n += 1;
-    }, 80);
+      setReels((prev) => prev.map((e, i) => (stopped[i] ? e : pool[Math.floor(Math.random() * pool.length)])));
+    }, 70);
     try {
       const r = await api.post(`/games/${slug}/slots/spin`);
-      await new Promise((res) => setTimeout(res, 550)); // let reels roll a beat
+      const final = r.reels.map((x) => x.emoji);
+      const stopReel = (i) => {
+        stopped[i] = true;
+        setReels((prev) => prev.map((e, idx) => (idx === i ? final[i] : e)));
+        setStoppedReels((prev) => prev.map((v, idx) => (idx === i ? true : v)));
+      };
+      await wait(650); stopReel(0);
+      await wait(520); stopReel(1);
+      await wait(560); stopReel(2);
       clearInterval(tickRef.current);
-      setReels(r.reels.map((x) => x.emoji));
       setState(r.state);
+      if (r.tokens_earned > 0) {
+        toast.success(`🪙 +${r.tokens_earned} PMP token${r.tokens_earned > 1 ? "s" : ""}!${r.token_capped ? " (daily cap reached)" : ""}`);
+      } else if (r.token_capped) {
+        toast.message("Daily token cap reached — keep spinning for coins!");
+      }
       if (r.events?.length) {
         setFlash({ type: r.events[0].type, amount: r.events[0].amount });
         setTimeout(() => setFlash(null), 1800);
       } else if (r.outcome === "jackpot") {
         setFlash({ type: "jackpot", amount: r.rewards.coins });
         setTimeout(() => setFlash(null), 1800);
-      } else if (r.rewards.coins > 0 || r.rewards.energy > 0 || r.rewards.shields > 0) {
+      } else if (r.outcome === "token" || r.outcome === "token-pair") {
+        setFlash({ type: "token", amount: r.tokens_earned });
+        setTimeout(() => setFlash(null), 1500);
+      } else if (r.rewards.coins > 0 || r.rewards.shields > 0) {
         setFlash({ type: "win", amount: r.rewards.coins });
         setTimeout(() => setFlash(null), 1200);
       }
@@ -110,7 +127,7 @@ export function SlotsGame({ game }) {
         <span className="flex items-center gap-1" data-testid="slots-coins">{coinEmoji} {fmt(state.coins)}</span>
         <span className="flex items-center gap-1 text-yellow-300" data-testid="slots-energy"><Zap size={16} className="fill-yellow-300" /> {state.energy}</span>
         <span className="flex items-center gap-1 text-green-400" data-testid="slots-shields"><Shield size={16} /> {state.shields}</span>
-        <span className="flex items-center gap-1" style={{ color: accent }} data-testid="slots-fish">🐟 {state.fish >= 1000 ? `${(state.fish / 1000).toFixed(1)}K` : state.fish}</span>
+        <span className="flex items-center gap-1" style={{ color: accent }} data-testid="slots-tokens-today" title="Real PMP tokens earned today (daily cap)">🪙 {state.token_earned_today ?? 0}/{state.token_cap}</span>
         <span className="flex items-center gap-1 text-yellow-400" data-testid="slots-trophies"><Trophy size={16} /> {state.trophies}</span>
       </div>
 
@@ -123,7 +140,8 @@ export function SlotsGame({ game }) {
           {reels.map((e, i) => (
             <div
               key={i}
-              className={`flex aspect-square items-center justify-center rounded-xl border border-border bg-card/80 text-5xl ${spinning ? "animate-pulse" : ""}`}
+              className={`flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-card/80 text-5xl transition-transform ${spinning && !stoppedReels[i] ? "blur-[1px]" : "scale-100"}`}
+              style={{ borderColor: spinning && !stoppedReels[i] ? accent : "var(--border)" }}
               data-testid={`slots-reel-${i}`}
             >
               {e}
@@ -155,6 +173,7 @@ export function SlotsGame({ game }) {
               {flash.type === "attack" && <div className="flex flex-col items-center text-red-400"><Swords size={44} /><span className="mt-1 text-2xl font-black">ATTACK!</span></div>}
               {flash.type === "raid" && <div className="flex flex-col items-center text-fuchsia-400"><PawPrint size={44} /><span className="mt-1 text-2xl font-black">RAID!</span></div>}
               {flash.type === "jackpot" && <div className="text-center text-yellow-400"><div className="text-4xl">💰</div><span className="text-2xl font-black">JACKPOT!</span></div>}
+              {flash.type === "token" && <div className="flex flex-col items-center" style={{ color: accent }}><div className="text-4xl">🪙</div><span className="text-2xl font-black">+{fmt(flash.amount)} PMP TOKENS!</span></div>}
               {flash.type === "win" && <div className="text-3xl font-black text-green-400">+{fmt(flash.amount)} {coinEmoji}</div>}
               {(flash.type === "attack" || flash.type === "raid" || flash.type === "jackpot") && (
                 <div className="mt-1 text-xl font-black text-green-400">+{fmt(flash.amount)} {coinEmoji}</div>
@@ -188,7 +207,7 @@ export function SlotsGame({ game }) {
             <div key={s.role} className="flex items-center gap-1.5">
               <span className="text-base">{s.emoji}{s.emoji}{s.emoji}</span>
               <span className="text-muted-foreground">
-                = {s.role === "coin" || s.role === "jackpot" ? `${fmt(s.value)} ${s.label}` : s.role === "energy" ? `${s.value} ${s.label}` : s.label}
+                = {s.role === "coin" || s.role === "jackpot" ? `${fmt(s.value)} ${s.label}` : s.role === "token" ? `+${s.value} ${s.label} (real!)` : s.label}
               </span>
             </div>
           ))}
