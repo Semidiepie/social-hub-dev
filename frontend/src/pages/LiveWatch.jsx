@@ -84,18 +84,31 @@ export default function LiveWatchPage() {
     );
   }
 
-  const hasVideo = !!(stream.whep_url || stream.hls_url);
+  const audioOnly = !!stream.audio_only;
+  const hasStream = !!(stream.whep_url || stream.hls_url);
 
   return (
     <div className="fixed inset-x-0 top-0 z-40 mx-auto h-[100dvh] max-w-md overflow-hidden bg-black" data-testid="live-watch">
-      {hasVideo ? (
-        <video ref={videoRef} autoPlay playsInline className="h-full w-full object-cover" data-testid="live-video" />
-      ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-gradient-to-b from-zinc-900 to-black">
-          <Avatar src={stream.owner?.avatar_url} size={96} ring />
+      {/* playback element — hidden in audio mode but still plays the sound */}
+      {hasStream && (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          className={audioOnly ? "absolute h-px w-px opacity-0" : "h-full w-full object-cover"}
+          data-testid="live-video"
+        />
+      )}
+      {(audioOnly || !hasStream) && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-zinc-900 to-black" data-testid="live-audio-stage">
+          <div className="relative">
+            {audioOnly && <span className="absolute -inset-6 animate-ping rounded-full bg-primary/30" />}
+            {audioOnly && <span className="absolute -inset-3 animate-pulse rounded-full bg-primary/20" />}
+            <Avatar src={stream.owner?.avatar_url} size={120} ring />
+          </div>
           <div className="flex items-center gap-2 text-white/70">
             <Radio size={16} className="animate-pulse text-rose-500" />
-            <span className="text-sm font-semibold">Waiting for video…</span>
+            <span className="text-sm font-semibold">{audioOnly ? "Audio live" : "Waiting for video…"}</span>
           </div>
         </div>
       )}
@@ -120,6 +133,8 @@ export default function LiveWatchPage() {
           onSendChat={live.sendChat}
           onSendHeart={live.sendHeart}
           onSendGift={live.sendGift}
+          chatEnabled={stream.chat_enabled !== false}
+          giftsEnabled={stream.gifts_enabled !== false}
           isOwner={stream.is_owner}
           onEnd={async () => { try { await api.post(`/live/${id}/stop`); } catch { /* noop */ } navigate("/live"); }}
           onClose={() => navigate("/live")}

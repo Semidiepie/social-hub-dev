@@ -61,6 +61,8 @@ export function LiveOverlay({
   onEnd,
   onClose,
   onShare,
+  chatEnabled = true,
+  giftsEnabled = true,
 }) {
   const [text, setText] = useState("");
   const [giftsOpen, setGiftsOpen] = useState(false);
@@ -170,25 +172,33 @@ export function LiveOverlay({
         )}
 
         <form onSubmit={submit} className="flex items-center gap-2">
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Add a comment…"
-            data-testid="live-chat-input"
-            maxLength={500}
-            className="flex-1 rounded-full border border-white/20 bg-black/40 px-4 py-2.5 text-sm text-white placeholder:text-white/50 outline-none backdrop-blur focus:border-primary"
-          />
-          <button type="submit" data-testid="live-chat-send" className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90">
-            <Send size={18} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setGiftsOpen((v) => !v)}
-            data-testid="live-gift-toggle"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-500 text-black hover:bg-amber-400"
-          >
-            <Gift size={18} />
-          </button>
+          {chatEnabled ? (
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Add a comment…"
+              data-testid="live-chat-input"
+              maxLength={500}
+              className="flex-1 rounded-full border border-white/20 bg-black/40 px-4 py-2.5 text-sm text-white placeholder:text-white/50 outline-none backdrop-blur focus:border-primary"
+            />
+          ) : (
+            <div className="flex-1 rounded-full border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white/40 backdrop-blur" data-testid="live-chat-disabled">Chat is off for this live</div>
+          )}
+          {chatEnabled && (
+            <button type="submit" data-testid="live-chat-send" className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90">
+              <Send size={18} />
+            </button>
+          )}
+          {giftsEnabled && (
+            <button
+              type="button"
+              onClick={() => setGiftsOpen((v) => !v)}
+              data-testid="live-gift-toggle"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-500 text-black hover:bg-amber-400"
+            >
+              <Gift size={18} />
+            </button>
+          )}
           <button
             type="button"
             onClick={onSendHeart}

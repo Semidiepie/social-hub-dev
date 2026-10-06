@@ -5,6 +5,18 @@
 
 # PostMePlex — Product Requirements
 
+## Update — Audio live + advanced Go Live options; AI characters look like real accounts; voice-call fixes (2026-06, web)
+- **Session close-out (2026-06):** cleaned 3 unused `eslint-disable` directives in `AiCharacterChat.jsx` → file lints clean. Per user request (low credits), did NOT run the testing agent on the combined changes. All items below are **agent-tested in preview during prior sessions** (not re-tested this session); the AI-character microphone/VAD fix remains **NOT confirmed by real browser/device mic testing** — treat as unverified until the user validates on preview with a real mic.
+- **AI characters de-"AI"-ified:** removed "AI Characters" section label, Sparkles badges and "· AI character" subtitle in Messages + chat header — they now read as normal accounts (avatar, name, persona snippet, subtle + add / edit-on-hover).
+- **Voice call "can't hear me" fix (`AiCharacterChat.jsx`):** AudioContext now `resume()`d (it was starting suspended so VAD never saw audio), VAD calibrates ambient noise for ~10 frames then uses an adaptive threshold, silence window 1.0s, max turn 15s, and the mic circle is now a **tap-to-send** fallback. Mic-blocked error tells the user to open the preview in its own tab.
+- **Audio live + advanced Go Live options** (`routes/live.py`, `GoLive.jsx`, `LiveWatch.jsx`, `LiveOverlay.jsx`):
+  - `CreateLiveBody`/stream doc gained `audio_only`, `visibility` (public|followers), `chat_enabled`, `gifts_enabled`; surfaced in `public_stream` (`has_video=false` when audio_only). Audio rooms force webrtc ingest; broadcaster publishes audio-only getUserMedia; viewers/broadcaster see a **pulsing avatar** stage (hidden `<video>` still plays the sound).
+  - Enforcement: followers-only blocks non-followers on `GET /api/live/{id}` (403); WS drops chat when `chat_enabled=false` and rejects gifts when `gifts_enabled=false`; `LiveOverlay` hides the chat input/gift button accordingly.
+  - GoLive setup screen: Video/Audio toggle + Public/Followers + chat/gifts switches.
+  - Co-host intentionally NOT built (deferred).
+- **Verified (agent, curl + screenshot):** audio+followers+gifts-off stream created with correct flags & has_video false; followers-only returns 403 for a true non-follower, 200 for owner/follower; public video still works; GoLive options UI renders. Preview-only; web-only.
+
+
 ## Fix — more realistic AI voice (2026-06)
 - Root cause: TTS used `eleven_turbo_v2_5` (low-latency, less natural). Switched both AI characters (`routes/ai_characters.py` TTS_MODEL) and Sage (`routes/sage.py` SAGE_TTS_MODEL) to **`eleven_multilingual_v2`** (lifelike, matches the ElevenLabs website) + `VoiceSettings(stability=0.45, similarity_boost=0.85, style=0.15, use_speaker_boost=True)`.
 - Verified: voice-turn returns valid mp3 and payload ~3x larger (richer audio). Slight latency increase vs turbo is the tradeoff for realism. Preview-only until redeploy.

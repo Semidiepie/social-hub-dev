@@ -108,13 +108,12 @@ export default function MessagesPage() {
               </button>
             </li>
 
-            {/* Admin-only: custom AI characters */}
+            {/* Admin-managed accounts — appear as normal people */}
             {isAdmin && (
-              <li className="border-b border-border/60 bg-primary/5">
-                <div className="flex items-center justify-between px-4 py-2">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-primary">AI Characters</span>
-                  <button onClick={() => setCharForm({})} className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-1 text-[11px] font-bold text-primary hover:bg-primary/25" data-testid="add-ai-character-btn">
-                    <Plus size={12} /> Add
+              <li className="border-b border-border/60">
+                <div className="flex items-center justify-end px-3 py-1">
+                  <button onClick={() => setCharForm({})} title="Add account" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary" data-testid="add-ai-character-btn">
+                    <Plus size={15} />
                   </button>
                 </div>
                 {aiChars.map((ch) => (
@@ -124,16 +123,13 @@ export default function MessagesPage() {
                       className={`flex w-full items-center gap-3 px-4 py-2.5 pr-10 text-left hover:bg-secondary/50 ${convId === `ai_${ch.id}` ? "bg-secondary/70" : ""}`}
                       data-testid={`conv-aichar-${ch.id}`}
                     >
-                      <div className="relative">
-                        <Avatar src={ch.avatar_url} size={40} />
-                        <Sparkles size={11} className="absolute -bottom-0.5 -right-0.5 rounded-full bg-card p-0.5 text-primary" />
-                      </div>
+                      <Avatar src={ch.avatar_url} size={40} />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold">{ch.name}</div>
-                        <div className="truncate text-xs text-muted-foreground">@{ch.username} {ch.voice_id ? (ch.voice_valid === false ? "· ⚠️ voice not in account" : "· 🔊 voice") : "· no voice"}</div>
+                        <div className="truncate text-xs text-muted-foreground">{ch.persona ? ch.persona.slice(0, 42) : `@${ch.username}`}</div>
                       </div>
                     </button>
-                    <button onClick={() => setCharForm(ch)} title="Edit character" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary group-hover/char:opacity-100" data-testid={`edit-aichar-${ch.id}`}>
+                    <button onClick={() => setCharForm(ch)} title="Edit" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary group-hover/char:opacity-100" data-testid={`edit-aichar-${ch.id}`}>
                       <SettingsIcon size={14} />
                     </button>
                   </div>

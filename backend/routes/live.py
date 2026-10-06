@@ -49,6 +49,10 @@ GIFTS_BY_ID = {g["id"]: g for g in GIFTS}
 class CreateLiveBody(BaseModel):
     title: str = Field(default="Live", max_length=120)
     mode: str = Field(default="webrtc")  # "webrtc" (low latency) | "hls" (scale)
+    audio_only: bool = False             # audio room — viewers see a pulsing avatar, no video
+    visibility: str = Field(default="public")  # "public" | "followers"
+    chat_enabled: bool = True
+    gifts_enabled: bool = True
 
 
 class LiveHub:
@@ -110,8 +114,12 @@ def build_router(ctx) -> APIRouter:
             "id": s["id"],
             "title": s.get("title", "Live"),
             "mode": s.get("mode", "webrtc"),
+            "audio_only": bool(s.get("audio_only", False)),
+            "visibility": s.get("visibility", "public"),
+            "chat_enabled": bool(s.get("chat_enabled", True)),
+            "gifts_enabled": bool(s.get("gifts_enabled", True)),
             "status": s.get("status", "live"),
-            "has_video": bool(s.get("whep_url") or s.get("hls_url")),
+            "has_video": bool(not s.get("audio_only", False) and (s.get("whep_url") or s.get("hls_url"))),
             "whep_url": s.get("whep_url"),
             "hls_url": s.get("hls_url"),
             "viewer_count": hub.count(s["id"]) if s.get("status") == "live" else 0,
@@ -146,6 +154,8 @@ def build_router(ctx) -> APIRouter:
             {"$set": {"status": "ended", "ended_at": now()}},
         )
         mode = body.mode if body.mode in ("webrtc", "hls") else "webrtc"
+        if body.audio_only:
+            mode = "webrtc"  # audio rooms always use low-latency WebRTC ingest
         whip_url = whep_url = hls_url = input_id = None
         provider_ok = False
         if settings_store.get("CLOUDFLARE_ACCOUNT_ID") and settings_store.get("CLOUDFLARE_API_TOKEN"):
@@ -175,6 +185,10 @@ def build_router(ctx) -> APIRouter:
             "owner_verified_color": current.get("verified_color"),
             "title": body.title,
             "mode": mode,
+            "audio_only": bool(body.audio_only),
+            "visibility": body.visibility if body.visibility in ("public", "followers") else "public",
+            "chat_enabled": bool(body.chat_enabled),
+            "gifts_enabled": bool(body.gifts_enabled),
             "input_id": input_id,           # provider handle (never returned publicly)
             "whep_url": whep_url,            # viewer WebRTC playback (safe to share)
             "hls_url": hls_url,              # viewer HLS playback (safe to share)
@@ -228,8 +242,13 @@ def build_router(ctx) -> APIRouter:
         s = await db.live_streams.find_one({"id": stream_id}, {"_id": 0})
         if not s:
             raise HTTPException(404, "Stream not found")
+        is_owner = s.get("owner_id") == current["id"]
+        if s.get("visibility") == "followers" and not is_owner:
+            follows = await db.follows.find_one({"follower_id": current["id"], "followee_id": s.get("owner_id")})
+            if not follows:
+                raise HTTPException(403, "This is a followers-only live — follow to watch")
         out = public_stream(s)
-        out["is_owner"] = s.get("owner_id") == current["id"]
+        out["is_owner"] = is_owner
         return out
 
     @router.get("/api/live/{stream_id}/chat")
@@ -303,6 +322,8 @@ def build_router(ctx) -> APIRouter:
                 if t == "ping":
                     await websocket.send_json({"type": "pong"})
                 elif t == "chat":
+                    if not s.get("chat_enabled", True):
+                        continue
                     text = str(data.get("text", "")).strip()[:500]
                     if not text:
                         continue
@@ -322,6 +343,9 @@ def build_router(ctx) -> APIRouter:
                     await db.live_streams.update_one({"id": stream_id}, {"$inc": {"hearts": 1}})
                     await hub.broadcast(stream_id, {"type": "heart", "user_id": me["user_id"]})
                 elif t == "gift":
+                    if not s.get("gifts_enabled", True):
+                        await websocket.send_json({"type": "error", "detail": "gifts_disabled"})
+                        continue
                     gift = GIFTS_BY_ID.get(str(data.get("gift_id")))
                     if not gift:
                         continue

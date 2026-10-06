@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Volume2, VolumeX, Trash2, Sparkles, Brain } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Volume2, VolumeX, Trash2, Brain } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -94,10 +94,8 @@ export function AiCharacterChat({ characterId, onBack }) {
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden"><ArrowLeft size={18} /></button>
         <Avatar src={character.avatar_url} size={38} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1 font-bold">{character.name}
-            <Sparkles size={13} className="text-primary" />
-          </div>
-          <div className="text-[11px] text-muted-foreground">@{character.username} · AI character</div>
+          <div className="font-bold">{character.name}</div>
+          <div className="text-[11px] text-muted-foreground">@{character.username}</div>
         </div>
         {character.voice_enabled && (
           <button onClick={() => { unlockAudio(); setInCall(true); }} title="Talk" aria-label="Voice call"
@@ -216,21 +214,18 @@ function CharacterCall({ character, onEnd }) {
       rec.start();
       setStatus("listening");
 
-      // VAD
       const AC = window.AudioContext || window.webkitAudioContext;
       const ac = new AC();
       acRef.current = ac;
+      if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
       const src = ac.createMediaStreamSource(stream);
       const analyser = ac.createAnalyser();
       analyser.fftSize = 2048;
       src.connect(analyser);
       const buf = new Uint8Array(analyser.fftSize);
       const started = Date.now();
-      let hasSpoken = false;
-      let silenceStart = 0;
-      const SILENCE_MS = 1100;
-      const SPEAK_THRESH = 0.028;
-      const MAX_MS = 20000;
+      let hasSpoken = false, silenceStart = 0, frames = 0, noiseFloor = 0.01;
+      const SILENCE_MS = 1000, MAX_MS = 15000;
 
       const tick = () => {
         if (endedRef.current || recorderRef.current !== rec) return;
@@ -239,18 +234,19 @@ function CharacterCall({ character, onEnd }) {
         for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
         const rms = Math.sqrt(sum / buf.length);
         const now = Date.now();
-        if (rms > SPEAK_THRESH) { hasSpoken = true; silenceStart = 0; }
-        else if (hasSpoken) { if (!silenceStart) silenceStart = now; }
-        const silentLongEnough = hasSpoken && silenceStart && now - silenceStart > SILENCE_MS;
-        const tookTooLong = now - started > MAX_MS;
-        if (silentLongEnough || tookTooLong) { stopAndSend(); return; }
+        frames++;
+        if (frames <= 10) { noiseFloor = Math.max(noiseFloor, rms); vadRef.current = requestAnimationFrame(tick); return; }
+        const thresh = Math.min(0.06, noiseFloor * 2.2 + 0.012);
+        if (rms > thresh) { hasSpoken = true; silenceStart = 0; }
+        else if (hasSpoken && !silenceStart) { silenceStart = now; }
+        const doneSpeaking = hasSpoken && silenceStart && now - silenceStart > SILENCE_MS;
+        if (doneSpeaking || now - started > MAX_MS) { stopAndSend(); return; }
         vadRef.current = requestAnimationFrame(tick);
       };
       vadRef.current = requestAnimationFrame(tick);
     } catch {
-      if (!endedRef.current) { toast.error("Allow microphone access to talk"); onEnd(); }
+      if (!endedRef.current) { toast.error("Mic blocked — allow microphone access. If you're in the embedded preview, open the preview in its own browser tab."); onEnd(); }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onEnd]);
 
   const stopAndSend = useCallback(async () => {
@@ -286,7 +282,6 @@ function CharacterCall({ character, onEnd }) {
     } catch {
       if (!endedRef.current) { toast.error("Trouble hearing you — let's try again"); listen(); }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [character.id, listen, playAudio]);
 
   useEffect(() => {
@@ -303,7 +298,6 @@ function CharacterCall({ character, onEnd }) {
       }
     })();
     return () => { endedRef.current = true; try { audioRef.current?.pause(); } catch { /* noop */ } cleanupMic(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hangUp = () => { endedRef.current = true; try { audioRef.current?.pause(); } catch { /* noop */ } cleanupMic(); onEnd(); };
@@ -322,9 +316,15 @@ function CharacterCall({ character, onEnd }) {
       {caption && <p className="mt-6 max-w-md text-sm leading-relaxed text-white/80" data-testid="aichar-caption">“{caption}”</p>}
 
       <div className="mt-10 flex items-center gap-6">
-        <div className={`flex h-20 w-20 items-center justify-center rounded-full ${status === "listening" ? "bg-primary text-white" : "bg-white/10 text-white/70"}`}>
+        <button
+          onClick={() => { if (status === "listening") stopAndSend(); }}
+          disabled={status !== "listening"}
+          className={`flex h-20 w-20 items-center justify-center rounded-full ${status === "listening" ? "bg-primary text-white" : "bg-white/10 text-white/70"}`}
+          title="Tap when you're done talking"
+          data-testid="aichar-send-turn"
+        >
           <Mic size={30} />
-        </div>
+        </button>
         <button onClick={toggleSpeaker} className={`flex h-14 w-14 items-center justify-center rounded-full ${speaker ? "bg-green-500 text-white" : "bg-white/15 text-white"}`} title={speaker ? "Speaker on" : "Speaker off"} data-testid="aichar-speaker-toggle">
           {speaker ? <Volume2 size={22} /> : <VolumeX size={22} />}
         </button>
@@ -333,7 +333,7 @@ function CharacterCall({ character, onEnd }) {
       <button onClick={hangUp} className="mt-10 flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white" data-testid="aichar-hangup">
         <PhoneOff size={24} />
       </button>
-      <p className="mt-6 max-w-xs text-[11px] text-white/40">Just talk naturally — {character.name} replies automatically when you pause.</p>
+      <p className="mt-6 max-w-xs text-[11px] text-white/40">Just talk — it replies when you pause. If it does not catch you, tap the mic when finished.</p>
     </div>
   );
 }
