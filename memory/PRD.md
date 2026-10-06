@@ -1,3 +1,8 @@
+## Update — ElevenLabs key + new Sage voice (2026-06)
+- Configured a new ElevenLabs API key in the settings store (`ELEVENLABS_API_KEY`, source=custom) — the account now contains both the Sage voice and the AI-character voices.
+- **Sage voice changed** to `hpp4J3VqNfWAUOO0d1Us` ("Bella") via `SAGE_VOICE_ID` default in `routes/sage.py`.
+- Verified: both voices resolve in the account; the character voice `X8ye6rf6ZloQ3SE3PQNM` ("Young Kid") now returns `voice_valid:true` and a voice-turn produced real audio (~63KB mp3). NOTE: preview and production settings stores are SEPARATE — the same ElevenLabs key must be set again in production via Admin → Keys after deploy.
+
 # PostMePlex — Product Requirements
 
 ## Update — Admin custom AI characters in Messages + admin reset-spins (2026-06, web)

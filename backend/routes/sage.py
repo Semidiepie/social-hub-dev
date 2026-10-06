@@ -27,7 +27,7 @@ import settings_store
 
 load_dotenv()
 
-SAGE_VOICE_ID = os.environ.get("SAGE_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # "Sarah" — calm, warm
+SAGE_VOICE_ID = os.environ.get("SAGE_VOICE_ID", "hpp4J3VqNfWAUOO0d1Us")  # user-provided Sage voice
 SAGE_TTS_MODEL = os.environ.get("SAGE_TTS_MODEL", "eleven_turbo_v2_5")
 
 SAGE_ID = "sage-ai"
