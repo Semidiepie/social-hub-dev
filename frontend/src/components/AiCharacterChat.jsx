@@ -188,7 +188,8 @@ function CharacterCall({ character, onEnd }) {
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
 
-  const audioRef = useRef(null);
+  const gainRef = useRef(null);
+  const srcNodeRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
@@ -214,25 +215,42 @@ function CharacterCall({ character, onEnd }) {
     acRef.current = null;
   };
 
+  const ensureAC = () => {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!acRef.current || acRef.current.state === "closed") { acRef.current = new AC(); analyserRef.current = null; srcRef.current = null; }
+    return acRef.current;
+  };
+
+  // Play her voice through the Web Audio API with a GainNode. iOS Safari ignores
+  // <audio>.volume (so it always blasts), but it DOES respect Web Audio gain — so the
+  // in-call volume slider actually controls loudness on every device. The mic track is
+  // muted (not released) during playback, so there's no repeat permission prompt.
   const playAudio = useCallback((url) => new Promise((resolve) => {
     if (!url) return resolve();
-    // Keep the mic session alive but MUTE it during playback. Fully releasing it would
-    // make iOS re-ask for mic permission every turn (annoying). Muting avoids the
-    // re-prompt and stops her voice feeding back into the recording.
-    try { streamRef.current?.getAudioTracks().forEach((t) => { t.enabled = false; }); } catch { /* noop */ }
-    if (!window.__aiAudioEl) window.__aiAudioEl = new Audio();
-    const audio = window.__aiAudioEl;
     let done = false; let watchdog;
-    const finish = () => { if (done) return; done = true; clearTimeout(watchdog); audio.onended = null; audio.onerror = null; resolve(); };
-    audio.muted = !speakerRef.current || volumeRef.current === 0;
-    audio.volume = volumeRef.current;
-    audio.src = url;
-    audioRef.current = audio;
-    setStatus("speaking");
-    audio.onended = finish; audio.onerror = finish;
-    watchdog = setTimeout(finish, 20000);
-    const p = audio.play();
-    if (p && p.catch) p.catch(finish);
+    const finish = () => { if (done) return; done = true; clearTimeout(watchdog); resolve(); };
+    (async () => {
+      try {
+        try { streamRef.current?.getAudioTracks().forEach((t) => { t.enabled = false; }); } catch { /* noop */ }
+        const ac = ensureAC();
+        if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
+        const buf = await (await fetch(url)).arrayBuffer();
+        const decoded = await ac.decodeAudioData(buf);
+        const src = ac.createBufferSource();
+        src.buffer = decoded;
+        const gain = ac.createGain();
+        gain.gain.value = speakerRef.current ? volumeRef.current : 0;
+        src.connect(gain); gain.connect(ac.destination);
+        gainRef.current = gain;
+        srcNodeRef.current = src;
+        setStatus("speaking");
+        src.onended = finish;
+        watchdog = setTimeout(finish, 20000);
+        src.start();
+      } catch {
+        finish();
+      }
+    })();
   }), []);
 
   // Record with voice-activity detection: auto-stop ~1.1s after the user stops speaking.
@@ -340,15 +358,15 @@ function CharacterCall({ character, onEnd }) {
         if (!endedRef.current) { toast.error("Couldn't start the voice call"); onEnd(); }
       }
     })();
-    return () => { endedRef.current = true; try { audioRef.current?.pause(); } catch { /* noop */ } cleanupMic(); };
+    return () => { endedRef.current = true; try { srcNodeRef.current?.stop(); } catch { /* noop */ } cleanupMic(); };
   }, []);
 
-  const hangUp = () => { endedRef.current = true; try { audioRef.current?.pause(); } catch { /* noop */ } cleanupMic(); onEnd(); };
-  const toggleSpeaker = () => { const next = !speaker; setSpeaker(next); if (audioRef.current) audioRef.current.muted = !next; };
+  const hangUp = () => { endedRef.current = true; try { srcNodeRef.current?.stop(); } catch { /* noop */ } cleanupMic(); onEnd(); };
+  const toggleSpeaker = () => { const next = !speaker; setSpeaker(next); if (gainRef.current) gainRef.current.gain.value = next ? volumeRef.current : 0; };
   const changeVolume = (v) => {
     setVolume(v);
     localStorage.setItem("aichar.volume", String(v));
-    if (audioRef.current) { audioRef.current.volume = v; audioRef.current.muted = !speakerRef.current || v === 0; }
+    if (gainRef.current) gainRef.current.gain.value = speakerRef.current ? v : 0;
   };
 
   const statusText = { connecting: "Connecting…", listening: "Listening… just talk", thinking: `${character.name} is thinking…`, speaking: `${character.name} is speaking…` }[status];

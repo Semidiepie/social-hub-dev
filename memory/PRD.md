@@ -5,6 +5,12 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — AI call volume now controllable on iOS (Web Audio gain) (2026-06, web)
+- **Insight:** iOS Safari **ignores `<audio>.volume`** (so her voice always played at full hardware/call volume, feeling "like a call"), and releasing the mic to escape that caused per-turn permission prompts.
+- **Fix:** play her voice through the **Web Audio API** (`AudioContext` → `BufferSource` → **GainNode** → destination) instead of an `<audio>` element. iOS respects Web Audio gain, so the in-call **volume slider now actually lowers her volume** on every device. Mic stays open (track muted during playback) → **no re-prompt**. `changeVolume`/`toggleSpeaker` drive `gainRef.gain`; `srcNodeRef` stopped on hangup/unmount. Removed the unused `<audio>` element + `audioRef`.
+- Lint clean, frontend only (hot-reloads). Preview-only — redeploy for production.
+- ⚠️ Needs real-device verification (iPhone). This makes loudness fully controllable in-app; true earpiece routing still requires the native app.
+
 ## Fix — AI voice call: stop re-asking mic permission every turn (2026-06, web)
 - **Cause:** the previous "quiet audio" fix fully released the mic each turn, so iOS re-prompted for mic permission every turn.
 - **Fix:** acquire the mic **once** per call and reuse it — during playback the mic **track is muted** (`track.enabled=false`) instead of released, then re-enabled for the next listen. No re-release → no re-prompt.
