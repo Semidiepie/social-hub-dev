@@ -22,7 +22,12 @@ from pydantic import BaseModel, Field
 
 import settings_store
 
-TTS_MODEL = "eleven_multilingual_v2"  # high-quality, lifelike (matches the ElevenLabs website)
+TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
+TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for the account/voice
+
+# Emotion / non-verbal cues the character may embed in replies; performed by eleven_v3
+# and stripped from the text shown on screen.
+AUDIO_TAG_RE = re.compile(r"\[[a-zA-Z][a-zA-Z '\-]{0,24}\]")
 
 # WMO weather codes → plain words the character can speak naturally.
 WEATHER_CODES = {
@@ -38,6 +43,12 @@ WEATHER_CODES = {
 
 def _now():
     return datetime.now(timezone.utc)
+
+
+def _strip_tags(text: str) -> str:
+    """Remove ElevenLabs audio tags like [laughs] from text shown on screen / stored."""
+    cleaned = AUDIO_TAG_RE.sub("", text or "")
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
 def parse_voice_id(raw: str) -> str:
@@ -184,7 +195,12 @@ def build_router(ctx) -> APIRouter:
             )
         if spoken:
             base += (" You are on a VOICE call, so answer the way a person naturally speaks out loud: "
-                     "short warm sentences, no markdown, no bullet lists, no emojis, easy to say aloud.")
+                     "short warm sentences, no markdown, no bullet lists, no emojis, easy to say aloud. "
+                     "To sound truly human, express real emotion with inline audio cues in square brackets "
+                     "that the voice will PERFORM (not say): [laughs], [giggles], [sighs], [whispers], "
+                     "[excited], [sad], [crying], [nervously], [gasps], [clears throat]. Use them naturally and "
+                     "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
+                     "breathing and pauses. Never read a tag out loud or explain it.")
         return base
 
     async def _realworld_context(local_time: str, tz: str, lat, lon) -> str:
@@ -237,22 +253,27 @@ def build_router(ctx) -> APIRouter:
         if not eleven_key or not voice_id:
             return None
 
-        def _synth() -> bytes:
+        def _synth(model_id: str) -> bytes:
             from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
+            # Lower stability + higher style = more emotional, spontaneous delivery (laughs/breathing).
             stream = client.text_to_speech.convert(
-                text=text, voice_id=voice_id, model_id=TTS_MODEL, output_format="mp3_44100_128",
-                voice_settings=VoiceSettings(stability=0.45, similarity_boost=0.85, style=0.15, use_speaker_boost=True),
+                text=text, voice_id=voice_id, model_id=model_id, output_format="mp3_44100_128",
+                voice_settings=VoiceSettings(stability=0.4, similarity_boost=0.8, style=0.5, use_speaker_boost=True),
             )
             return b"".join(stream)
 
         try:
-            audio = await asyncio.to_thread(_synth)
+            audio = await asyncio.to_thread(_synth, TTS_MODEL)
         except Exception as e:
-            logger.warning(f"ai-char tts error: {e}")
-            await _flag_elevenlabs(e)
-            return None
+            logger.warning(f"ai-char v3 tts failed, falling back to {TTS_FALLBACK_MODEL}: {e}")
+            try:
+                audio = await asyncio.to_thread(_synth, TTS_FALLBACK_MODEL)
+            except Exception as e2:
+                logger.warning(f"ai-char tts error: {e2}")
+                await _flag_elevenlabs(e2)
+                return None
         return "data:audio/mpeg;base64," + base64.b64encode(audio).decode()
 
     async def _store(char_id: str, admin_id: str, role: str, text: str) -> dict:
@@ -363,7 +384,7 @@ def build_router(ctx) -> APIRouter:
         except Exception as e:
             logger.warning(f"ai-char reply error: {e}")
             raise HTTPException(502, f"{c['name']} is having trouble responding right now")
-        msg = await _store(char_id, current["id"], "ai", reply)
+        msg = await _store(char_id, current["id"], "ai", _strip_tags(reply))
         audio = await _tts(c, reply)
         return {"message": _msg_out(msg), "audio_url": audio}
 
@@ -375,20 +396,22 @@ def build_router(ctx) -> APIRouter:
             import random
             nick = (c.get("nickname") or c.get("your_name") or "").strip()
             word = random.choice(["Hey", "Hi", "Hiya", "Yo", "Heyy", "Hey there"])
-            reply = f"{word}, {nick}!" if nick else f"{word}!"
+            display = f"{word}, {nick}!" if nick else f"{word}!"
+            spoken = f"[warmly] {display}"  # performed by the voice, stripped from the caption
         else:
             if not body.text.strip():
                 raise HTTPException(400, "Nothing to respond to")
             await _store(char_id, current["id"], "user", body.text)
             context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
             try:
-                reply = await _reply(c, current["id"], body.text, spoken=True, context=context)
+                spoken = await _reply(c, current["id"], body.text, spoken=True, context=context)
             except Exception as e:
                 logger.warning(f"ai-char voice reply error: {e}")
                 raise HTTPException(502, f"{c['name']} is having trouble responding right now")
-            await _store(char_id, current["id"], "ai", reply)
-        audio = await _tts(c, reply)
-        return {"reply": reply, "audio_url": audio}
+            display = _strip_tags(spoken)
+            await _store(char_id, current["id"], "ai", display)
+        audio = await _tts(c, spoken)
+        return {"reply": display, "audio_url": audio}
 
     @router.post("/api/ai-characters/stt")
     async def stt(audio: UploadFile = File(...), current: dict = Depends(get_current_user)):

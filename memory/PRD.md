@@ -5,6 +5,13 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — AI character voice: realistic emotion (eleven_v3 + audio tags) (2026-06, web)
+- Switched character TTS from `eleven_multilingual_v2` → **`eleven_v3`** (ElevenLabs' most expressive model) with a safe **fallback** to `eleven_multilingual_v2` if v3 is unavailable for the account/voice (audio never fully breaks).
+- The character may now embed inline **audio tags** (`[laughs]`, `[giggles]`, `[sighs]`, `[whispers]`, `[excited]`, `[sad]`, `[crying]`, `[nervously]`, `[gasps]`…) + ellipses for breathing/pauses — the voice **performs** them. Tags are injected via the voice-call system prompt and **stripped** (`_strip_tags` / `AUDIO_TAG_RE`) from the caption shown on screen and the stored message, so users never see the tag text. Greeting gets a subtle `[warmly]`.
+- Voice settings tuned for emotion: stability 0.4, similarity_boost 0.8, style 0.5, speaker boost on.
+- **Verified (curl):** voice-turn returns a clean caption (no visible tags) + ~441KB of v3 audio. Lint clean. Preview-only — redeploy for production.
+- ⚠️ Caveats: v3 has higher latency than multilingual_v2 (call replies may feel slightly slower), and v3 can alter how a cloned voice sounds; true realism must be judged by listening. If a voice lacks emotional range, a tag may occasionally be read aloud (rare).
+
 ## Feature — AI characters: real-world awareness + new call greeting (2026-06, web)
 - **Real-world context:** the web client now sends the device's current time (+ timezone) with every character message/voice-turn, and (if the user allows location on a call) their lat/lon. The backend injects "REAL-WORLD CONTEXT (true right now)" into the character's system prompt — exact local time + **live weather** via the free, keyless **Open-Meteo** API (WMO code → plain words like "raining"). So replies are time/weather-accurate. No API key needed.
   - Backend: `SendBody`/`VoiceTurnBody` gained `local_time`, `tz`, `lat`, `lon`; new `_realworld_context()` + `WEATHER_CODES`; `_system()`/`_reply()` take a `context` block.
