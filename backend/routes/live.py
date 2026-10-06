@@ -307,7 +307,8 @@ def build_router(ctx) -> APIRouter:
             for m in backlog:
                 if isinstance(m.get("created_at"), datetime):
                     m["created_at"] = m["created_at"].isoformat()
-            await websocket.send_json({"type": "init", "chat": backlog, "hearts": s.get("hearts", 0), "gifts": GIFTS})
+            bal = await wallet_core.get_balance(db, me["user_id"])
+            await websocket.send_json({"type": "init", "chat": backlog, "hearts": s.get("hearts", 0), "gifts": GIFTS, "balance": bal})
             count = hub.count(stream_id)
             await db.live_streams.update_one(
                 {"id": stream_id},

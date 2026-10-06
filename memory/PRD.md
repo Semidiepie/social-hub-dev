@@ -5,6 +5,16 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — live gift tray showed "0 tokens" despite a funded wallet (2026-06, web)
+- **Root cause:** `LiveWatch` fed the gift tray `live.balance ?? user?.tokens ?? 0`, but the live WS never sent a balance on connect, so it fell back to the **stale client `user.tokens`** (not refreshed after an admin top-up) → tray showed 0 and disabled every gift button, even with 100K in the wallet (which the Wallet page reads fresh from the DB).
+- **Fix:** the live WS now sends the authoritative DB balance in its `init` payload (`wallet_core.get_balance`), and `useLiveSocket` seeds `balance` from it. The tray now always shows the real balance.
+- **Verified (ws client):** founder set to 100000 → WS `init` returned `balance:100000`. Lint clean. Preview-only — redeploy for production.
+
+## Fix — custom Market frame: profile avatar + homepage ring overlap (2026-06, web)
+- **Profile wasn't showing the custom frame:** `Profile.jsx` still used the old `frame={equipped_frame}` string (="custom", no spec). Now uses `frameOf(target)` so the custom spec object resolves.
+- **Homepage orange ring blocked the frame:** feed avatars pass `ring` (Tailwind orange ring at z-10) AND a frame — the ring covered the cosmetic frame. `Avatar` now suppresses the plain orange `ring` whenever a cosmetic `frame` is shown (frame takes precedence). Live red ring still shows.
+- **Verified (screenshot):** founder custom gradient frame renders on Home feed cards + composer + sidebar AND the Profile header, no orange ring covering it. Lint clean. Preview-only — redeploy for production.
+
 ## Fix — custom Market frame now renders everywhere (2026-06, web)
 - **Root cause:** the Sage-designed `custom_frame` spec was only returned by the profile/`UserPublic` endpoint, so every other author serializer (feed/posts/reels, comments + the batch comment query, videos, messages peer/member, calls) sent `equipped_frame:"custom"` with NO spec → `frameOf()` returned `"custom"` and `Avatar` couldn't draw it anywhere but your own profile.
 - **Fix:** added `custom_frame` alongside `equipped_frame` in all those serializers (`server.py` post/comment author + batch comment query, `routes/videos.py` x3, `routes/messages.py` `_member_public`, `routes/calls.py`). Frontend: `frameOf(u)` now returns the `custom_frame` spec object when `equipped_frame==="custom"`; `Avatar` accepts a preset-id string OR a spec object (back-compat with `frame="custom"`+`frameStyle` on Profile/AppShell/Market kept).

@@ -7,7 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { formatNumber, timeAgo, badgeCls, badgeStyle } from "@/lib/format";
+import { formatNumber, timeAgo, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { FollowListDialog } from "@/components/FollowListDialog";
 import { toast } from "sonner";
@@ -132,7 +132,7 @@ export default function ProfilePage() {
       )}
       <header className="rounded-2xl border border-border bg-card p-5 sm:p-6">
         <div className="flex items-start gap-4 sm:gap-6">
-          <Avatar src={target.avatar_url} size={80} frame={target.frame_enabled ? target.equipped_frame : null} live={target.is_live} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
+          <Avatar src={target.avatar_url} size={80} frame={frameOf(target)} live={target.is_live} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
               <div className="min-w-0">

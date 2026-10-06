@@ -54,6 +54,7 @@ export function useLiveSocket(streamId) {
           setChat(m.chat || []);
           setHearts(m.hearts || 0);
           setGifts(m.gifts || []);
+          if (typeof m.balance === "number") setBalance(m.balance);
           break;
         case "viewers":
           setViewers(m.count || 0);
