@@ -3285,6 +3285,9 @@ app.include_router(_build_games(route_ctx))
 from routes.wallet import build_router as _build_wallet  # noqa: E402
 app.include_router(_build_wallet(route_ctx))
 
+from routes.ai_characters import build_router as _build_ai_characters  # noqa: E402
+app.include_router(_build_ai_characters(route_ctx))
+
 
 @app.on_event("startup")
 async def _seed_games_startup():

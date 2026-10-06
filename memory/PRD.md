@@ -1,5 +1,17 @@
 # PostMePlex — Product Requirements
 
+## Update — Admin custom AI characters in Messages + admin reset-spins (2026-06, web)
+- **Admin "Reset Spins":** `POST /api/admin/users/{id}/reset-spins` refills a user's slot `energy` to each game's `energy_cap` across all their `slots_state`. Button added to Admin → Accounts (per-user "Spins"). Verified 0→50.
+- **Admin-only custom AI characters** (`backend/routes/ai_characters.py`, new router): admins create voice AI characters that live in Messages. Fields: display name, @username, avatar (Cloudinary), personality/persona, ElevenLabs voice. Endpoints (all super-admin gated): POST/GET/PUT/DELETE `/api/ai-characters`, `GET/DELETE .../{id}/thread`, `POST .../{id}/send` (LLM reply via Emergent key Claude-sonnet-4-6, in-character + ElevenLabs TTS audio), `POST .../{id}/voice-turn` (greeting/spoken reply + audio), `POST /api/ai-characters/stt` (ElevenLabs STT). Reuses the proven Sage voice stack but **per-character** — Sage's own voice (`SAGE_VOICE_ID`) is untouched.
+  - **Per-character voice, realtime-editable:** each character stores its own `voice_id`; `parse_voice_id()` accepts a raw ElevenLabs Voice ID OR a voice URL (extracts `voiceId`). PUT updates the voice live (next TTS uses it). Admins can create unlimited characters.
+  - **Live voice validation:** on create/update, `_voice_exists()` checks the voice against the configured ElevenLabs account → `voice_valid`. UI warns ("not in your account") so the admin knows before relying on it.
+  - **Hands-free voice chat (`AiCharacterChat.jsx`):** type OR tap the phone → VAD (WebAudio RMS + silence ~1.1s) auto-detects when the admin stops talking, transcribes (STT), the character auto-replies in text AND speaks (TTS), then auto-listens again — a smooth real conversation loop. Admin-only section + form added to `Messages.jsx`.
+- **Verified (agent, curl + screenshot):** create stores voice_id, link-parse extracts id, LLM reply in-character, PUT changes voice live, non-admin GET→403, Sage voice unchanged. **TTS pipeline proven end-to-end with a premade voice (returned 66KB mp3)**; the user's pasted ID `X8ye6rf6ZloQ3SE3PQNM` returns `voice_valid:false` / `voice_not_found` — it must be ADDED to the ElevenLabs account to speak. UI form + admin section render correctly. Preview-only; NOT user-confirmed; web-only.
+
+## PENDING / QUEUED
+- **Advanced Go Live** (audio-only pulsing-avatar live, stream options, co-host) — scoped, awaiting the user's answers; NOT started.
+
+
 ## Update — Slots re-brand + metered token faucet + admin tile image upload (2026-06, web)
 - **PostMePlex-themed default slot:** `DEFAULT_SYMBOLS`/`DEFAULT_BUILDINGS` rebranded to PostMePlex (orange #FF6B3D accent; 💬 coins, 🔥 jackpot, 🪙 token, 🛡️ shield, ⚡ attack, 🚀 raid; Feed Tower/Live Studio/Creator HQ/Token Vault). Seeded a public **"PostMePlex Spin"** (`postmeplex-spin`) game in `seed_default_game`. Sage studio now defaults slots to the PostMePlex brand unless the admin asks otherwise.
 - **Real spin mechanic (web):** `SlotsGame.jsx` reels now roll continuously and **stop one-by-one left→right** (~650/520/560ms) with a blur-while-rolling effect and per-reel settle, instead of a single snap.

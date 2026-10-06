@@ -1,0 +1,311 @@
+"""Admin-only custom AI characters that live in Messages.
+
+An admin creates a character (name, @username, avatar, personality, ElevenLabs
+voice) and can chat with it by TYPING or TALKING. The character auto-replies via
+the Emergent LLM key (in-character) and speaks the reply with a real ElevenLabs
+voice. Everything here is restricted to super-admins — only admins can create
+these characters and hear their voices.
+
+NOTE: intentionally NO `from __future__ import annotations` (postponed
+annotations break closure-local `Depends` in these routers).
+"""
+import asyncio
+import base64
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import Annotated, Optional
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+
+import settings_store
+
+TTS_MODEL = "eleven_turbo_v2_5"
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def parse_voice_id(raw: str) -> str:
+    """Accept a raw ElevenLabs Voice ID or any ElevenLabs URL and extract the id."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    m = re.search(r"voiceId=([A-Za-z0-9]{15,32})", raw)
+    if m:
+        return m.group(1)
+    m = re.search(r"/voices?/([A-Za-z0-9]{15,32})", raw)
+    if m:
+        return m.group(1)
+    m = re.search(r"\b([A-Za-z0-9]{20})\b", raw)  # bare 20-char id
+    if m:
+        return m.group(1)
+    return raw[:40]
+
+
+class CreateCharacterBody(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    username: str = Field(min_length=1, max_length=30)
+    avatar_url: Optional[str] = None
+    persona: str = Field(min_length=1, max_length=1500)
+    voice: str = Field(default="", max_length=400)  # raw voice id or ElevenLabs link
+
+
+class SendBody(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class VoiceTurnBody(BaseModel):
+    text: str = Field(default="", max_length=2000)
+    greeting: bool = False
+
+
+def build_router(ctx) -> APIRouter:
+    db = ctx.db
+    logger = ctx.logger
+    get_current_user = ctx.get_current_user
+    send_web_push = ctx.send_web_push
+    default_avatar = ctx.default_avatar_url
+    router = APIRouter(tags=["ai-characters"])
+
+    def _require_admin(user: dict):
+        if not user.get("is_super_admin"):
+            raise HTTPException(403, "Super admin only")
+
+    async def _get_char(char_id: str) -> dict:
+        c = await db.ai_characters.find_one({"id": char_id}, {"_id": 0})
+        if not c:
+            raise HTTPException(404, "Character not found")
+        return c
+
+    def _char_public(c: dict) -> dict:
+        return {
+            "id": c["id"],
+            "name": c["name"],
+            "username": c["username"],
+            "avatar_url": c.get("avatar_url") or default_avatar,
+            "persona": c.get("persona", ""),
+            "voice_id": c.get("voice_id", ""),
+            "voice_enabled": bool(c.get("voice_id") and settings_store.get("ELEVENLABS_API_KEY")),
+            "voice_valid": c.get("voice_valid", None),
+            "created_at": c["created_at"].isoformat() if isinstance(c.get("created_at"), datetime) else c.get("created_at"),
+        }
+
+    async def _voice_exists(voice_id: str) -> Optional[bool]:
+        """Check the pasted voice is usable by the configured ElevenLabs account.
+        None = can't tell (no key); True/False = exists or not."""
+        key = settings_store.get("ELEVENLABS_API_KEY")
+        if not key:
+            return None
+        if not voice_id:
+            return False
+
+        def _chk() -> bool:
+            from elevenlabs.client import ElevenLabs
+            client = ElevenLabs(api_key=key)
+            client.voices.get(voice_id=voice_id)
+            return True
+
+        try:
+            return await asyncio.to_thread(_chk)
+        except Exception:
+            return False
+
+    async def _flag_elevenlabs(err: Exception):
+        s = str(err).lower()
+        if any(k in s for k in ["401", "unauthorized", "invalid api key", "quota", "invalid_api_key", "403"]):
+            try:
+                from routes.keyhealth import report_issue
+                await report_issue(db, send_web_push, default_avatar, "elevenlabs",
+                                   "ElevenLabs (AI character voice)", "A character voice call rejected the key — update it.")
+            except Exception:
+                pass
+
+    def _system(c: dict, spoken: bool) -> str:
+        base = (
+            f"You are {c['name']} (@{c['username']}), a character chatting inside the PostMePlex app. "
+            f"Stay FULLY in character at all times and never say you are an AI or a language model.\n\n"
+            f"Your personality and how you talk:\n{c.get('persona', '')}\n\n"
+            "Keep replies short, natural and conversational (2-5 sentences). Match the user's energy and keep the chat flowing."
+        )
+        if spoken:
+            base += (" You are on a VOICE call, so answer the way a person naturally speaks out loud: "
+                     "short warm sentences, no markdown, no bullet lists, no emojis, easy to say aloud.")
+        return base
+
+    async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool) -> str:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        history = await db.ai_char_messages.find(
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
+        ).sort("created_at", -1).limit(20).to_list(20)
+        history.reverse()
+        transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in history)
+        chat = LlmChat(
+            api_key=settings_store.get("EMERGENT_LLM_KEY"),
+            session_id=f"aichar-{c['id']}-{admin_id}",
+            system_message=_system(c, spoken),
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
+            f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.'
+        )
+        resp = await chat.send_message(UserMessage(text=prompt))
+        return (resp or "").strip()
+
+    async def _tts(c: dict, text: str) -> Optional[str]:
+        eleven_key = settings_store.get("ELEVENLABS_API_KEY")
+        voice_id = c.get("voice_id")
+        if not eleven_key or not voice_id:
+            return None
+
+        def _synth() -> bytes:
+            from elevenlabs.client import ElevenLabs
+            client = ElevenLabs(api_key=eleven_key)
+            stream = client.text_to_speech.convert(
+                text=text, voice_id=voice_id, model_id=TTS_MODEL, output_format="mp3_44100_128",
+            )
+            return b"".join(stream)
+
+        try:
+            audio = await asyncio.to_thread(_synth)
+        except Exception as e:
+            logger.warning(f"ai-char tts error: {e}")
+            await _flag_elevenlabs(e)
+            return None
+        return "data:audio/mpeg;base64," + base64.b64encode(audio).decode()
+
+    async def _store(char_id: str, admin_id: str, role: str, text: str) -> dict:
+        doc = {"id": str(uuid.uuid4()), "character_id": char_id, "admin_id": admin_id,
+               "role": role, "text": text, "created_at": _now()}
+        await db.ai_char_messages.insert_one(doc)
+        return doc
+
+    def _msg_out(doc: dict) -> dict:
+        return {"id": doc["id"], "role": doc["role"], "text": doc["text"],
+                "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at")}
+
+    # ---------- Character CRUD (admin) ----------
+    @router.get("/api/ai-characters")
+    async def list_characters(current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        rows = await db.ai_characters.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+        return [_char_public(c) for c in rows]
+
+    @router.post("/api/ai-characters")
+    async def create_character(body: CreateCharacterBody, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        voice_id = parse_voice_id(body.voice)
+        doc = {
+            "id": str(uuid.uuid4()),
+            "name": body.name.strip(),
+            "username": body.username.strip().lstrip("@")[:30],
+            "avatar_url": (body.avatar_url or "").strip() or default_avatar,
+            "persona": body.persona.strip(),
+            "voice_id": voice_id,
+            "voice_valid": await _voice_exists(voice_id),
+            "created_by": current["id"],
+            "created_at": _now(),
+        }
+        await db.ai_characters.insert_one(dict(doc))
+        return _char_public(doc)
+
+    @router.put("/api/ai-characters/{char_id}")
+    async def update_character(char_id: str, body: CreateCharacterBody, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        await _get_char(char_id)
+        voice_id = parse_voice_id(body.voice)
+        upd = {
+            "name": body.name.strip(),
+            "username": body.username.strip().lstrip("@")[:30],
+            "avatar_url": (body.avatar_url or "").strip() or default_avatar,
+            "persona": body.persona.strip(),
+            "voice_id": voice_id,
+            "voice_valid": await _voice_exists(voice_id),
+        }
+        await db.ai_characters.update_one({"id": char_id}, {"$set": upd})
+        return _char_public(await _get_char(char_id))
+
+    @router.delete("/api/ai-characters/{char_id}")
+    async def delete_character(char_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        await _get_char(char_id)
+        await db.ai_characters.delete_one({"id": char_id})
+        await db.ai_char_messages.delete_many({"character_id": char_id})
+        return {"status": "deleted", "id": char_id}
+
+    # ---------- Chat (admin) ----------
+    @router.get("/api/ai-characters/{char_id}/thread")
+    async def get_thread(char_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        c = await _get_char(char_id)
+        rows = await db.ai_char_messages.find(
+            {"character_id": char_id, "admin_id": current["id"]}, {"_id": 0}
+        ).sort("created_at", 1).to_list(500)
+        return {"character": _char_public(c), "messages": [_msg_out(r) for r in rows]}
+
+    @router.delete("/api/ai-characters/{char_id}/thread")
+    async def clear_thread(char_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        await db.ai_char_messages.delete_many({"character_id": char_id, "admin_id": current["id"]})
+        return {"status": "cleared"}
+
+    @router.post("/api/ai-characters/{char_id}/send")
+    async def send(char_id: str, body: SendBody, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        c = await _get_char(char_id)
+        await _store(char_id, current["id"], "user", body.text)
+        try:
+            reply = await _reply(c, current["id"], body.text, spoken=False)
+        except Exception as e:
+            logger.warning(f"ai-char reply error: {e}")
+            raise HTTPException(502, f"{c['name']} is having trouble responding right now")
+        msg = await _store(char_id, current["id"], "ai", reply)
+        audio = await _tts(c, reply)
+        return {"message": _msg_out(msg), "audio_url": audio}
+
+    @router.post("/api/ai-characters/{char_id}/voice-turn")
+    async def voice_turn(char_id: str, body: VoiceTurnBody, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        c = await _get_char(char_id)
+        if body.greeting:
+            reply = f"Hey! It's {c['name']}. Great to finally talk — what's on your mind?"
+        else:
+            if not body.text.strip():
+                raise HTTPException(400, "Nothing to respond to")
+            await _store(char_id, current["id"], "user", body.text)
+            try:
+                reply = await _reply(c, current["id"], body.text, spoken=True)
+            except Exception as e:
+                logger.warning(f"ai-char voice reply error: {e}")
+                raise HTTPException(502, f"{c['name']} is having trouble responding right now")
+            await _store(char_id, current["id"], "ai", reply)
+        audio = await _tts(c, reply)
+        return {"reply": reply, "audio_url": audio}
+
+    @router.post("/api/ai-characters/stt")
+    async def stt(audio: UploadFile = File(...), current: dict = Depends(get_current_user)):
+        _require_admin(current)
+        eleven_key = settings_store.get("ELEVENLABS_API_KEY")
+        if not eleven_key:
+            raise HTTPException(503, "Voice isn't configured yet")
+        content = await audio.read()
+        if not content:
+            raise HTTPException(400, "Empty audio")
+
+        def _transcribe() -> str:
+            import io
+            from elevenlabs.client import ElevenLabs
+            client = ElevenLabs(api_key=eleven_key)
+            r = client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1")
+            return r.text if hasattr(r, "text") else str(r)
+
+        try:
+            text = await asyncio.to_thread(_transcribe)
+        except Exception as e:
+            logger.warning(f"ai-char stt error: {e}")
+            await _flag_elevenlabs(e)
+            raise HTTPException(502, "Couldn't understand the audio")
+        return {"text": (text or "").strip()}
+
+    return router

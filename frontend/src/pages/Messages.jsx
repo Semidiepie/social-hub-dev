@@ -11,6 +11,7 @@ import { useCall } from "@/context/CallContext";
 import { timeAgo, frameOf, badgeCls, badgeStyle } from "@/lib/format";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { SageChat, SAGE } from "@/components/SageChat";
+import { AiCharacterChat } from "@/components/AiCharacterChat";
 import { toast } from "sonner";
 
 export default function MessagesPage() {
@@ -20,6 +21,16 @@ export default function MessagesPage() {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [aiChars, setAiChars] = useState([]);
+  const [charForm, setCharForm] = useState(null); // null | {} (new) | character (edit)
+  const isAdmin = !!user?.is_super_admin;
+
+  const loadChars = useCallback(async () => {
+    if (!user?.is_super_admin) return;
+    try { setAiChars(await api.get("/ai-characters")); } catch { /* ignore */ }
+  }, [user]);
+
+  useEffect(() => { loadChars(); }, [loadChars]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -96,6 +107,40 @@ export default function MessagesPage() {
                 </div>
               </button>
             </li>
+
+            {/* Admin-only: custom AI characters */}
+            {isAdmin && (
+              <li className="border-b border-border/60 bg-primary/5">
+                <div className="flex items-center justify-between px-4 py-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-primary">AI Characters</span>
+                  <button onClick={() => setCharForm({})} className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-1 text-[11px] font-bold text-primary hover:bg-primary/25" data-testid="add-ai-character-btn">
+                    <Plus size={12} /> Add
+                  </button>
+                </div>
+                {aiChars.map((ch) => (
+                  <div key={ch.id} className="group/char relative">
+                    <button
+                      onClick={() => navigate(`/messages/ai_${ch.id}`)}
+                      className={`flex w-full items-center gap-3 px-4 py-2.5 pr-10 text-left hover:bg-secondary/50 ${convId === `ai_${ch.id}` ? "bg-secondary/70" : ""}`}
+                      data-testid={`conv-aichar-${ch.id}`}
+                    >
+                      <div className="relative">
+                        <Avatar src={ch.avatar_url} size={40} />
+                        <Sparkles size={11} className="absolute -bottom-0.5 -right-0.5 rounded-full bg-card p-0.5 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold">{ch.name}</div>
+                        <div className="truncate text-xs text-muted-foreground">@{ch.username} {ch.voice_id ? (ch.voice_valid === false ? "· ⚠️ voice not in account" : "· 🔊 voice") : "· no voice"}</div>
+                      </div>
+                    </button>
+                    <button onClick={() => setCharForm(ch)} title="Edit character" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary group-hover/char:opacity-100" data-testid={`edit-aichar-${ch.id}`}>
+                      <SettingsIcon size={14} />
+                    </button>
+                  </div>
+                ))}
+              </li>
+            )}
+
             {conversations.length === 0 && (
               <li className="p-6 text-center text-xs text-muted-foreground">
                 No other conversations yet. Tap <b>New</b> to start a chat or group.
@@ -149,6 +194,8 @@ export default function MessagesPage() {
 
       {convId === "sage" ? (
         <SageChat onBack={() => navigate("/messages")} />
+      ) : convId?.startsWith("ai_") ? (
+        <AiCharacterChat characterId={convId.slice(3)} onBack={() => navigate("/messages")} />
       ) : convId ? (
         <ChatPane conv={active} me={user} onBack={() => navigate("/messages")} onChanged={loadConversations} onGone={() => navigate("/messages")} />
       ) : (
@@ -168,6 +215,106 @@ export default function MessagesPage() {
           onCreated={(c) => { setShowNew(false); loadConversations(); navigate(`/messages/${c.id}`); }}
         />
       )}
+
+      {charForm && (
+        <CharacterFormDialog
+          character={charForm.id ? charForm : null}
+          onClose={() => setCharForm(null)}
+          onSaved={() => { setCharForm(null); loadChars(); }}
+          onDeleted={(id) => { setCharForm(null); loadChars(); if (convId === `ai_${id}`) navigate("/messages"); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
+  const [name, setName] = useState(character?.name || "");
+  const [username, setUsername] = useState(character?.username || "");
+  const [persona, setPersona] = useState(character?.persona || "");
+  const [voice, setVoice] = useState(character?.voice_id || "");
+  const [avatarUrl, setAvatarUrl] = useState(character?.avatar_url || "");
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const editing = !!character;
+
+  const pickAvatar = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const res = await uploadToCloudinary(file, { resourceType: "image" });
+      setAvatarUrl(res.secure_url);
+    } catch (e) { toast.error(e.message || "Upload failed"); }
+    finally { setUploading(false); }
+  };
+
+  const save = async () => {
+    if (!name.trim() || !username.trim() || !persona.trim()) return toast.error("Name, username and personality are required");
+    setSaving(true);
+    try {
+      const body = { name: name.trim(), username: username.trim(), persona: persona.trim(), voice: voice.trim(), avatar_url: avatarUrl };
+      if (editing) await api.put(`/ai-characters/${character.id}`, body);
+      else await api.post("/ai-characters", body);
+      toast.success(editing ? "Character updated" : "Character created");
+      if (voice.trim()) {
+        // re-fetch to read voice_valid from the saved record
+        try {
+          const list = await api.get("/ai-characters");
+          const saved = list.find((x) => x.username === username.trim().replace(/^@/, "") && x.name === name.trim());
+          if (saved && saved.voice_valid === false) {
+            toast.error("Saved, but that Voice ID isn't in your ElevenLabs account — add it in the ElevenLabs Voice Library (or use a premade voice) for it to speak.", { duration: 8000 });
+          }
+        } catch { /* ignore */ }
+      }
+      onSaved();
+    } catch (e) { toast.error(e.message || "Save failed"); }
+    finally { setSaving(false); }
+  };
+
+  const del = async () => {
+    if (!window.confirm(`Delete ${character.name}? This removes the character and all its chats.`)) return;
+    try { await api.del(`/ai-characters/${character.id}`); toast.success("Deleted"); onDeleted(character.id); }
+    catch (e) { toast.error(e.message || "Delete failed"); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4" onClick={onClose} data-testid="aichar-form">
+      <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-black"><Sparkles size={18} className="text-primary" /> {editing ? "Edit AI character" : "New AI character"}</h2>
+          <button onClick={onClose} data-testid="aichar-form-close"><X size={18} /></button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Avatar src={avatarUrl} size={56} />
+          <label className="cursor-pointer rounded-lg bg-secondary px-3 py-2 text-xs font-bold hover:bg-secondary/70" data-testid="aichar-avatar-upload">
+            {uploading ? "Uploading…" : "Upload picture"}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => pickAvatar(e.target.files?.[0])} />
+          </label>
+        </div>
+
+        <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">Display name</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} placeholder="e.g. Nova" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-name" />
+
+        <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">Username</label>
+        <input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={30} placeholder="nova" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-username" />
+
+        <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">Personality / how they talk</label>
+        <textarea value={persona} onChange={(e) => setPersona(e.target.value)} maxLength={1500} rows={4} placeholder="e.g. A witty, upbeat music lover who hypes people up, loves 90s hip-hop and always keeps it playful." className="mt-1 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary" data-testid="aichar-persona" />
+
+        <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">ElevenLabs voice (ID or link)</label>
+        <input value={voice} onChange={(e) => setVoice(e.target.value)} placeholder="Paste Voice ID or ElevenLabs voice link" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-voice" />
+        <p className="mt-1 text-[10px] text-muted-foreground">The voice must be available to the configured ElevenLabs account (premade, in your Library, or an added public voice).</p>
+
+        <div className="mt-4 flex items-center gap-2">
+          <Button onClick={save} disabled={saving || uploading} className="h-10 flex-1 gap-1.5 bg-primary text-primary-foreground" data-testid="aichar-save">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} {editing ? "Save" : "Create"}
+          </Button>
+          {editing && (
+            <Button onClick={del} variant="ghost" className="h-10 gap-1.5 text-muted-foreground hover:text-destructive" data-testid="aichar-delete"><Trash2 size={15} /></Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
