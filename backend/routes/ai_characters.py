@@ -29,6 +29,8 @@ TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for t
 # and stripped from the text shown on screen.
 AUDIO_TAG_RE = re.compile(r"\[[a-zA-Z][a-zA-Z '\-]{0,24}\]")
 
+_WEATHER_CACHE = {}  # (lat2, lon2) -> (context_str, epoch_seconds); 15-min TTL to avoid per-turn latency
+
 # WMO weather codes → plain words the character can speak naturally.
 WEATHER_CODES = {
     0: "clear skies", 1: "mostly clear", 2: "partly cloudy", 3: "overcast",
@@ -200,7 +202,8 @@ def build_router(ctx) -> APIRouter:
                      "that the voice will PERFORM (not say): [laughs], [giggles], [sighs], [whispers], "
                      "[excited], [sad], [crying], [nervously], [gasps], [clears throat]. Use them naturally and "
                      "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
-                     "breathing and pauses. Never read a tag out loud or explain it.")
+                     "breathing and pauses. Never read a tag out loud or explain it. Keep each reply to 1-3 short "
+                     "sentences so you respond quickly and the call feels snappy.")
         return base
 
     async def _realworld_context(local_time: str, tz: str, lat, lon) -> str:
@@ -209,24 +212,34 @@ def build_router(ctx) -> APIRouter:
         if local_time:
             parts.append(f"Current local time on their phone: {local_time}" + (f" ({tz})" if tz else ""))
         if lat is not None and lon is not None:
-            try:
-                async with httpx.AsyncClient(timeout=6) as client:
-                    r = await client.get("https://api.open-meteo.com/v1/forecast", params={
-                        "latitude": lat, "longitude": lon,
-                        "current": "temperature_2m,weather_code,is_day", "temperature_unit": "celsius"})
-                if r.status_code < 400:
-                    cur = r.json().get("current", {})
-                    desc = WEATHER_CODES.get(cur.get("weather_code"), "")
-                    temp = cur.get("temperature_2m")
-                    day = "daytime" if cur.get("is_day") else "nighttime"
-                    if desc or temp is not None:
-                        wx = f"Weather where they are right now: {desc}" if desc else "Weather where they are right now"
-                        if temp is not None:
-                            wx += f", about {round(temp)}°C"
-                        wx += f" ({day})."
-                        parts.append(wx)
-            except Exception as e:
-                logger.warning(f"weather lookup failed: {e}")
+            key = (round(float(lat), 2), round(float(lon), 2))
+            cached = _WEATHER_CACHE.get(key)
+            nowts = datetime.now(timezone.utc).timestamp()
+            if cached and nowts - cached[1] < 900:  # reuse weather for 15 min (avoids per-turn latency)
+                if cached[0]:
+                    parts.append(cached[0])
+            else:
+                wx = ""
+                try:
+                    async with httpx.AsyncClient(timeout=4) as client:
+                        r = await client.get("https://api.open-meteo.com/v1/forecast", params={
+                            "latitude": lat, "longitude": lon,
+                            "current": "temperature_2m,weather_code,is_day", "temperature_unit": "celsius"})
+                    if r.status_code < 400:
+                        cur = r.json().get("current", {})
+                        desc = WEATHER_CODES.get(cur.get("weather_code"), "")
+                        temp = cur.get("temperature_2m")
+                        day = "daytime" if cur.get("is_day") else "nighttime"
+                        if desc or temp is not None:
+                            wx = f"Weather where they are right now: {desc}" if desc else "Weather where they are right now"
+                            if temp is not None:
+                                wx += f", about {round(temp)}°C"
+                            wx += f" ({day})."
+                except Exception as e:
+                    logger.warning(f"weather lookup failed: {e}")
+                _WEATHER_CACHE[key] = (wx, nowts)
+                if wx:
+                    parts.append(wx)
         return "\n".join(parts)
 
     async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "") -> str:

@@ -181,6 +181,12 @@ function CharacterCall({ character, onEnd }) {
   const [status, setStatus] = useState("connecting"); // connecting | listening | thinking | speaking
   const [caption, setCaption] = useState("");
   const [speaker, setSpeaker] = useState(true);
+  const [volume, setVolume] = useState(() => {
+    const v = parseFloat(localStorage.getItem("aichar.volume"));
+    return isNaN(v) ? 0.7 : Math.min(1, Math.max(0, v));
+  });
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
 
   const audioRef = useRef(null);
   const recorderRef = useRef(null);
@@ -214,7 +220,8 @@ function CharacterCall({ character, onEnd }) {
     const audio = window.__aiAudioEl;
     let done = false; let watchdog;
     const finish = () => { if (done) return; done = true; clearTimeout(watchdog); audio.onended = null; audio.onerror = null; resolve(); };
-    audio.muted = !speakerRef.current;
+    audio.muted = !speakerRef.current || volumeRef.current === 0;
+    audio.volume = volumeRef.current;
     audio.src = url;
     audioRef.current = audio;
     setStatus("speaking");
@@ -333,6 +340,11 @@ function CharacterCall({ character, onEnd }) {
 
   const hangUp = () => { endedRef.current = true; try { audioRef.current?.pause(); } catch { /* noop */ } cleanupMic(); onEnd(); };
   const toggleSpeaker = () => { const next = !speaker; setSpeaker(next); if (audioRef.current) audioRef.current.muted = !next; };
+  const changeVolume = (v) => {
+    setVolume(v);
+    localStorage.setItem("aichar.volume", String(v));
+    if (audioRef.current) { audioRef.current.volume = v; audioRef.current.muted = !speakerRef.current || v === 0; }
+  };
 
   const statusText = { connecting: "Connecting…", listening: "Listening… just talk", thinking: `${character.name} is thinking…`, speaking: `${character.name} is speaking…` }[status];
 
@@ -359,6 +371,18 @@ function CharacterCall({ character, onEnd }) {
         <button onClick={toggleSpeaker} className={`flex h-14 w-14 items-center justify-center rounded-full ${speaker ? "bg-green-500 text-white" : "bg-white/15 text-white"}`} title={speaker ? "Speaker on" : "Speaker off"} data-testid="aichar-speaker-toggle">
           {speaker ? <Volume2 size={22} /> : <VolumeX size={22} />}
         </button>
+      </div>
+
+      <div className="mt-6 flex w-full max-w-xs items-center gap-3" data-testid="aichar-volume">
+        <VolumeX size={16} className="text-white/50" />
+        <input
+          type="range" min="0" max="1" step="0.05" value={volume}
+          onChange={(e) => changeVolume(parseFloat(e.target.value))}
+          aria-label="Call volume"
+          className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-white/20 accent-primary"
+          data-testid="aichar-volume-slider"
+        />
+        <Volume2 size={16} className="text-white/50" />
       </div>
 
       <button onClick={hangUp} className="mt-10 flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white" data-testid="aichar-hangup">

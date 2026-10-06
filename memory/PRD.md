@@ -5,6 +5,14 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — AI voice call: volume control + reduced latency (2026-06, web)
+- **Volume:** added an in-call **volume slider** (0–100%, default 70%, persisted in `localStorage` as `aichar.volume`) next to the existing speaker on/off toggle. `playAudio` now applies `audio.volume`; 0 = muted. Fixes "can't turn it down / too loud through speakers." (Web can't route to the earpiece — only media volume is controllable.)
+- **Latency ("takes too long to think"):**
+  - Live weather is now **cached 15 min** per rounded lat/lon (`_WEATHER_CACHE`) instead of an HTTP call every turn; timeout cut 6s→4s.
+  - Voice replies constrained to **1-3 short sentences** → much faster eleven_v3 synthesis (verified: audio ~441KB→~245KB).
+- **Verified (curl):** turn returns short reply + audio; weather cached on 2nd turn. Lint clean. Preview-only — redeploy for production.
+- ⚠️ eleven_v3 (the emotional model) is inherently slower than fast models; the above reduces latency but a true "instant" feel would require a faster, less-expressive model (tradeoff offered to user).
+
 ## Feature — AI character voice: realistic emotion (eleven_v3 + audio tags) (2026-06, web)
 - Switched character TTS from `eleven_multilingual_v2` → **`eleven_v3`** (ElevenLabs' most expressive model) with a safe **fallback** to `eleven_multilingual_v2` if v3 is unavailable for the account/voice (audio never fully breaks).
 - The character may now embed inline **audio tags** (`[laughs]`, `[giggles]`, `[sighs]`, `[whispers]`, `[excited]`, `[sad]`, `[crying]`, `[nervously]`, `[gasps]`…) + ellipses for breathing/pauses — the voice **performs** them. Tags are injected via the voice-call system prompt and **stripped** (`_strip_tags` / `AUDIO_TAG_RE`) from the caption shown on screen and the stored message, so users never see the tag text. Greeting gets a subtle `[warmly]`.
