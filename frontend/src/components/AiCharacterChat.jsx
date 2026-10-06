@@ -216,6 +216,11 @@ function CharacterCall({ character, onEnd }) {
 
   const playAudio = useCallback((url) => new Promise((resolve) => {
     if (!url) return resolve();
+    // Fully release the mic during playback. While the mic is open the phone keeps
+    // the call in "communication" mode (loud speakerphone, volume keys don't act like
+    // media). Releasing it makes her voice play as normal media — controlled by the
+    // phone's volume exactly like music. The mic is re-opened afterwards to listen.
+    cleanupMic();
     if (!window.__aiAudioEl) window.__aiAudioEl = new Audio();
     const audio = window.__aiAudioEl;
     let done = false; let watchdog;

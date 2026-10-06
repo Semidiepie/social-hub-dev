@@ -5,6 +5,12 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — AI voice call: play as media (phone-volume controlled), not speakerphone (2026-06, web)
+- **Root cause of "too loud / everyone hears her / volume keys don't work":** the call kept the mic open the entire time, which forces mobile OSes into *communication* audio mode (loud speakerphone, hardware volume keys don't control it like media).
+- **Fix:** `playAudio` now fully releases the mic (`cleanupMic()` — stops tracks + closes AudioContext) before her audio plays, so her voice plays as **normal media** controlled by the phone's volume like music; the mic is re-acquired fresh for the next listen turn (fresh stream + context each turn, which also avoids the old closed-context reuse bug). In-call volume slider retained.
+- Lint clean. Frontend-only (hot-reloads). Preview-only — redeploy for production.
+- ⚠️ Can only be verified on a real phone (needs mic + hardware volume). TRUE private earpiece ("hold to ear") routing is NOT possible on web at all — that requires the native mobile app. This fix makes it behave like music (quiet when you lower the phone), not earpiece-private.
+
 ## Fix — AI voice call: volume control + reduced latency (2026-06, web)
 - **Volume:** added an in-call **volume slider** (0–100%, default 70%, persisted in `localStorage` as `aichar.volume`) next to the existing speaker on/off toggle. `playAudio` now applies `audio.volume`; 0 = muted. Fixes "can't turn it down / too loud through speakers." (Web can't route to the earpiece — only media volume is controllable.)
 - **Latency ("takes too long to think"):**
