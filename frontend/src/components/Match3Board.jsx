@@ -364,7 +364,7 @@ export function Match3Board({ level, onEnd }) {
           {particles.map((p) => (
             <span
               key={p.key}
-              className="pmp-particle"
+              className="pmp-burst"
               style={{ left: p.x, top: p.y, background: p.color, "--dx": `${p.dx}px`, "--dy": `${p.dy}px` }}
             />
           ))}

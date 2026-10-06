@@ -119,7 +119,7 @@ export function HamburgerMenu() {
             onClick={() => go("/profile")}
             className="mt-2 flex w-full items-center gap-3 rounded-2xl bg-secondary/60 p-3 text-left transition-colors hover:bg-secondary"
           >
-            <Avatar src={user.avatar_url} size={48} frame={user.frame_enabled ? user.equipped_frame : null} />
+            <Avatar src={user.avatar_url} size={48} frame={user.frame_enabled ? user.equipped_frame : null} frameStyle={user.custom_frame} />
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-base font-black">{user.display_name}</div>
               <div className="truncate text-xs text-muted-foreground">@{user.username}</div>

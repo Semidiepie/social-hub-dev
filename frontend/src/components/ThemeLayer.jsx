@@ -6,10 +6,11 @@ import { themeById } from "@/lib/cosmetics";
 // accent + renders a subtle full-screen particle animation. Web only.
 export default function ThemeLayer() {
   const { user } = useAuth();
-  const theme = useMemo(
-    () => (user?.theme_enabled && user?.active_theme ? themeById(user.active_theme) : null),
-    [user],
-  );
+  const theme = useMemo(() => {
+    if (!user?.theme_enabled || !user?.active_theme) return null;
+    if (user.active_theme === "custom" && user.custom_theme) return user.custom_theme;
+    return themeById(user.active_theme);
+  }, [user]);
 
   useEffect(() => {
     const root = document.documentElement;

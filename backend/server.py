@@ -133,6 +133,8 @@ class UserPublic(BaseModel):
     theme_enabled: bool = True
     tokens: int = 0
     owned_frames: list[str] = Field(default_factory=list)
+    custom_frame: Optional[dict] = None
+    custom_theme: Optional[dict] = None
 
 
 class RegisterBody(BaseModel):
@@ -359,6 +361,8 @@ def user_to_public(u: dict) -> UserPublic:
         theme_enabled=u.get("theme_enabled", True),
         tokens=int(u.get("tokens", 0) or 0),
         owned_frames=u.get("owned_frames") or [],
+        custom_frame=u.get("custom_frame"),
+        custom_theme=u.get("custom_theme"),
     )
 
 
@@ -764,17 +768,21 @@ async def update_cosmetics(body: CosmeticsBody, current: Annotated[dict, Depends
     updates: dict = {}
     if body.equipped_frame is not None:
         val = body.equipped_frame or None
-        if val and val not in _FRAME_IDS:
+        if val and val != "custom" and val not in _FRAME_IDS:
             raise HTTPException(400, "Unknown frame")
-        if val and val in wallet_core.PREMIUM_FRAME_IDS:
+        if val == "custom" and not current.get("custom_frame"):
+            raise HTTPException(400, "Design a custom frame in the Sage studio first")
+        if val and val != "custom" and val in wallet_core.PREMIUM_FRAME_IDS:
             owned = (await db.users.find_one({"id": current["id"]}, {"_id": 0, "owned_frames": 1}) or {}).get("owned_frames") or []
             if val not in owned:
                 raise HTTPException(403, "Buy this frame in the Store first")
         updates["equipped_frame"] = val
     if body.active_theme is not None:
         val = body.active_theme or None
-        if val and val not in _THEME_IDS:
+        if val and val != "custom" and val not in _THEME_IDS:
             raise HTTPException(400, "Unknown theme")
+        if val == "custom" and not current.get("custom_theme"):
+            raise HTTPException(400, "Design a custom theme in the Sage studio first")
         updates["active_theme"] = val
     if body.frame_enabled is not None:
         updates["frame_enabled"] = body.frame_enabled
@@ -782,6 +790,155 @@ async def update_cosmetics(body: CosmeticsBody, current: Annotated[dict, Depends
         updates["theme_enabled"] = body.theme_enabled
     if updates:
         await db.users.update_one({"id": current["id"]}, {"$set": updates})
+    u = await db.users.find_one({"id": current["id"]})
+    return user_to_public(u)
+
+
+COSMETIC_COST = 50
+_COSMETIC_SYSTEM = (
+    "You are Sage, a friendly cosmetic designer for the PostMePlex social app. You help a user design a custom "
+    "profile {KIND} by chatting. Respond with ONLY one compact JSON object each turn — no prose, no markdown.\n"
+    "Ask ONE short question at a time (colors, vibe, mood), proposing a smart default. Ask AT MOST 3 questions, "
+    "then switch to ready. If the user attached a reference image, draw the palette/mood from it.\n"
+    "While gathering info: {\"mode\":\"ask\",\"message\":\"<one question with a suggested default>\",\"summary\":\"<short running summary>\"}\n"
+    "When ready: {\"mode\":\"ready\",\"summary\":\"<friendly recap>\",\"spec\":{...}}\n"
+    "For a FRAME the spec is: {\"type\":\"frame\",\"name\":string(<=24),\"c1\":\"#RRGGBB\",\"c2\":\"#RRGGBB\",\"c3\":\"#RRGGBB\","
+    "\"speed\":number 1.5-6 (seconds per full spin, lower=faster),\"glow\":boolean}. Pick 3 harmonious colors for a glossy animated ring.\n"
+    "For a THEME the spec is: {\"type\":\"theme\",\"name\":string(<=24),\"primary\":\"H S% L%\" (a CSS HSL triplet e.g. \\\"265 85% 60%\\\"),"
+    "\"emoji\":\"<ONE emoji that gently falls across the screen>\",\"blurb\":string(<=60)}. The emoji is the falling animation."
+)
+
+
+async def _cosmetic_turn(kind: str, transcript: list, image_b64: Optional[str]) -> dict:
+    key = settings_store.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(503, "Sage AI isn't configured")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+
+    system = _COSMETIC_SYSTEM.replace("{KIND}", kind)
+    convo = "\n".join(f"{'USER' if m['role'] == 'user' else 'SAGE'}: {m['content']}" for m in transcript)
+    prompt = ("Conversation so far:\n" + convo +
+              "\n\nRespond now with the next JSON object (mode 'ask' or 'ready'). Output ONLY JSON.")
+    for _ in range(2):
+        try:
+            chat = LlmChat(api_key=key, session_id=f"sage-cosmetic-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-4.1-mini")
+            if image_b64:
+                msg = UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)])
+            else:
+                msg = UserMessage(text=prompt)
+            resp = await chat.send_message(msg)
+            data = _parse_cosmetic_json(resp)
+            if isinstance(data, dict) and data.get("mode") in ("ask", "ready"):
+                return data
+        except Exception as e:
+            logger.warning(f"[cosmetic] turn failed: {e}")
+    return {"mode": "ask", "message": "Hmm, I lost my thread for a moment — tell me a bit more about the colors or vibe you want?", "summary": ""}
+
+
+def _parse_cosmetic_json(text: str) -> dict:
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+    s, e = t.find("{"), t.rfind("}")
+    if s == -1 or e == -1:
+        raise ValueError("no json")
+    return _json.loads(t[s:e + 1])
+
+
+def _normalize_cosmetic(kind: str, raw: dict) -> dict:
+    import re as _re
+    hexre = _re.compile(r"^#[0-9a-fA-F]{6}$")
+    if kind == "frame":
+        def col(v, d):
+            v = str(v or "").strip()
+            return v if hexre.match(v) else d
+        return {
+            "type": "frame",
+            "name": (str(raw.get("name") or "My Frame").strip()[:24]) or "My Frame",
+            "c1": col(raw.get("c1"), "#FF6B3D"),
+            "c2": col(raw.get("c2"), "#FFD166"),
+            "c3": col(raw.get("c3"), "#FF006E"),
+            "speed": max(1.5, min(6.0, float(raw.get("speed") or 3.0))),
+            "glow": bool(raw.get("glow", True)),
+        }
+    primary = str(raw.get("primary") or "265 85% 60%").strip()
+    if not _re.match(r"^\d{1,3}\s+\d{1,3}%\s+\d{1,3}%$", primary):
+        primary = "265 85% 60%"
+    emoji = str(raw.get("emoji") or "✨").strip()[:4] or "✨"
+    return {
+        "type": "theme",
+        "name": (str(raw.get("name") or "My Theme").strip()[:24]) or "My Theme",
+        "primary": primary,
+        "emoji": emoji,
+        "blurb": str(raw.get("blurb") or "").strip()[:60],
+    }
+
+
+class CosmeticStudioChatBody(BaseModel):
+    session_id: Optional[str] = None
+    kind: str = "frame"  # "frame" | "theme"
+    message: str = Field(min_length=1, max_length=800)
+    image_b64: Optional[str] = None
+
+
+class CosmeticStudioCreateBody(BaseModel):
+    session_id: str
+
+
+@app.post("/api/market/cosmetic-studio/chat")
+async def cosmetic_studio_chat(body: CosmeticStudioChatBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Conversational Sage studio where a user designs a custom frame or theme (optionally from a reference image)."""
+    kind = body.kind if body.kind in ("frame", "theme") else "frame"
+    if body.session_id:
+        sess = await db.cosmetic_studio_sessions.find_one({"id": body.session_id, "user_id": current["id"]})
+        if not sess:
+            raise HTTPException(404, "Studio session not found")
+        kind = sess.get("kind", kind)
+    else:
+        sess = {"id": str(uuid.uuid4()), "user_id": current["id"], "kind": kind, "transcript": [], "spec": None, "created_at": now()}
+        await db.cosmetic_studio_sessions.insert_one({**sess})
+    transcript = list(sess.get("transcript") or [])
+    transcript.append({"role": "user", "content": body.message.strip()[:800]})
+    data = await _cosmetic_turn(kind, transcript, body.image_b64)
+    spec = None
+    if data.get("mode") == "ready":
+        spec = _normalize_cosmetic(kind, data.get("spec") or {})
+    transcript.append({"role": "assistant", "content": (data.get("message") or data.get("summary") or "")[:800]})
+    final_spec = spec if spec is not None else sess.get("spec")
+    await db.cosmetic_studio_sessions.update_one(
+        {"id": sess["id"]},
+        {"$set": {"transcript": transcript, "spec": final_spec, "kind": kind, "updated_at": now()}},
+    )
+    return {
+        "session_id": sess["id"],
+        "kind": kind,
+        "mode": data.get("mode"),
+        "message": data.get("message") or "",
+        "summary": data.get("summary") or "",
+        "spec_ready": final_spec is not None,
+        "spec": final_spec,
+        "cost": COSMETIC_COST,
+    }
+
+
+@app.post("/api/market/cosmetic-studio/create", response_model=UserPublic)
+async def cosmetic_studio_create(body: CosmeticStudioCreateBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Charge 50 tokens, save the Sage-designed cosmetic to the user and auto-equip it."""
+    sess = await db.cosmetic_studio_sessions.find_one({"id": body.session_id, "user_id": current["id"]})
+    if not sess:
+        raise HTTPException(404, "Studio session not found")
+    spec = sess.get("spec")
+    if not spec:
+        raise HTTPException(400, "Keep chatting with Sage until the design is ready.")
+    bal = await wallet_core.spend(db, now, current["id"], COSMETIC_COST, "purchase",
+                                  f"Sage {spec['type']}: {spec.get('name', '')}")
+    if bal is None:
+        raise HTTPException(402, f"You need {COSMETIC_COST} tokens to create this")
+    if spec["type"] == "frame":
+        await db.users.update_one({"id": current["id"]}, {"$set": {"custom_frame": spec, "equipped_frame": "custom", "frame_enabled": True}})
+    else:
+        await db.users.update_one({"id": current["id"]}, {"$set": {"custom_theme": spec, "active_theme": "custom", "theme_enabled": True}})
+    await db.cosmetic_studio_sessions.delete_one({"id": sess["id"]})
     u = await db.users.find_one({"id": current["id"]})
     return user_to_public(u)
 
@@ -1568,6 +1725,49 @@ async def reels(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
 # ============================================================
 # Routes — Posts / Reels CRUD
 # ============================================================
+async def _notify_followers_new_post(author: dict, post: dict) -> None:
+    """Fan out an in-app + push notification to everyone who follows the author."""
+    try:
+        follows = await db.follows.find({"followee_id": author["id"]}, {"_id": 0, "follower_id": 1}).to_list(5000)
+        follower_ids = [f["follower_id"] for f in follows]
+        if not follower_ids:
+            return
+        kind = post.get("type", "post")
+        link = f"/reels/{post['id']}" if kind == "reel" else f"/posts/{post['id']}"
+        preview = (post.get("caption") or "").strip()
+        preview = (preview[:60] + "…") if len(preview) > 60 else preview
+        verb = "shared a new reel" if kind == "reel" else "shared a new post"
+        text = f"{verb}" + (f": {preview}" if preview else "")
+        docs = [{
+            "id": str(uuid.uuid4()),
+            "user_id": fid,
+            "type": "post",
+            "actor_id": author["id"],
+            "actor_name": author["display_name"],
+            "actor_avatar": avatar_or_default(author.get("avatar_url")),
+            "text": text,
+            "link": link,
+            "post_id": post["id"],
+            "read": False,
+            "created_at": now(),
+        } for fid in follower_ids]
+        if docs:
+            await db.notifications.insert_many(docs)
+        title = f"{author['display_name']} posted"
+        body_msg = preview or f"{author['display_name']} {verb}."
+        try:
+            await send_push(recipients=follower_ids, data={"title": title, "message": body_msg, "action_url": link})
+        except Exception as e:
+            logger.warning(f"post push failed: {e}")
+        for fid in follower_ids:
+            try:
+                await send_web_push(fid, title, body_msg, link)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"notify followers failed: {e}")
+
+
 @app.post("/api/posts")
 async def create_post(body: CreatePostBody, current: Annotated[dict, Depends(get_current_user)]):
     post_id = str(uuid.uuid4())
@@ -1588,6 +1788,7 @@ async def create_post(body: CreatePostBody, current: Annotated[dict, Depends(get
     }
     await db.posts.insert_one(doc)
     await db.users.update_one({"id": current["id"]}, {"$inc": {"posts_count": 1}})
+    await _notify_followers_new_post(current, doc)
     return await serialize_post(doc, current["id"])
 
 

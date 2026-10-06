@@ -1,0 +1,40 @@
+{
+  "summary": "Sage Cosmetic Studio (frame + theme) and follower post-notifications verified end-to-end on web. 10/10 backend pytest cases pass against the external REACT_APP_BACKEND_URL. Full UI flow confirmed in Market: /market loads, cosmetic-studio card renders, frame/theme toggle works, chat with Sage returns a reply, preview+Create(50) button appear, clicking Create charges exactly 50 tokens (100 -> 50), custom frame auto-equips, and the custom animated ring renders on the user's sidebar avatar. No regressions observed in Avatar custom-frame rendering or ThemeLayer rendering.",
+  "platforms_tested": ["web"],
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration46_cosmetic_studio.py",
+    "/app/test_reports/pytest/iteration46_studio.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 3301 lines — long overdue for splitting into routers (cosmetics/studio, posts, notifications, auth) per the >700-line rule.",
+    "_notify_followers_new_post uses dict access post.get('type','post') -> link only built for /posts/{id}. For reels (type='reel') the link should probably point to /reels/{id} rather than /posts/{id}. Follower notification currently always links to /posts/{id} even when the content is a reel. (server.py:1736, 1795-1810).",
+    "cosmetic_studio_chat creates a fresh LlmChat session every turn (uuid4 session_id in _cosmetic_turn), so the LLM has no context across turns — the server reconstructs the conversation as a flat prompt string. Works but defeats the purpose of session_id. Low priority.",
+    "No cap on how many studio sessions a user can have open (db.cosmetic_studio_sessions). Consider pruning abandoned sessions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration46_cosmetic_studio.py"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "Fresh TEST_-prefixed accounts created via POST /api/auth/register (auto-purged on backend restart). Founder PIN login (semidiepie@gmail.com / 7455) available but not needed.",
+  "seed_data_creation": "None required. The test file registers its own test_ accounts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression file for this iteration lives at /app/backend/tests/test_iteration46_cosmetic_studio.py. It calls the real Emergent LLM (openai gpt-4.1-mini) — budget LLM credits accordingly if you re-run (it burns ~6-10 chat turns per full pass). UI flow uses the registered JWT injected into localStorage key 'postmeplex.token' then navigates to /market; this avoids /login PIN flow which requires knowing the correct PIN. All data-testids on Market page confirmed present: market-page, market-balance-pill, cosmetic-studio, studio-kind-frame/theme, studio-transcript, studio-msg-user/sage, studio-preview, studio-create, studio-upload, studio-input, studio-send, market-frame-custom.",
+  "rca of the issue": "N/A — no issues to RCA. Everything requested works."
+}

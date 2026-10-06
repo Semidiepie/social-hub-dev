@@ -137,7 +137,7 @@ export function AppShell({ children }) {
           ) : user ? (
             <div className="flex items-center gap-3 rounded-xl bg-secondary/50 p-2">
               <NavLink to="/profile" className="flex flex-1 items-center gap-3" data-testid="sidebar-profile-link">
-                <Avatar src={user.avatar_url} size={40} frame={user.frame_enabled ? user.equipped_frame : null} />
+                <Avatar src={user.avatar_url} size={40} frame={user.frame_enabled ? user.equipped_frame : null} frameStyle={user.custom_frame} />
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="truncate text-sm font-semibold">{user.display_name}</div>
                   <div className="truncate text-xs text-muted-foreground">@{user.username}</div>

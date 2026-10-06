@@ -2,7 +2,7 @@ import React from "react";
 import { AVATAR_FALLBACK, badgeCls, badgeStyle } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
 
-export function Avatar({ src, alt, size = 40, className = "", ring = false, frame = null, live = false }) {
+export function Avatar({ src, alt, size = 40, className = "", ring = false, frame = null, frameStyle = null, live = false }) {
   const inner = (
     <div
       className={`inline-flex items-center justify-center overflow-hidden rounded-full bg-secondary ${
@@ -20,9 +20,23 @@ export function Avatar({ src, alt, size = 40, className = "", ring = false, fram
       />
     </div>
   );
-  const core = !frame ? inner : (
+  // Custom (Sage-designed) frame renders from an inline spec; preset frames use a CSS class.
+  const customRing =
+    frame === "custom" && frameStyle
+      ? {
+          background: `conic-gradient(from 0deg, ${frameStyle.c1}, ${frameStyle.c2}, ${frameStyle.c3}, ${frameStyle.c1})`,
+          animation: `pmp-spin ${frameStyle.speed || 3}s linear infinite`,
+          boxShadow: frameStyle.glow ? `0 0 14px 3px ${frameStyle.c1}99` : "none",
+        }
+      : null;
+  const showFrame = frame && (frame !== "custom" || customRing);
+  const core = !showFrame ? inner : (
     <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <span className={`pmp-frame pmp-frame-${frame}`} aria-hidden />
+      {customRing ? (
+        <span className="pmp-frame" style={customRing} aria-hidden />
+      ) : (
+        <span className={`pmp-frame pmp-frame-${frame}`} aria-hidden />
+      )}
       {inner}
     </span>
   );

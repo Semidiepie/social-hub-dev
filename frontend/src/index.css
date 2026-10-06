@@ -343,8 +343,8 @@ html, body {
 .pmp-board-shake { animation: pmp-shake .22s ease; }
 @keyframes pmp-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 
-.pmp-particle { position: absolute; width: 8px; height: 8px; border-radius: 50%; margin: -4px 0 0 -4px; pointer-events: none; animation: pmp-particle .5s ease-out forwards; }
-@keyframes pmp-particle { to { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; } }
+.pmp-burst { position: absolute; width: 8px; height: 8px; border-radius: 50%; margin: -4px 0 0 -4px; pointer-events: none; animation: pmp-burst .5s ease-out forwards; }
+@keyframes pmp-burst { to { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; } }
 
 .pmp-combo-pop { position: absolute; left: 50%; top: 42%; text-align: center; pointer-events: none; z-index: 5; animation: pmp-combo .85s ease-out forwards; }
 .pmp-combo-x { font-weight: 900; font-size: 24px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
