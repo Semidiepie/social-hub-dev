@@ -185,8 +185,8 @@ export default function GameMapPage() {
         </div>
       </header>
 
-      <div className="relative rounded-3xl border border-border bg-gradient-to-b from-primary/5 to-transparent p-6">
-        <div className="flex flex-col items-center gap-5">
+      <div className="pmp-saga" data-testid="saga-map">
+        <div className="flex flex-col items-center gap-2">
           {levels.map((n, idx) => {
             const info = progress.levels[String(n)];
             const done = info?.completed;
@@ -195,17 +195,24 @@ export default function GameMapPage() {
             // zig-zag saga layout
             const offset = (idx % 4 === 1 ? 70 : idx % 4 === 3 ? -70 : 0);
             return (
-              <div key={n} style={{ transform: `translateX(${offset}px)` }} className="flex flex-col items-center">
-                <button
-                  className={`pmp-level-node ${cls}`}
-                  onClick={() => unlocked && openLevel(n)}
-                  disabled={!unlocked}
-                  data-testid={`level-node-${n}`}
-                >
-                  {unlocked ? n : <Lock size={18} />}
-                </button>
-                {done && <div className="mt-1"><Stars n={info.stars} size={12} /></div>}
-              </div>
+              <React.Fragment key={n}>
+                {idx > 0 && (
+                  <div className="flex items-center gap-1.5 py-0.5" aria-hidden>
+                    <span className="pmp-saga-dot" /><span className="pmp-saga-dot" /><span className="pmp-saga-dot" />
+                  </div>
+                )}
+                <div style={{ transform: `translateX(${offset}px)` }} className="flex flex-col items-center">
+                  <button
+                    className={`pmp-level-node ${cls}`}
+                    onClick={() => unlocked && openLevel(n)}
+                    disabled={!unlocked}
+                    data-testid={`level-node-${n}`}
+                  >
+                    {unlocked ? n : <Lock size={18} />}
+                  </button>
+                  {done && <div className="mt-1"><Stars n={info.stars} size={12} /></div>}
+                </div>
+              </React.Fragment>
             );
           })}
         </div>

@@ -1,0 +1,32 @@
+{
+  "summary": "E2E tested PostMePlex Match (Candy Crush revamp) on web. Saga map, board, HUD, valid/invalid swaps, cascades, and all 3 boosters work. Backend /complete endpoint returns correct stars/unlocked/tokens_earned. One CRITICAL frontend bug: clicking the mute toggle crashes the entire Match3Board with 'sfx.setMuted is not a function' (red runtime-error overlay).",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [
+        {"component": "Match3Board - mute toggle", "issue": "Clicking btn-mute throws TypeError: sfx.setMuted is not a function and crashes the board with a full red CRA error overlay. Root cause: Match3Board.jsx:98 calls sfx.setMuted(!m), but in /app/frontend/src/games/sfx.js setMuted is exported as a standalone function, NOT a property of the sfx object (sfx only has pop/swap/invalid/special/booster/win/lose). Fix: add `setMuted(v){ muted = v; }` to the sfx object literal in sfx.js, or import { setMuted } from '@/games/sfx' in Match3Board and call setMuted(!m) directly.", "selector": "[data-testid='btn-mute']", "priority": "CRITICAL"}
+      ],
+      "integration_issues": [],
+      "design_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [
+    "FIX CRITICAL: expose setMuted on the sfx object (or import setMuted directly in Match3Board). Without this, any user who taps 🔊 to mute will crash out of the level and lose their progress."
+  ],
+  "critical_code_review_comments": [
+    "sfx.js exports setMuted/isMuted as standalone functions, but Match3Board treats them as sfx.setMuted — API mismatch between modules.",
+    "finish-level-btn only renders when score>=target so it can't be reached without actually clearing to 2,325 pts; backend /complete endpoint itself is verified working (200, stars=3, tokens_earned=25, unlocked=3 for the founder on level 2).",
+    "Boosters work but the Hammer tile pick happens via a plain onClick on .pmp-candy; this means a mis-tap during armed state will always consume a smash. Consider confirming or allowing the user to disarm by clicking the Hammer booster again (code already supports toggle via armHammer)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "~85% (core gameplay OK; mute toggle crash is the single blocking defect)"},
+  "test_credentials": "Founder login via POST /api/auth/login-pin {identifier:'semidiepie', pin:'7455'} works; access_token stored at localStorage['postmeplex.token']. Founder has levels 1 and 2 unlocked on postmeplex-match.",
+  "seed_data_creation": "",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Verified: saga-map renders 30 level-node-{n} buttons (locked ones disabled with Lock icon); clicking an unlocked node opens level-intro, then level-start-btn opens the match3-board with 64 .pmp-candy tiles. HUD moves/score work. VALID adjacent swap (planned via DOM color scan — ABA + B above/below pattern) increased score 0->180 and decremented moves 28->27. INVALID adjacent swap (two different-color neighbors whose swap doesn't produce a 3-line) kept score & moves unchanged. +5 Moves booster: moves 27->32, count 2->1. Shuffle: board grid DOM changed, count 3->2. Hammer: armed then tapped tile, score 180->240 (one tile cleared), count 3->2. Backend POST /api/games/postmeplex-match/levels/2/complete {score:9999} -> 200 {won:true, stars:3, target:2325, unlocked:3, tokens_earned:25, best:9999}. UNVERIFIED visually in-UI: special candy minting (striped/wrapped/color-bomb) and finish-level-btn appearing (would need the test to clear to 2,325 pts — doable but slow; engine logic for row/col/wrap/bomb looks correct in match3.js).",
+  "rca of the issue": "sfx module (/app/frontend/src/games/sfx.js) exports two shapes: (1) a `sfx` object with sound methods, (2) standalone `setMuted`/`isMuted` functions. Match3Board.jsx:98 incorrectly calls `sfx.setMuted(!m)` — the sfx object has no setMuted property, so the call throws TypeError at the first mute tap. The CRA dev error overlay then masks the whole gameplay surface. Reproduction: open /games/postmeplex-match, enter any level, click [data-testid='btn-mute'] once. Mitigation: add `setMuted(v){ muted = v; }` to the sfx object in sfx.js (keeps the component unchanged), OR change Match3Board import to `import { sfx, setMuted } from '@/games/sfx'` and replace `sfx.setMuted(!m)` with `setMuted(!m)`."
+}

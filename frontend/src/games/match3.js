@@ -76,8 +76,8 @@ export function findMatches(grid) {
   return out;
 }
 
-// Longest run length + orientation through a specific cell (used to mint a special).
-function runThrough(grid, r, c) {
+// Horizontal & vertical run lengths through a cell (used to mint specials).
+function runHV(grid, r, c) {
   const rows = grid.length;
   const cols = grid[0].length;
   const t = grid[r][c].t;
@@ -87,8 +87,7 @@ function runThrough(grid, r, c) {
   let v = 1;
   for (let k = r - 1; k >= 0 && grid[k][c] && grid[k][c].t === t; k--) v++;
   for (let k = r + 1; k < rows && grid[k][c] && grid[k][c].t === t; k++) v++;
-  const len = Math.max(h, v);
-  return { len, horizontal: h >= v };
+  return { h, v };
 }
 
 // Apply gravity + refill empties from the top. Mutates and returns the grid.
@@ -135,6 +134,10 @@ function detonate(grid, keys) {
       for (let cc = 0; cc < cols; cc++) add(r, cc);
     } else if (cell.s === "col") {
       for (let rr = 0; rr < rows; rr++) add(rr, c);
+    } else if (cell.s === "wrap") {
+      for (let rr = r - 1; rr <= r + 1; rr++)
+        for (let cc = c - 1; cc <= c + 1; cc++)
+          if (rr >= 0 && cc >= 0 && rr < rows && cc < cols) add(rr, cc);
     } else if (cell.s === "bomb") {
       const target = cell.bombColor != null ? cell.bombColor : cell.t;
       for (let rr = 0; rr < rows; rr++)
@@ -165,10 +168,33 @@ export function hasMove(grid, colors) {
       if (c + 1 < cols && test(r, c, r, c + 1)) return true;
       if (r + 1 < rows && test(r, c, r + 1, c)) return true;
     }
-  // also playable if a bomb exists
+  // also playable if any special exists (can always be detonated)
   for (let r = 0; r < rows; r++)
-    for (let c = 0; c < cols; c++) if (grid[r][c] && grid[r][c].s === "bomb") return true;
+    for (let c = 0; c < cols; c++) if (grid[r][c] && grid[r][c].s) return true;
   return false;
+}
+
+// Resolve a set of forced clears (e.g. a Hammer booster removing one tile, or
+// a bomb detonation) through all cascades. Returns animate steps like trySwap.
+export function resolveClears(grid, colors, keys, SCORE_PER = 60) {
+  const g = clone(grid);
+  const steps = [];
+  let total = 0;
+  let clearedKeys = detonate(g, new Set(keys));
+  while (clearedKeys && clearedKeys.size > 0) {
+    const gained = clearedKeys.size * SCORE_PER;
+    total += gained;
+    for (const k of clearedKeys) {
+      const [r, c] = k.split(",").map(Number);
+      g[r][c] = null;
+    }
+    collapse(g, colors);
+    steps.push({ grid: clone(g), cleared: [...clearedKeys], gained });
+    const next = findMatches(g);
+    clearedKeys = next.size ? detonate(g, next) : null;
+  }
+  if (steps.length === 0) return null;
+  return { steps, score: total, grid: g };
 }
 
 export function areAdjacent(a, b) {
@@ -221,13 +247,18 @@ export function trySwap(grid, colors, a, b, SCORE_PER = 60) {
     // Mint a special at a swapped endpoint if its run is long enough.
     const mint = (pos) => {
       if (!matches.has(`${pos.r},${pos.c}`)) return false;
-      const info = runThrough(g, pos.r, pos.c);
-      if (info.len >= 5) {
+      const { h, v } = runHV(g, pos.r, pos.c);
+      const len = Math.max(h, v);
+      if (len >= 5) {
         g[pos.r][pos.c] = { ...g[pos.r][pos.c], s: "bomb" };
         return true;
       }
-      if (info.len === 4) {
-        g[pos.r][pos.c] = { ...g[pos.r][pos.c], s: info.horizontal ? "row" : "col" };
+      if (h >= 3 && v >= 3) {
+        g[pos.r][pos.c] = { ...g[pos.r][pos.c], s: "wrap" };
+        return true;
+      }
+      if (len === 4) {
+        g[pos.r][pos.c] = { ...g[pos.r][pos.c], s: h >= v ? "row" : "col" };
         return true;
       }
       return false;
