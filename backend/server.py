@@ -2412,6 +2412,29 @@ async def admin_grant_tokens(
     return user_to_public(fresh)
 
 
+@app.post("/api/admin/users/{user_id}/reset-spins")
+async def admin_reset_spins(user_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    """Super-admin: refill a user's slot spins (energy) to full on every slot game they play."""
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Super admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    epoch = int(now().timestamp())
+    states = await db.slots_state.find({"user_id": user_id}).to_list(200)
+    reset_count = 0
+    for st in states:
+        g = await db.games.find_one({"id": st["game_id"]}, {"_id": 0, "config": 1})
+        cap = int(((g or {}).get("config") or {}).get("energy_cap", 50))
+        await db.slots_state.update_one(
+            {"id": st["id"]},
+            {"$set": {"energy": cap, "last_energy_at": epoch, "updated_at": now()}},
+        )
+        reset_count += 1
+    logger.info("[admin] reset spins for user %s (@%s) across %d game(s)", user_id, target.get("username"), reset_count)
+    return {"status": "reset", "games": reset_count}
+
+
 class AdminBanBody(BaseModel):
     reason: str = ""
 
