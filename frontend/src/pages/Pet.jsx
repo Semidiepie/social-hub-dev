@@ -38,39 +38,45 @@ function fmtCd(secs) {
   return `${secs}s`;
 }
 
+const GRASS_BG = "https://images.unsplash.com/photo-1709659754396-fea289bf16fe?crop=entropy&cs=srgb&fm=jpg&q=85&w=900";
+
 function StatBar({ stat, value }) {
   const { label, color, Icon } = stat;
   return (
-    <div className="rounded-2xl border border-emerald-900/40 bg-emerald-950/40 p-3" data-testid={`pet-stat-${stat.key}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-semibold text-emerald-50">
-          <Icon size={16} style={{ color }} /> {label}
+    <div className="flex items-center gap-3 rounded-2xl bg-white/80 p-3 ring-1 ring-black/5" data-testid={`pet-stat-${stat.key}`}>
+      <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full shadow-sm" style={{ backgroundColor: color }}>
+        <Icon size={18} className="text-white" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-emerald-950">{label}</span>
+          <span className="text-sm font-black text-emerald-950">{value}%</span>
         </div>
-        <span className="text-sm font-black text-white">{value}%</span>
-      </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-emerald-950">
-        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${value}%`, backgroundColor: color }} />
+        <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-black/10">
+          <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${value}%`, backgroundColor: color }} />
+        </div>
       </div>
     </div>
   );
 }
 
-function CareButton({ testId, label, sub, Icon, ready, onClick, busy, highlight }) {
+function ActivityTile({ testId, label, color, Icon, ready, cd, busy, onClick }) {
   return (
     <button
       onClick={onClick}
       disabled={!ready || busy}
       data-testid={testId}
-      className={`flex flex-col items-center gap-1.5 transition-transform ${ready ? "hover:scale-105 active:scale-95" : "opacity-50"}`}
+      className={`group flex flex-col items-center gap-2 rounded-3xl p-4 transition-all duration-200 ${ready ? "hover:-translate-y-1 active:scale-95" : "opacity-60"}`}
+      style={{ background: `${color}1a` }}
     >
       <span
-        className={`flex h-16 w-16 items-center justify-center rounded-full border-2 ${
-          highlight && ready ? "border-amber-400 bg-emerald-800/60" : "border-emerald-700/50 bg-emerald-900/50"
-        }`}
+        className="flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg transition-transform duration-200 group-hover:scale-110 group-hover:rotate-3"
+        style={{ backgroundColor: color }}
       >
-        {busy ? <Loader2 className="h-6 w-6 animate-spin text-emerald-200" /> : <Icon size={26} className="text-emerald-100" />}
+        {busy ? <Loader2 className="h-7 w-7 animate-spin text-white" /> : <Icon size={30} className="text-white" />}
       </span>
-      <span className="text-xs font-medium text-emerald-200/80">{ready ? label : sub}</span>
+      <span className="text-sm font-black text-emerald-950">{label}</span>
+      <span className="text-[11px] font-semibold text-emerald-700/60">{ready ? "Ready" : fmtCd(cd)}</span>
     </button>
   );
 }
@@ -143,6 +149,7 @@ export default function PetPage() {
   const [nameDraft, setNameDraft] = useState("");
   const [styleOpen, setStyleOpen] = useState(false);
   const [styleText, setStyleText] = useState("");
+  const [bgText, setBgText] = useState("");
   const [studioMsgs, setStudioMsgs] = useState([]);
   const studioRef = useRef(null);
   const [cd, setCd] = useState({ play: 0, feed: 0, bath: 0 });
@@ -274,6 +281,23 @@ export default function PetPage() {
     }
   };
 
+  const generateBackground = async (preset) => {
+    const instruction = (preset ?? bgText).trim();
+    if (instruction.length < 2) return toast.error("Describe the background you want");
+    if (busy === "bg") return;
+    setBusy("bg");
+    try {
+      const { pet: p } = await api.post("/pet/background", { prompt: instruction });
+      applyPet(p);
+      setBgText("");
+      toast.success("Sage AI painted a new background! 🎨");
+    } catch (e) {
+      toast.error(e.message || "Background generation failed");
+    } finally {
+      setBusy("");
+    }
+  };
+
   const removePet = async () => {
     if (!window.confirm("Release this pet? This cannot be undone.")) return;
     try {
@@ -381,26 +405,28 @@ export default function PetPage() {
         </button>
       )}
 
-      {/* Pet display card */}
-      <div className="relative overflow-hidden rounded-3xl border border-emerald-800/50 bg-gradient-to-b from-emerald-800/50 to-emerald-950/80 p-5">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 rounded-full bg-emerald-950/70 px-3 py-1.5 text-sm font-black text-amber-300" data-testid="pet-level">
-            <Star size={16} className="fill-amber-400 text-amber-400" /> Lv {level}
-          </span>
-          <span className="rounded-full bg-emerald-950/70 px-3 py-1.5 text-sm font-bold text-emerald-100" data-testid="pet-xp">
-            {pet.xp}/{pet.xp_to_level} XP
-          </span>
-        </div>
-
-        <div className="relative mt-2 flex flex-col items-center">
-          {pet.ai_styled && (
-            <span className="absolute right-0 top-0 z-10 flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white">
-              <Sparkles size={11} /> AI Styled
+      {/* Pet display card — clean, light, nature scene */}
+      <div className="relative overflow-hidden rounded-[2rem] bg-white shadow-xl ring-1 ring-black/5" data-testid="pet-card">
+        {/* Grass scene with the pet */}
+        <div className="relative">
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${pet.background_url || GRASS_BG})` }} />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-white" />
+          <div className="relative z-10 flex items-start justify-between p-4">
+            <span className="flex items-center gap-1.5 rounded-full bg-emerald-200/95 px-3 py-1.5 text-sm font-black text-emerald-900 shadow" data-testid="pet-level">
+              <Star size={15} className="fill-emerald-700 text-emerald-700" /> Lv {level}
             </span>
-          )}
+            <div className="flex flex-col items-end gap-2">
+              <span className="rounded-full bg-white/95 px-3 py-1.5 text-sm font-black text-emerald-900 shadow" data-testid="pet-xp">{pet.xp}/{pet.xp_to_level} XP</span>
+              {pet.ai_styled && (
+                <span className="flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-white shadow">
+                  <Sparkles size={11} /> AI Styled
+                </span>
+              )}
+            </div>
+          </div>
           <button
             onClick={petTap}
-            className="relative cursor-pointer select-none focus:outline-none"
+            className="relative z-10 mx-auto -mt-3 mb-[-2px] flex w-full cursor-pointer select-none justify-center focus:outline-none"
             data-testid="pet-pet-tap"
             aria-label="Pet your pet"
           >
@@ -409,85 +435,69 @@ export default function PetPage() {
               alt={pet.name}
               data-testid="pet-image"
               draggable={false}
-              className={`h-72 w-72 object-contain drop-shadow-2xl sm:h-80 sm:w-80 ${reactAnim ? "animate-pet-bounce" : "animate-pet-idle"}`}
+              className={`h-64 w-64 object-contain drop-shadow-2xl sm:h-72 sm:w-72 ${reactAnim ? "animate-pet-bounce" : "animate-pet-idle"}`}
             />
             {hearts.map((h) => (
-              <span
-                key={h.id}
-                className="pointer-events-none absolute bottom-1/2 animate-pet-heart text-3xl"
-                style={{ left: `${h.x}%`, "--r": `${h.r}deg` }}
-              >
-                ❤️
-              </span>
+              <span key={h.id} className="pointer-events-none absolute bottom-1/2 animate-pet-heart text-3xl" style={{ left: `${h.x}%`, "--r": `${h.r}deg` }}>❤️</span>
             ))}
           </button>
-          <span className="mt-1 rounded-full bg-emerald-950/80 px-4 py-2 text-base font-bold text-white" data-testid="pet-mood">
-            {pet.mood}
-          </span>
-          <span className="mt-1 text-xs text-emerald-200/50">Tap your pet to pet it 💚</span>
         </div>
 
-        <div className="mt-4">
-          <div className="mb-1 text-xs font-semibold text-emerald-200/80">Level {level}/10 · {pet.stage}</div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-950/70">
-            <div className="h-full rounded-full bg-emerald-400 transition-all duration-500" style={{ width: `${xpPct}%` }} />
+        {/* Light info area */}
+        <div className="relative px-5 pb-5 pt-1 text-center">
+          {editingName ? (
+            <div className="flex items-center justify-center gap-2">
+              <input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                maxLength={40}
+                autoFocus
+                data-testid="pet-name-input"
+                className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-center text-2xl font-black text-emerald-950 outline-none"
+              />
+              <button onClick={saveName} data-testid="pet-name-save" className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 text-white"><Check size={18} /></button>
+              <button onClick={() => setEditingName(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><X size={18} /></button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2">
+              <h2 className="text-4xl font-black text-emerald-950" data-testid="pet-name">{pet.name}</h2>
+              <button
+                onClick={() => { setNameDraft(pet.name === "Unnamed" ? "" : pet.name); setEditingName(true); }}
+                data-testid="pet-name-edit"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-100"
+              >
+                <Pencil size={15} />
+              </button>
+            </div>
+          )}
+          <div className="mt-0.5 text-lg font-bold text-emerald-700/80" data-testid="pet-mood">{pet.mood}</div>
+          <div className="mt-1.5 flex justify-center"><Heart size={22} className="animate-pet-bounce fill-emerald-500 text-emerald-500" /></div>
+          <div className="mt-1.5 flex items-center justify-center gap-2 text-sm font-medium text-emerald-700/60">
+            <Sparkles size={13} className="text-emerald-400" /> Tap your pet to pet it <Sparkles size={13} className="text-emerald-400" />
+          </div>
+
+          <div className="mx-auto mt-4 max-w-sm">
+            <div className="mb-1 text-left text-xs font-semibold text-emerald-700/70">Level {level}/10 · {pet.stage}</div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-emerald-100">
+              <div className="h-full rounded-full bg-emerald-500 transition-all duration-700 ease-out" style={{ width: `${xpPct}%` }} />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-2.5 text-left sm:grid-cols-2">
+            {STATS.map((s) => <StatBar key={s.key} stat={s} value={pet[s.key]} />)}
           </div>
         </div>
       </div>
 
-      {/* Name + edit */}
-      <div className="mt-5 flex items-center justify-center gap-2">
-        {editingName ? (
-          <div className="flex items-center gap-2">
-            <input
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              maxLength={40}
-              autoFocus
-              data-testid="pet-name-input"
-              className="rounded-lg border border-emerald-700 bg-emerald-950 px-3 py-1.5 text-center text-xl font-black text-white outline-none"
-            />
-            <button onClick={saveName} data-testid="pet-name-save" className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 text-emerald-950"><Check size={18} /></button>
-            <button onClick={() => setEditingName(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-900 text-emerald-200"><X size={18} /></button>
-          </div>
-        ) : (
-          <>
-            <h2 className="text-3xl font-black text-white" data-testid="pet-name">{pet.name}</h2>
-            <button
-              onClick={() => { setNameDraft(pet.name === "Unnamed" ? "" : pet.name); setEditingName(true); }}
-              data-testid="pet-name-edit"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/60"
-            >
-              <Pencil size={16} />
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {STATS.map((s) => <StatBar key={s.key} stat={s} value={pet[s.key]} />)}
-      </div>
-
-      {/* Care zone */}
-      <div className="mt-5 rounded-3xl border border-emerald-800/50 bg-emerald-900/30 p-6">
-        <div className="mb-5 text-center text-sm font-black uppercase tracking-widest text-emerald-200/80">Care Zone</div>
-        <div className="flex items-end justify-around">
-          <CareButton testId="pet-play-btn" label="Play" sub={fmtCd(cd.play)} Icon={Gamepad2} ready={cd.play <= 0} busy={busy === "play"} onClick={() => startCare("play")} />
-          <CareButton testId="pet-feed-btn" label="Feed" sub={fmtCd(cd.feed)} Icon={Drumstick} ready={cd.feed <= 0} busy={busy === "feed"} onClick={() => startCare("feed")} highlight />
-          <CareButton testId="pet-bath-btn" label="Bath" sub={fmtCd(cd.bath)} Icon={Bath} ready={cd.bath <= 0} busy={busy === "bath"} onClick={() => startCare("bath")} />
+      {/* Activities */}
+      <div className="mt-5 rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-black/5">
+        <div className="mb-4 text-center text-sm font-black uppercase tracking-widest text-emerald-800/70">Activities</div>
+        <div className="grid grid-cols-3 gap-3">
+          <ActivityTile testId="pet-feed-btn" label="Feed" color="#f59e0b" Icon={Drumstick} ready={cd.feed <= 0} cd={cd.feed} busy={busy === "feed"} onClick={() => startCare("feed")} />
+          <ActivityTile testId="pet-bath-btn" label="Bath" color="#8b5cf6" Icon={Bath} ready={cd.bath <= 0} cd={cd.bath} busy={busy === "bath"} onClick={() => startCare("bath")} />
+          <ActivityTile testId="pet-play-btn" label="Play" color="#22c55e" Icon={Gamepad2} ready={cd.play <= 0} cd={cd.play} busy={busy === "play"} onClick={() => startCare("play")} />
         </div>
       </div>
-
-      {/* Play game (bonus play) */}
-      <Button
-        onClick={() => startCare("play")}
-        disabled={cd.play > 0 || busy === "play"}
-        data-testid="pet-playgame-btn"
-        className="mt-4 h-14 w-full gap-2 bg-emerald-500 text-base font-bold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
-      >
-        <Gamepad2 size={20} /> {cd.play > 0 ? `Play Game (${fmtCd(cd.play)})` : "Play the Treat-Catch game"}
-      </Button>
 
       {/* Sage AI Studio — live restyle chat */}
       <div className="mt-4 rounded-3xl border border-violet-800/40 bg-emerald-900/30 p-4">
@@ -504,6 +514,42 @@ export default function PetPage() {
           <button onClick={removePet} data-testid="pet-remove-btn" className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold text-rose-400 hover:bg-rose-500/10">
             <Trash2 size={15} /> Release
           </button>
+        </div>
+
+        {/* Custom background generator */}
+        <div className="mt-4 rounded-2xl border border-emerald-800/50 bg-emerald-950/40 p-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-emerald-100">
+            <Wand2 size={15} className="text-violet-300" /> Custom background
+          </div>
+          <p className="mt-0.5 text-xs text-emerald-200/60">Ask Sage AI to paint a new scene for your pet.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {["Cozy bedroom at sunset", "Magical forest with fireflies", "Sunny beach", "Snowy winter village", "Candy world"].map((s) => (
+              <button
+                key={s}
+                onClick={() => generateBackground(s)}
+                disabled={busy === "bg"}
+                data-testid={`pet-bg-chip-${s.slice(0, 8)}`}
+                className="rounded-full border border-violet-700/50 bg-violet-950/40 px-3 py-1.5 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-800/40 disabled:opacity-40"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex items-end gap-2">
+            <input
+              value={bgText}
+              onChange={(e) => setBgText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generateBackground(); } }}
+              placeholder="Describe a background scene…"
+              data-testid="pet-bg-input"
+              maxLength={200}
+              disabled={busy === "bg"}
+              className="flex-1 rounded-xl border border-emerald-800/60 bg-emerald-950/60 px-4 py-3 text-sm text-white outline-none placeholder:text-emerald-200/40 focus:border-violet-400 disabled:opacity-50"
+            />
+            <Button onClick={() => generateBackground()} disabled={busy === "bg" || bgText.trim().length < 2} data-testid="pet-bg-submit" className="h-12 gap-2 bg-violet-600 px-4 font-bold text-white hover:bg-violet-500">
+              {busy === "bg" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles size={16} />}
+            </Button>
+          </div>
         </div>
 
         {styleOpen ? (

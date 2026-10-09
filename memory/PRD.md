@@ -5,6 +5,12 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — Pet screen redesign + Sage custom AI backgrounds (2026-06, web)
+- **Cleaner look (ref-inspired, original):** rebuilt the Pet card into one clean, light panel — nature scene behind the pet, Lv/XP pills, AI-Styled badge, big pet with idle/bounce animations, name + mood + animated heart + "tap to pet" hint, XP bar, and redesigned stat rows (circular colored icon badges + rounded progress). Activities (Feed/Bath/Play) are now big playful colored tiles (amber/violet/green) with hover lift + cooldown labels; keep existing interactive mini-games (FeedToss/BubbleBath/CatchGame).
+- **Sage custom background (NEW):** `POST /api/pet/background` generates a full scene via Sage's advanced Gemini image model (`gemini-3.1-flash-image-preview` "Nano Banana"), uploads to Cloudinary, stores `pet.background_url` (added to `_public`); the card uses `background_url || grass fallback`. UI: "Custom background" block in Sage Studio with preset chips + free-text prompt. Validates no-pet/dead state.
+- **Verified:** background endpoint generated a real Cloudinary scene end-to-end; dead-pet guard returns 410; `pet-card` renders; lint clean (py+js). Preview-only — redeploy for production.
+- Note: references the user shared were a third-party app; design is original using the user's own pet. Mobile has no pet screen (web-only).
+
 ## Fix — AI call volume now controllable on iOS (Web Audio gain) (2026-06, web)
 - **Insight:** iOS Safari **ignores `<audio>.volume`** (so her voice always played at full hardware/call volume, feeling "like a call"), and releasing the mic to escape that caused per-turn permission prompts.
 - **Fix:** play her voice through the **Web Audio API** (`AudioContext` → `BufferSource` → **GainNode** → destination) instead of an `<audio>` element. iOS respects Web Audio gain, so the in-call **volume slider now actually lowers her volume** on every device. Mic stays open (track muted during playback) → **no re-prompt**. `changeVolume`/`toggleSpeaker` drive `gainRef.gain`; `srcNodeRef` stopped on hangup/unmount. Removed the unused `<audio>` element + `audioRef`.

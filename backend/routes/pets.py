@@ -47,6 +47,10 @@ class StyleBody(BaseModel):
     style: str = Field(min_length=2, max_length=200)
 
 
+class BackgroundBody(BaseModel):
+    prompt: str = Field(min_length=2, max_length=200)
+
+
 def _clamp(v: float) -> int:
     return max(0, min(100, round(v)))
 
@@ -130,6 +134,16 @@ def _style_prompt(style: str) -> str:
     )
 
 
+def _background_prompt(prompt: str) -> str:
+    return (
+        f"A beautiful, cute environment/background scene for a virtual pet: {prompt}. "
+        "Full-frame scenery ONLY — absolutely NO animals, pets, characters or people in it. "
+        "Polished 3D Pixar / DreamWorks-style animated-movie look, soft dreamy depth-of-field, "
+        "bright and cheerful, gentle lighting, vertical portrait composition with an open area "
+        "in the lower-middle where a pet could sit. No text, no watermark, no UI."
+    )
+
+
 def build_router(ctx) -> APIRouter:
     db = ctx.db
     now = ctx.now
@@ -198,6 +212,7 @@ def build_router(ctx) -> APIRouter:
             "name": p.get("name") or "Unnamed",
             "description": p.get("description"),
             "image_url": p.get("image_url"),
+            "background_url": p.get("background_url"),
             "ai_styled": p.get("ai_styled", False),
             "is_dead": bool(pet.get("is_dead")),
             "died_at": pet["died_at"].isoformat() if isinstance(pet.get("died_at"), datetime) else pet.get("died_at"),
@@ -342,6 +357,19 @@ def build_router(ctx) -> APIRouter:
         image_url = await _cloudinary_upload(img_b64)
         await db.pets.update_one({"id": pet["id"]}, {"$set": {"image_url": image_url, "ai_styled": True}})
         pet.update(image_url=image_url, ai_styled=True)
+        return {"pet": _public(pet)}
+
+    @router.post("/api/pet/background")
+    async def background(body: BackgroundBody, current: Annotated[dict, Depends(get_current_user)]):
+        pet = await db.pets.find_one({"owner_id": current["id"]})
+        if not pet:
+            raise HTTPException(404, "No pet yet")
+        if pet.get("is_dead"):
+            raise HTTPException(410, "Your pet has passed away. Release it to adopt a new one.")
+        img_b64 = await _sage_generate(_background_prompt(body.prompt))
+        background_url = await _cloudinary_upload(img_b64)
+        await db.pets.update_one({"id": pet["id"]}, {"$set": {"background_url": background_url}})
+        pet.update(background_url=background_url)
         return {"pet": _public(pet)}
 
     @router.delete("/api/pet")
