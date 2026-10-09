@@ -5,6 +5,18 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — Pet care mini-games: cozy room redesign (2026-06, web)
+- **What:** replaced the flat dark care pop-ups (Feed/Bath/Play) with bright, full-screen **cozy room** scenes + hands-on drag mini-games, starring the player's own Sage pet. Pure frontend/CSS — **no AI image cost** (room art is CSS, not generated).
+  - **Feed — "Bon appétit!"**: dining nook; drag (or tap) food pieces to the pet's mouth; the pet chomps; portion counter ("N left").
+  - **Bath — "Scrub-a-dub!"**: tub; pet starts grubby with dirt smudges; drag the sponge across to scrub them off (tap a smudge = fallback); bubbles rise; "% clean" meter.
+  - **Play — "Fetch!"**: sunny garden (sun/plants); fling or tap the ball; pet chases/bounces; "N/4 fetches" meter.
+  - Shared: friendly header banner + hint, progress meter, close/cancel, mute toggle, and a confetti + happy-chime **celebration** on completion (auto-finish after 1.5s or tap **Done**). Light Web-Audio SFX (nom/splash/pop/chime) respecting a persisted mute (`pet.sfx.muted`). Tap fallback everywhere so no one gets stuck on odd touch devices.
+- **Themes:** 4 pastel room themes (Cozy Cream default / Peach / Mint / Lavender), picked from a swatch row on the pet screen and **saved to the pet** via `POST /api/pet/room-theme` (allowlisted → 400 on unknown; free, no AI). `room_theme` added to the pet doc + `_public`. Orange kept as a small accent.
+- **Balance unchanged:** completion still calls the existing `/api/pet/{feed|bath|play}` so stat gains, XP and cooldowns are identical to before (verified: feed → hunger 100, +15 XP, ~4h cooldown).
+- **Files:** `routes/pets.py` (room_theme field + endpoint), `frontend/src/pages/pet/PetPlay.jsx` (rewritten: `CareRoom` + FeedRoom/BathRoom/PlayRoom + `ROOM_THEMES`), `Pet.jsx` (theme picker + CareRoom wiring), `lib/sound.js` (pet SFX + mute), `index.css` (cozy keyframes).
+- **Verified (curl + UI screenshots):** all 3 rooms render on-brand; Feed tap-to-eat → celebration → care applied → back to pet card; theme set/persist + bad-theme 400. Lint clean (py+js). Preview-only — redeploy for production. Web-only (Phase 3 = bring to native mobile).
+
+
 ## Feature — Admin "Refresh pet" (revive any user's pet) (2026-06, web)
 - **What:** super-admins can revive & refresh ANY user's pet from **Admin → Accounts**. A dead pet comes back **alive at the same level** (XP/name/image/background all preserved), all stats are restored to 100, and the feed/bath/play **cooldowns are cleared** so the owner can instantly interact again.
 - **Backend:** `POST /api/admin/users/{user_id}/refresh-pet` (super-admin only → 403; 404 if the user has no pet) in `routes/pets.py` — sets `is_dead=False`, `died_at=None`, hunger/happiness/cleanliness/health=100, `last_play/feed/bath/reminded_at=None`, `updated_at=now()`; returns the public pet.

@@ -51,6 +51,13 @@ class BackgroundBody(BaseModel):
     prompt: str = Field(min_length=2, max_length=200)
 
 
+class RoomThemeBody(BaseModel):
+    theme: str
+
+
+ROOM_THEMES = {"cream", "peach", "mint", "lavender"}
+
+
 def _clamp(v: float) -> int:
     return max(0, min(100, round(v)))
 
@@ -213,6 +220,7 @@ def build_router(ctx) -> APIRouter:
             "description": p.get("description"),
             "image_url": p.get("image_url"),
             "background_url": p.get("background_url"),
+            "room_theme": p.get("room_theme") or "cream",
             "ai_styled": p.get("ai_styled", False),
             "is_dead": bool(pet.get("is_dead")),
             "died_at": pet["died_at"].isoformat() if isinstance(pet.get("died_at"), datetime) else pet.get("died_at"),
@@ -264,6 +272,7 @@ def build_router(ctx) -> APIRouter:
             "name": body.name or "Unnamed",
             "image_url": image_url,
             "ai_styled": True,
+            "room_theme": "cream",
             "level": 1,
             "xp": 0,
             "hunger": 100,
@@ -370,6 +379,18 @@ def build_router(ctx) -> APIRouter:
         background_url = await _cloudinary_upload(img_b64)
         await db.pets.update_one({"id": pet["id"]}, {"$set": {"background_url": background_url}})
         pet.update(background_url=background_url)
+        return {"pet": _public(pet)}
+
+    @router.post("/api/pet/room-theme")
+    async def set_room_theme(body: RoomThemeBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Save the player's chosen cozy care-room theme on their pet (free, no AI)."""
+        if body.theme not in ROOM_THEMES:
+            raise HTTPException(400, "Unknown room theme")
+        pet = await db.pets.find_one({"owner_id": current["id"]})
+        if not pet:
+            raise HTTPException(404, "No pet yet")
+        await db.pets.update_one({"id": pet["id"]}, {"$set": {"room_theme": body.theme}})
+        pet["room_theme"] = body.theme
         return {"pet": _public(pet)}
 
     @router.delete("/api/pet")

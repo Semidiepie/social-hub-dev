@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { BadgeCheck } from "lucide-react";
-import { CatchGame, BubbleBath, FeedToss, InteractionModal } from "./pet/PetPlay";
+import { CareRoom, ROOM_THEMES } from "./pet/PetPlay";
 import { enableBrowserPush, isBrowserPushEnabled, pushSupported } from "@/lib/webpush";
 
 const STATS = [
@@ -298,6 +298,18 @@ export default function PetPage() {
     }
   };
 
+  const pickTheme = async (key) => {
+    if (!pet || pet.room_theme === key) return;
+    const prev = pet.room_theme;
+    applyPet({ ...pet, room_theme: key }); // optimistic
+    try {
+      await api.post("/pet/room-theme", { theme: key });
+    } catch (e) {
+      applyPet({ ...pet, room_theme: prev });
+      toast.error(e.message || "Couldn't save theme");
+    }
+  };
+
   const removePet = async () => {
     if (!window.confirm("Release this pet? This cannot be undone.")) return;
     try {
@@ -497,6 +509,29 @@ export default function PetPage() {
           <ActivityTile testId="pet-bath-btn" label="Bath" color="#8b5cf6" Icon={Bath} ready={cd.bath <= 0} cd={cd.bath} busy={busy === "bath"} onClick={() => startCare("bath")} />
           <ActivityTile testId="pet-play-btn" label="Play" color="#22c55e" Icon={Gamepad2} ready={cd.play <= 0} cd={cd.play} busy={busy === "play"} onClick={() => startCare("play")} />
         </div>
+
+        {/* Cozy room theme picker */}
+        <div className="mt-5 border-t border-black/5 pt-4">
+          <div className="mb-2 text-center text-[11px] font-black uppercase tracking-widest text-emerald-800/60">Care-room theme</div>
+          <div className="flex items-center justify-center gap-3" data-testid="pet-theme-picker">
+            {Object.entries(ROOM_THEMES).map(([key, th]) => {
+              const active = (pet.room_theme || "cream") === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => pickTheme(key)}
+                  data-testid={`pet-theme-${key}`}
+                  title={th.label}
+                  aria-label={th.label}
+                  className={`h-11 w-11 rounded-2xl shadow-sm transition-all duration-200 active:scale-90 ${active ? "scale-110 ring-[3px] ring-offset-2" : "opacity-75 hover:opacity-100"}`}
+                  style={{ background: th.swatch, "--tw-ring-color": th.accent }}
+                >
+                  {active && <Check size={18} className="mx-auto text-white drop-shadow" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Sage AI Studio — live restyle chat */}
@@ -624,20 +659,15 @@ export default function PetPage() {
         )}
       </div>
 
-      {interaction === "play" && (
-        <InteractionModal title="🎮 Treat-Catch" onClose={() => setInteraction(null)}>
-          <CatchGame petImage={pet.image_url} onCancel={() => setInteraction(null)} onDone={() => finishCare("play")} />
-        </InteractionModal>
-      )}
-      {interaction === "feed" && (
-        <InteractionModal title="🍽️ Feeding time" onClose={() => setInteraction(null)}>
-          <FeedToss petImage={pet.image_url} onCancel={() => setInteraction(null)} onDone={() => finishCare("feed")} />
-        </InteractionModal>
-      )}
-      {interaction === "bath" && (
-        <InteractionModal title="🛁 Bath time" onClose={() => setInteraction(null)}>
-          <BubbleBath petImage={pet.image_url} onCancel={() => setInteraction(null)} onDone={() => finishCare("bath")} />
-        </InteractionModal>
+      {interaction && (
+        <CareRoom
+          activity={interaction}
+          petImage={pet.image_url}
+          petName={pet.name}
+          theme={ROOM_THEMES[pet.room_theme] || ROOM_THEMES.cream}
+          onCancel={() => setInteraction(null)}
+          onDone={() => finishCare(interaction)}
+        />
       )}
     </div>
   );
