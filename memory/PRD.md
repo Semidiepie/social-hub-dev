@@ -5,6 +5,13 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — Admin "Refresh pet" (revive any user's pet) (2026-06, web)
+- **What:** super-admins can revive & refresh ANY user's pet from **Admin → Accounts**. A dead pet comes back **alive at the same level** (XP/name/image/background all preserved), all stats are restored to 100, and the feed/bath/play **cooldowns are cleared** so the owner can instantly interact again.
+- **Backend:** `POST /api/admin/users/{user_id}/refresh-pet` (super-admin only → 403; 404 if the user has no pet) in `routes/pets.py` — sets `is_dead=False`, `died_at=None`, hunger/happiness/cleanliness/health=100, `last_play/feed/bath/reminded_at=None`, `updated_at=now()`; returns the public pet.
+- **Web:** pink **"♥ Pet"** button on each `AccountRow` in `AdminAccounts.jsx` (`account-refresh-pet-{id}`) — toast confirms level + readiness.
+- **Verified (curl + UI):** killed founder pet (is_dead, health 0) → refresh returned alive/health 100/all stats 100/level preserved/cooldowns all 0; no-pet user → 404; non-admin → 403; button renders on every account row. Lint clean (py+js). Preview-only — redeploy for production. Web-only.
+
+
 ## Feature — Pet screen redesign + Sage custom AI backgrounds (2026-06, web)
 - **Cleaner look (ref-inspired, original):** rebuilt the Pet card into one clean, light panel — nature scene behind the pet, Lv/XP pills, AI-Styled badge, big pet with idle/bounce animations, name + mood + animated heart + "tap to pet" hint, XP bar, and redesigned stat rows (circular colored icon badges + rounded progress). Activities (Feed/Bath/Play) are now big playful colored tiles (amber/violet/green) with hover lift + cooldown labels; keep existing interactive mini-games (FeedToss/BubbleBath/CatchGame).
 - **Sage custom background (NEW):** `POST /api/pet/background` generates a full scene via Sage's advanced Gemini image model (`gemini-3.1-flash-image-preview` "Nano Banana"), uploads to Cloudinary, stores `pet.background_url` (added to `_public`); the card uses `background_url || grass fallback`. UI: "Custom background" block in Sage Studio with preset chips + free-text prompt. Validates no-pet/dead state.

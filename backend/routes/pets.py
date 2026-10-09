@@ -377,6 +377,34 @@ def build_router(ctx) -> APIRouter:
         await db.pets.delete_one({"owner_id": current["id"]})
         return {"status": "deleted"}
 
+    @router.post("/api/admin/users/{user_id}/refresh-pet")
+    async def admin_refresh_pet(user_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        """Super-admin: revive & refresh a user's pet to a fresh healthy state at the
+        same level — alive again, all stats full, and cooldowns cleared so the owner
+        can instantly feed/bath/play. Keeps level, XP, name, image and background."""
+        if not current.get("is_super_admin"):
+            raise HTTPException(403, "Super admin only")
+        pet = await db.pets.find_one({"owner_id": user_id})
+        if not pet:
+            raise HTTPException(404, "This user has no pet")
+        update = {
+            "is_dead": False,
+            "died_at": None,
+            "hunger": 100,
+            "happiness": 100,
+            "cleanliness": 100,
+            "health": 100,
+            "last_play": None,
+            "last_feed": None,
+            "last_bath": None,
+            "last_reminded_at": None,
+            "updated_at": now(),
+        }
+        await db.pets.update_one({"id": pet["id"]}, {"$set": update})
+        pet.update(update)
+        logger.info("[admin] refreshed pet for user %s (pet %s)", user_id, pet["id"])
+        return {"pet": _public(pet)}
+
     async def _notify(user_id: str, title: str, body: str):
         """Create an in-app notification + fire a browser Web Push (both best-effort)."""
         try:

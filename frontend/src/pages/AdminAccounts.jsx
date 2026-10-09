@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Users, Loader2, Trash2, Search, BadgeCheck, Ban, ShieldCheck, Coins, Plus, Minus, Equal, Zap } from "lucide-react";
+import { Users, Loader2, Trash2, Search, BadgeCheck, Ban, ShieldCheck, Coins, Plus, Minus, Equal, Zap, Heart } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -53,6 +53,18 @@ function AccountRow({ u, onChange, onDeleted }) {
       toast.success(r.games > 0 ? `Refilled spins on ${r.games} game(s) for @${u.username}` : `@${u.username} hasn't played a slot game yet`);
     } catch (e) {
       toast.error(e.message || "Couldn't reset spins");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const refreshPet = async () => {
+    setBusy("pet");
+    try {
+      const r = await api.post(`/admin/users/${u.id}/refresh-pet`, {});
+      toast.success(`Revived & refreshed ${r.pet?.name || "pet"} for @${u.username} — Lv ${r.pet?.level}, ready to feed/bath/play`);
+    } catch (e) {
+      toast.error(e.message === "This user has no pet" ? `@${u.username} doesn't have a pet` : (e.message || "Couldn't refresh pet"));
     } finally {
       setBusy("");
     }
@@ -118,6 +130,15 @@ function AccountRow({ u, onChange, onDeleted }) {
             title="Refill this user's slot spins (energy)"
           >
             {busy === "spins" ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />} Spins
+          </button>
+          <button
+            onClick={refreshPet}
+            disabled={!!busy}
+            className="flex items-center gap-1 rounded-lg bg-pink-500/15 px-2.5 py-1.5 text-xs font-bold text-pink-400 hover:bg-pink-500/25 disabled:opacity-40"
+            data-testid={`account-refresh-pet-${u.id}`}
+            title="Revive & refresh this user's pet (alive, full stats, instant feed/bath/play)"
+          >
+            {busy === "pet" ? <Loader2 size={13} className="animate-spin" /> : <Heart size={13} />} Pet
           </button>
           <button
             onClick={toggleBan}
