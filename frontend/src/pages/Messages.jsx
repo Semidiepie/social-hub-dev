@@ -70,8 +70,8 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="grid gap-0 md:grid-cols-[320px_1fr] h-[calc(100dvh-140px)] md:h-[calc(100dvh-112px)]">
-      <aside className={`rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
+    <div className="grid gap-0 grid-cols-1 md:grid-cols-[320px_1fr] min-w-0 h-[calc(100dvh-140px)] md:h-[calc(100dvh-112px)]">
+      <aside className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <h1 className="text-xl font-black">Messages</h1>
           <button
@@ -442,7 +442,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   }
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
       <header className="flex items-center gap-3 border-b border-border p-3">
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden">
           <ArrowLeft size={18} />
@@ -458,16 +458,16 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
           </div>
         </div>
         <button onClick={() => startCall(conv, "audio")} title="Audio call" aria-label="Audio call"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary" data-testid="call-audio-btn">
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary" data-testid="call-audio-btn">
           <Phone size={18} />
         </button>
         <button onClick={() => startCall(conv, "video")} title="Video call" aria-label="Video call"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary" data-testid="call-video-btn">
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary" data-testid="call-video-btn">
           <Video size={18} />
         </button>
         {conv.is_group && (
           <button onClick={() => setShowSettings(true)} title="Group settings" aria-label="Group settings"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary" data-testid="group-settings-btn">
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary" data-testid="group-settings-btn">
             <SettingsIcon size={18} />
           </button>
         )}

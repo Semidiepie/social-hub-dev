@@ -1,0 +1,27 @@
+{
+  "summary": "Verified the Messages horizontal-overflow fix on web at phone (390x844) and desktop (1280x800) viewports. Logged in as founder super-admin via PIN API, injected the access_token into localStorage ('postmeplex.token'), and navigated to /messages. On phone, both the conversation LIST view and an OPEN REGULAR chat ('Unknown' conv id 5d293074-...) report document.documentElement.scrollWidth == window.innerWidth == 390 (and body.scrollWidth == 390) — i.e. NO horizontal overflow. All required controls are visible within the screen width: list view (new-chat-btn, add-ai-character-btn, conv rows + timestamps + delete controls) and open chat (back arrow in header, call-audio-btn, call-video-btn, chat-input, chat-send). group-settings-btn correctly absent for a 1:1 conv (only renders for groups per code). Tapping a conv opens it full-width on phone; tapping the back arrow returns to the list with no sideways scroll. Desktop regression check: /messages renders the two-pane layout with gridTemplateColumns = '320px 652px' (aside + chat side-by-side, same as before) and no overflow at 1280px. Per constraint, did NOT open Sage AI or any AI-character chats, and did not send any real messages — layout verification only.",
+  "platforms_tested": ["web"],
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": { "ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": [] }
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix is minimal and correctly scoped: added 'grid-cols-1' + 'min-w-0' on the outer grid and 'min-w-0' on grid-item children (aside + ChatPane section), plus 'shrink-0' on ChatPane header icon buttons. Root cause (grid items default min-width:auto → min-content, letting wide content exceed the implicit single mobile column) is addressed; desktop md:grid-cols-[320px_1fr] breakpoint is preserved so no desktop regression.",
+    "Non-blocking observation: a global 'Get the app' promo banner overlays the bottom of the chat area on phone (not part of this fix scope). It does not cause overflow but visually sits above the type-a-message bar."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified via Playwright: scrollWidth==innerWidth on phone for both /messages list and open regular conv; desktop grid still '320px 652px'. Measured values logged. Credential: PIN login POST /api/auth/login-pin {identifier:'semidiepie@gmail.com', pin:'7455'} -> inject access_token into localStorage key 'postmeplex.token'. Avoid conv-sage and conv-aichar-* (paid LLM/TTS).",
+  "rca of the issue": "Original bug: Messages.jsx used 'grid md:grid-cols-[320px_1fr]' with no explicit mobile column template, so the implicit single column became min-content-wide; grid items default to min-width:auto which allowed wide inner content to expand the column beyond the phone viewport, causing horizontal overflow and clipping the title/New/add-person and ChatPane header controls off-screen. Fix: set 'grid-cols-1' for phone, add 'min-w-0' on the grid container and on each grid item (aside, ChatPane section, SageChat/AiCharacterChat section), and 'shrink-0' on the icon buttons so they don't force a flex row to expand. Verified: 390x844 viewport -> scrollWidth 390 for both list and open-chat views."
+}

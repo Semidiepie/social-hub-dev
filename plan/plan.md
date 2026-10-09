@@ -1,57 +1,43 @@
-# Pet Care Mini-Games — Cozy Room Redesign
+# Fix: Messages screen overflows sideways on phones
 
-A redesign of the virtual pet's Feed, Bath, and Play interactions from flat dark pop-ups into bright, cozy, immersive room scenes with hands-on mini-games.
-The pet sits inside a warm illustrated room and reacts in real time as the player feeds, washes, or plays with it.
+The Messages screen renders wider than a phone's screen, so the left edge is cut off and the top controls (New chat / add person, and an open chat's buttons) can only be reached by scrolling sideways. This makes it feel like a cramped desktop view instead of a phone screen. The fix makes Messages fit the phone width as a clean, full-width screen with every control visible — no sideways scrolling.
 
 ## Who it's for
 
-Verified PostMePlex members who own a Sage AI virtual pet and open its care screen on the web app (including on a phone browser). It is a delight/retention feature: caring for the pet should feel playful and satisfying rather than like tapping away a chore.
+People using PostMePlex on a phone — both in the phone's web browser and in the installed web app (PWA). These run the same web code, so both are fixed together. Desktop users are unaffected (their side-by-side list + chat layout stays exactly as it is today).
 
 ## Core features and experience
 
-Each of the three care activities becomes its own full-screen cozy scene with a hands-on mini-game, replacing the current dark box with floating emoji.
-
-- **Feed — "Bon appétit!"**: a dining nook with food served on a plate. The player drags food pieces to the pet's mouth; the pet opens up, chews, and looks happy. A portion counter shows how many bites are left; finishing triggers a cheerful "full and happy" reaction.
-- **Bath — "Scrub-a-dub!"**: a bubbly bathroom. The pet starts visibly grubby; the player drags a sponge across it to scrub away dirt and raise foamy bubbles. A cleanliness meter fills as they scrub; reaching 100% rinses the pet sparkling clean.
-- **Play — "Fetch!"**: a sunny playroom/garden. The player drags back and flings a ball; the pet chases and catches it and brings it back for another throw. A few successful fetches fill a happiness/affection meter and end on an excited reaction.
-
-Shared across all three:
-- The player's **actual pet image** is the star of every scene, with idle, reacting, and happy animations.
-- A friendly header banner names the activity, a progress indicator shows how close it is to done, and finishing plays a satisfying burst (sparkles/confetti + a happy chime).
-- **Scene/theme picker**: a small set of preset cozy room themes the player can choose from and keep (applies the look across the three rooms). This is where the player "picks the scene/theme."
-- Light, mute-respecting sound effects (nibbling, splashing, a happy chime) to make interactions feel tactile.
-- Every mini-game still grants the same stat boosts, XP, and cooldowns as today — the rewards and rules do not change, only the experience does.
-- A safe fallback: if a drag doesn't register (older/odd touch devices), a tap still completes the action so no one gets stuck.
+- On a phone, the Messages screen fills the width of the screen with nothing cut off on either side.
+- The conversation list and its header controls — the **New** button, the admin **add-person** control, each conversation row, timestamps, and the delete control — are all fully visible without scrolling sideways.
+- When a conversation is opened on a phone, its header controls — **back**, **call**, **video**, and **group settings** — are all reachable without sideways scrolling, and the message list and the type-a-message bar fit the screen width.
+- Nothing about how messaging works changes: sending, searching people, starting direct chats or groups, group settings, AI/Sage chats, and calls all behave exactly as before. Only the on-phone sizing/layout is corrected.
+- The desktop experience (conversation list on the left, open chat on the right) is unchanged.
 
 ## User flow
 
-1. On the pet screen, the player taps Feed, Bath, or Play (when off cooldown).
-2. The matching cozy room opens full-screen with the pet inside and a short friendly prompt.
-3. The player performs the hands-on mini-game (drag food / scrub with sponge / fling the ball) while the pet reacts live and a meter fills.
-4. On completion, a happy celebration plays, the room closes, and the pet's stats/XP update with the relevant cooldown starting.
-5. The player can leave early at any time with a clear close/cancel control.
-6. From a settings/theme control on the pet screen, the player can switch the room theme; the choice is saved to their pet.
+1. Open Messages on a phone.
+2. The conversation list fills the screen; the New / add-person controls sit within view at the top.
+3. Tap a conversation; it opens full-width with its back, call, video, and settings controls all visible.
+4. Tap back to return to the list. No point in this flow requires scrolling sideways.
 
 ## UI/UX feel
 
-Warm, bright, and playful — cream, peach, mint, and lavender rooms with soft depth (gentle shadows, rounded "chunky" panels and buttons), in contrast to the darker rest of the app, because a pet-care toy reads best as light and cheerful. The pet is large and central. Motion is bouncy and characterful: the pet wiggles when idle, leans in to eat, shakes off water, and bounces when happy; food, bubbles, and the ball move with spring-like easing. Interactions are forgiving and immediate, with clear visual and audio feedback at every step so the activity feels alive rather than transactional.
+Same visual style as today — same colors, spacing, and components — just correctly contained to the phone's width so it reads as a native-feeling full-screen messaging view rather than a shrunken desktop layout. Vertical scrolling (through conversations and messages) works as normal; horizontal scrolling of the whole screen is eliminated.
 
 ## Implementation phases
 
-**Phase 1 (MVP — built now):** All three activities redesigned as immersive cozy rooms with the three richer drag-based mini-games (drag-to-feed, sponge-scrub bath, fling-fetch play), the bright pastel visual system, animated pet reactions, progress meters, completion celebrations, light sound, the tap fallback, and a scene/theme picker with a small set of preset cozy themes. Existing stat/XP/cooldown rewards preserved.
+**Phase 1 — built now (MVP):** Correct the Messages screen's on-phone layout so it fits the screen width with no sideways scrolling, for both the conversation list and an open chat, covering the phone browser and the installed web app (PWA). Messaging behavior and the desktop layout are untouched.
 
-**Phase 2 (later):** More room themes and unlockable scenes/props (via level or tokens), extra food varieties, and optional "do it well for a small bonus" scoring on top of the base reward, plus simple care achievements.
+**Phase 2 — later:** Quick pass over the rest of the app's screens on phones to catch and fix any similar sideways-scroll issue elsewhere (none reported so far beyond Messages).
 
-**Phase 3 (later):** Bring the redesigned pet-care experience to the native mobile app, and add seasonal/limited-time themed rooms and shareable "happy pet" moments.
+**Phase 3 — later:** Optional mobile-web polish for Messages beyond the overflow fix — e.g. the open chat using the full screen height and the message bar staying put above the on-screen keyboard.
 
 ## Assumptions
 
-- Palette and style are chosen as warm bright pastel (cream/peach/mint/lavender) with soft rounded panels, keeping the PostMePlex orange as a small accent so it still feels on-brand. (Chosen because the answer was "you decide what looks best.")
-- "Let me pick the scenes/themes" is delivered as an in-app theme picker with a few preset cozy room themes the player chooses from, defaulting to a nice one — rather than the player having to specify exact scenes up front.
-- All three activities are richer drag-based mini-games (drag-to-feed, sponge-scrub, fling-fetch), per the interaction-style choice.
-- Reference "nice-to-haves" are included by default: a friendly activity banner, a portion/progress indicator, and celebratory completion feedback. The reference's extra bottom toolbar of activity icons (toilet/sleep/shop, etc.) is not added — PostMePlex keeps its three activities (Feed/Bath/Play).
-- The pet shown is always the player's own Sage-generated pet; the reference's third-party mascot/character is not copied — the rooms are original art inspired by the cozy, playful spirit of the reference.
-- Room scenes are custom-made art prepared once (no per-use AI image cost), so entering an activity is instant and free.
-- Scope is the web pet experience only (the pet is a web feature today, including when viewed in a phone browser); native mobile is Phase 3.
-- Each mini-game grants the same stat gains, XP, and cooldowns as the current version — balance is unchanged.
-- Light sound effects are added and respect the app's existing mute/volume behavior.
+- The reported issue is in the web app code; because the phone browser and the installed PWA share that code, fixing it covers both. The separate native/installed app (if it ever shows something similar) is not part of this minimal fix.
+- Scope is limited to the Messages screen only, matching the report that other screens (Home, Profile, etc.) do not scroll sideways.
+- No backend, data, or messaging-behavior changes — this is a layout/sizing fix only.
+- The desktop two-pane layout stays exactly as it is.
+- The fix is made in the preview environment; production (postmeplex.com) updates only after a redeploy.
+- To respect the stated credit budget, the change is kept minimal and verified with a phone-sized preview check rather than a full test pass.

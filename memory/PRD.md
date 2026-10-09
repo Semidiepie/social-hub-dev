@@ -5,6 +5,13 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — Messages screen sideways-overflow on phones (2026-06, web)
+- **Bug:** on phones (browser + PWA, same web code) the Messages screen rendered wider than the screen — left edge cut off, top controls (New / admin add-person, and an open chat's back/call/video/settings) only reachable by scrolling sideways.
+- **Root cause:** the page wrapper used `grid` with only an `md:` column template, so on mobile it fell to a single implicit `auto` track; grid items default to `min-width:auto` (min-content), so wide content pushed the track past the phone width → horizontal overflow.
+- **Fix (`Messages.jsx`):** wrapper → `grid-cols-1 md:grid-cols-[320px_1fr] min-w-0`; added `min-w-0` to the `<aside>` and the `ChatPane` `<section>` grid items (+ `overflow-hidden`, and `shrink-0` on the ChatPane header icon buttons). Also added `min-w-0` to the `SageChat`/`AiCharacterChat` root `<section>` (same grid items). Desktop two-pane layout untouched.
+- **Verified (testing agent, iteration_47):** phone 390×844 → `scrollWidth == innerWidth == 390` (no sideways scroll) in both the conversation list and an open regular chat, all controls visible; desktop 1280×800 two-pane layout unchanged (`gridTemplateColumns 320px 652px`, no overflow). Layout-only; no backend/behavior change. Lint clean (pre-existing SageChat unescaped-entity warnings left untouched, out of scope). Preview-only — redeploy for production. Web-only.
+
+
 ## Feature — Pet care mini-games: cozy room redesign (2026-06, web)
 - **What:** replaced the flat dark care pop-ups (Feed/Bath/Play) with bright, full-screen **cozy room** scenes + hands-on drag mini-games, starring the player's own Sage pet. Pure frontend/CSS — **no AI image cost** (room art is CSS, not generated).
   - **Feed — "Bon appétit!"**: dining nook; drag (or tap) food pieces to the pet's mouth; the pet chomps; portion counter ("N left").
