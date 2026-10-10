@@ -5,6 +5,13 @@
 
 # PostMePlex — Product Requirements
 
+## Fix — Match-3 candies redesigned to real Candy-Crush pieces (2026-06, web)
+- **Why:** user reported the match-3 still looked bad — pieces were flat colored rounded-squares with app ICONS (hearts/cameras) inside, nothing like Candy Crush.
+- **Fix:** each piece now renders as a distinct glossy 3D **SVG candy shape** keyed by colour index (`Match3Board.jsx`: `CandyShape` + shared `CandyDefs` gradients): 0 blue sphere, 1 yellow teardrop, 2 green jelly-square, 3 orange lozenge (with seam), 4 red jelly-bean, 5 purple cluster — each with a top-light→base→dark vertical gradient, a specular gloss highlight, and a drop-shadow. Admin-uploaded custom tile IMAGES still render (respected). Board tray lightened to CC-style grey rounded cells over the immersive backdrop; selection = scale + glow (shape-agnostic); wrap special = pulsing glow; bomb = rainbow sphere. Removed the old icon-tile rendering + unused lucide imports.
+- **Engine unchanged:** match3.js logic, scoring, specials (4→line, 5→bomb, L/T→wrap), levels, stars, rewards all untouched — purely visual. No AI/image credits used.
+- **Verified (screenshot, 430×920):** 64 candy SVGs render as glossy candy shapes on level 1 (blue/yellow/green/orange — more colours unlock on later levels); board + HUD + boosters intact; lint clean. Self-tested only (visual change) — did NOT run the testing agent, to conserve the user's credits. Preview-only — redeploy for production. Web-only.
+
+
 ## Feature — Games overhaul Phase 1: full-screen play + custom cover art (2026-06, web)
 - **Full-screen immersive play:** the level-based games (match3/memory/quiz/tapper) now render the level **map, intro, board and result** inside a full-screen `GameScreen` shell (`GameMap.jsx`) over the game's **backdrop** (its custom cover image if set, else a themed gradient + dark overlay), each with a persistent **exit X** (`game-exit`) — map→/games, play/intro/result→map. Board is centered/large on desktop, full-width on mobile (no horizontal overflow). Win result shows confetti + stars + token reward line.
 - **Rich Games list** (`Games.jsx`): each card is a full-bleed **cover image** with the title overlaid (`.pmp-gamecard`), emoji+gradient fallback when no image; kept progress/Play + private badge.

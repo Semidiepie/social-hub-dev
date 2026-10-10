@@ -1,13 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  Zap, Heart, MessageCircle, Camera, Star, Music, Flame, Gem, Crown, Rocket, Smile,
-  Sparkles, Ghost, Leaf, Moon, Sun, Cloud, Bell, Trophy, Apple, Candy, IceCream, Pizza,
-  Diamond, HelpCircle, Check, Shuffle, Hammer, Plus,
-} from "lucide-react";
+import { Sparkles, Check, Shuffle, Hammer, Plus, Star } from "lucide-react";
 import { createBoard, trySwap, resolveClears, areAdjacent, hasMove, reshuffle, clone } from "@/games/match3";
 import { sfx } from "@/games/sfx";
 
-const ICONS = { Zap, Heart, MessageCircle, Camera, Star, Music, Flame, Gem, Crown, Rocket, Smile, Sparkles, Ghost, Leaf, Moon, Sun, Cloud, Bell, Trophy, Apple, Candy, IceCream, Pizza, Diamond };
 const POP_MS = 180;
 const FALL_MS = 250;
 const SWAP_MS = 150;
@@ -16,15 +11,81 @@ const GAP = 4;
 let _comboKey = 1;
 let _particleKey = 1;
 
-function CandyTile({ id, cell, tile, size, r, c, selected, popping, armedHammer, onPointerDown, onPointerUp, onClick }) {
-  const Icon = ICONS[tile?.icon] || HelpCircle;
+// Classic Candy-Crush-style palette: light (top gloss) -> base -> dark (bottom).
+const CANDY_COLORS = [
+  { light: "#cfe0ff", base: "#3f84f6", dark: "#1b45a8" }, // 0 blue sphere
+  { light: "#fff2a6", base: "#ffc831", dark: "#dd9000" }, // 1 yellow teardrop
+  { light: "#c9f3a9", base: "#48c84f", dark: "#258a2c" }, // 2 green jelly square
+  { light: "#ffd7a1", base: "#ff8c2b", dark: "#d65c00" }, // 3 orange lozenge
+  { light: "#ffc0b6", base: "#f2473c", dark: "#b11b18" }, // 4 red jelly bean
+  { light: "#e4c6ff", base: "#9a54e0", dark: "#6626ad" }, // 5 purple cluster
+];
+
+// Shared SVG gradient defs — rendered once per board.
+function CandyDefs() {
+  return (
+    <svg width="0" height="0" aria-hidden style={{ position: "absolute" }}>
+      <defs>
+        {CANDY_COLORS.map((c, i) => (
+          <linearGradient key={i} id={`cg${i}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={c.light} />
+            <stop offset="42%" stopColor={c.base} />
+            <stop offset="100%" stopColor={c.dark} />
+          </linearGradient>
+        ))}
+        <radialGradient id="candyGloss" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+    </svg>
+  );
+}
+
+// A glossy 3D candy — a distinct shape per colour index, like Candy Crush pieces.
+function CandyShape({ index, size }) {
+  const i = ((Number(index) % 6) + 6) % 6;
+  const fill = `url(#cg${i})`;
+  let body;
+  if (i === 0) {
+    body = <circle cx="50" cy="52" r="39" fill={fill} />; // blue sphere
+  } else if (i === 1) {
+    body = <path d="M50 9 C58 31 83 47 83 66 A33 33 0 1 1 17 66 C17 47 42 31 50 9 Z" fill={fill} />; // yellow teardrop
+  } else if (i === 2) {
+    body = <rect x="13" y="14" width="74" height="74" rx="26" ry="26" fill={fill} />; // green jelly square
+  } else if (i === 3) {
+    body = (
+      <g>
+        <ellipse cx="50" cy="52" rx="42" ry="30" fill={fill} />
+        <path d="M13 52 H87" stroke="rgba(0,0,0,.16)" strokeWidth="3" strokeLinecap="round" />
+      </g>
+    ); // orange lozenge
+  } else if (i === 4) {
+    body = (
+      <g transform="rotate(-20 50 52)">
+        <rect x="10" y="34" width="80" height="40" rx="20" ry="20" fill={fill} />
+      </g>
+    ); // red jelly bean
+  } else {
+    body = (
+      <g fill={fill}>
+        <circle cx="35" cy="41" r="20" />
+        <circle cx="65" cy="41" r="20" />
+        <circle cx="50" cy="65" r="22" />
+      </g>
+    ); // purple cluster
+  }
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} className="pmp-candy-svg" aria-hidden>
+      {body}
+      <ellipse cx="39" cy="32" rx="15" ry="9" fill="url(#candyGloss)" transform="rotate(-18 39 32)" />
+    </svg>
+  );
+}
+
+function CandyTile({ id, cell, tile, colorIndex, size, r, c, selected, popping, armedHammer, onPointerDown, onPointerUp, onClick }) {
   const special = cell.s;
-  const inner =
-    special === "bomb"
-      ? "pmp-candy-bomb"
-      : special === "wrap"
-      ? "pmp-candy-wrap"
-      : "";
+  const specialCls = special === "wrap" ? "pmp-candy-wrap" : "";
   return (
     <div
       className="pmp-candy"
@@ -39,15 +100,14 @@ function CandyTile({ id, cell, tile, size, r, c, selected, popping, armedHammer,
       onClick={onClick}
     >
       <div
-        className={`pmp-candy-inner ${inner} ${selected ? "pmp-candy-sel" : ""} ${popping ? "pmp-candy-pop" : ""} ${armedHammer ? "pmp-candy-armed" : ""}`}
-        style={special === "bomb" ? undefined : { "--c": tile?.color }}
+        className={`pmp-candy-inner ${specialCls} ${selected ? "pmp-candy-sel" : ""} ${popping ? "pmp-candy-pop" : ""} ${armedHammer ? "pmp-candy-armed" : ""}`}
       >
         {special === "bomb" ? (
-          <Sparkles size={size * 0.46} color="#fff" strokeWidth={2.2} />
+          <div className="pmp-candy-bomb"><Sparkles size={size * 0.46} color="#fff" strokeWidth={2.2} /></div>
         ) : tile?.image ? (
-          <img src={tile.image} alt="" draggable={false} className="h-full w-full rounded-[inherit] object-cover" style={{ pointerEvents: "none" }} />
+          <div className="pmp-candy-img"><img src={tile.image} alt="" draggable={false} /></div>
         ) : (
-          <Icon size={size * 0.42} color="#fff" strokeWidth={2.6} />
+          <CandyShape index={colorIndex} size={size} />
         )}
         {special === "row" && <span className="pmp-stripe pmp-stripe-row" />}
         {special === "col" && <span className="pmp-stripe pmp-stripe-col" />}
@@ -328,6 +388,7 @@ export function Match3Board({ level, onEnd }) {
 
       {/* Board */}
       <div ref={wrapRef} className="pmp-board-wrap">
+        <CandyDefs />
         <div className={`pmp-board ${shake ? "pmp-board-shake" : ""}`} style={{ width: boardW || "100%", height: boardH, touchAction: control === "slide" ? "none" : undefined }}>
           {/* checker backdrop */}
           {grid.map((row, r) =>
@@ -349,6 +410,7 @@ export function Match3Board({ level, onEnd }) {
                   id={cell.id}
                   cell={cell}
                   tile={tileByIndex[cell.t]}
+                  colorIndex={cell.t}
                   size={size}
                   r={r}
                   c={c}
