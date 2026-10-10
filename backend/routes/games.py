@@ -199,6 +199,7 @@ class CreateGameBody(BaseModel):
     description: str = Field(default="", max_length=400)
     tiles: Optional[list] = None
     cover_emoji: str = Field(default="🎮", max_length=8)
+    cover_image: Optional[str] = Field(default=None, max_length=1000)
     level_count: int = Field(default=30, ge=1, le=500)
     base_moves: int = Field(default=28, ge=8, le=80)
     base_target: int = Field(default=1500, ge=200, le=100000)
@@ -212,6 +213,7 @@ class UpdateGameBody(BaseModel):
     description: Optional[str] = Field(default=None, max_length=400)
     tiles: Optional[list] = None
     cover_emoji: Optional[str] = Field(default=None, max_length=8)
+    cover_image: Optional[str] = Field(default=None, max_length=1000)
     level_count: Optional[int] = Field(default=None, ge=1, le=500)
     base_moves: Optional[int] = Field(default=None, ge=8, le=80)
     base_target: Optional[int] = Field(default=None, ge=200, le=100000)
@@ -244,9 +246,17 @@ class StudioChatBody(BaseModel):
 
 class StudioBuildBody(BaseModel):
     session_id: str
+    cover_image: Optional[str] = Field(default=None, max_length=1000)
 
 
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def _clean_cover_image(url):
+    """Accept only an https image URL (Cloudinary etc.) for a game cover/backdrop."""
+    if isinstance(url, str) and url.strip().startswith("https://") and len(url.strip()) <= 1000:
+        return url.strip()
+    return None
 
 
 def _validate_config(kind: str, c) -> dict:
@@ -642,6 +652,7 @@ def _public_game(g: dict) -> dict:
         "description": g.get("description", ""),
         "kind": g.get("kind", "match3"),
         "cover_emoji": g.get("cover_emoji", "🎮"),
+        "cover_image": g.get("cover_image"),
         "tiles": g.get("tiles", DEFAULT_TILES),
         "level_count": g.get("level_count", 30),
         "base_moves": g.get("base_moves", 28),
@@ -1136,6 +1147,7 @@ def build_router(ctx) -> APIRouter:
             "description": body.description,
             "kind": "match3",
             "cover_emoji": body.cover_emoji or "🎮",
+            "cover_image": _clean_cover_image(body.cover_image),
             "tiles": tiles[:6],
             "level_count": body.level_count,
             "base_moves": body.base_moves,
@@ -1150,7 +1162,7 @@ def build_router(ctx) -> APIRouter:
         await db.games.insert_one(doc)
         return _public_game(doc)
 
-    async def _create_from_spec(spec: dict) -> dict:
+    async def _create_from_spec(spec: dict, cover_image=None) -> dict:
         """Persist a validated game spec as a PRIVATE game doc and return its public form."""
         slug = await _unique_slug(spec["title"])
         count = await db.games.count_documents({})
@@ -1161,6 +1173,7 @@ def build_router(ctx) -> APIRouter:
             "description": spec["description"],
             "kind": spec["kind"],
             "cover_emoji": spec["cover_emoji"],
+            "cover_image": _clean_cover_image(cover_image),
             "level_count": 1 if spec["kind"] in ("farm", "slots") else spec["level_count"],
             "is_active": True,
             "visibility": "private",
@@ -1253,7 +1266,7 @@ def build_router(ctx) -> APIRouter:
         spec = sess.get("spec")
         if not spec:
             raise HTTPException(400, "Sage hasn't finished designing yet — keep chatting until it's ready.")
-        game = await _create_from_spec(spec)
+        game = await _create_from_spec(spec, body.cover_image)
         await db.game_studio_sessions.delete_one({"id": sess["id"]})
         return game
 
@@ -1286,6 +1299,9 @@ def build_router(ctx) -> APIRouter:
                 upd["tiles"] = coerced
             else:
                 upd.pop("tiles")
+        if "cover_image" in upd:
+            # explicit value sent → set cleaned URL, or None to clear back to emoji/gradient
+            upd["cover_image"] = _clean_cover_image(upd["cover_image"])
         if "visibility" in upd and upd["visibility"] not in ("public", "private"):
             upd.pop("visibility")
         if upd:

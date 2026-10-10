@@ -23,7 +23,49 @@ function Stars({ n, size = 16 }) {
   return (
     <div className="flex items-center gap-0.5">
       {[1, 2, 3].map((i) => (
-        <Star key={i} size={size} className={i <= n ? "text-yellow-400" : "text-muted-foreground/40"} fill={i <= n ? "currentColor" : "none"} />
+        <Star key={i} size={size} className={i <= n ? "text-yellow-400" : "text-white/25"} fill={i <= n ? "currentColor" : "none"} />
+      ))}
+    </div>
+  );
+}
+
+// Full-screen immersive game shell with the game's custom art (or themed gradient) as backdrop.
+function GameScreen({ game, title, onExit, exitLabel, children, testId }) {
+  const bd = game?.cover_image ? { backgroundImage: `url(${game.cover_image})` } : null;
+  return (
+    <div className="pmp-game-screen" data-testid={testId}>
+      {bd ? <div className="pmp-game-bd" style={bd} /> : null}
+      <div className="pmp-game-bd-grad" />
+      <div className="pmp-game-topbar">
+        <button onClick={onExit} className="pmp-game-exit" data-testid="game-exit" aria-label={exitLabel}>
+          <X size={22} />
+        </button>
+        <div className="min-w-0 flex-1 text-white">{title}</div>
+      </div>
+      <div className="pmp-game-scroll">
+        <div className="pmp-game-center">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function WinConfetti() {
+  const colors = ["#FF6B3D", "#ffd43b", "#4ECDC4", "#f06595", "#6BCB77", "#8a5bff"];
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {Array.from({ length: 26 }, (_, i) => (
+        <span
+          key={i}
+          className="pmp-win-burst"
+          style={{
+            left: `${Math.random() * 100}%`,
+            background: colors[i % colors.length],
+            "--cf": `${360 + Math.random() * 180}px`,
+            "--cr": `${Math.random() * 720}deg`,
+            "--cd": `${1.1 + Math.random() * 0.9}s`,
+            animationDelay: `${Math.random() * 0.3}s`,
+          }}
+        />
       ))}
     </div>
   );
@@ -90,7 +132,7 @@ export default function GameMapPage() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!game) return null;
 
-  // ===== Farm simulator: not level-based, render the sim directly =====
+  // ===== Farm simulator: not level-based, render the sim directly (Phase 2 full-screen) =====
   if (game.kind === "farm") {
     return (
       <div className="mx-auto max-w-2xl" data-testid="farm-page">
@@ -109,7 +151,7 @@ export default function GameMapPage() {
     );
   }
 
-  // ===== Slots / Spin & Raid (Coin Master-style): not level-based =====
+  // ===== Slots / Spin & Raid (Coin Master-style): not level-based (Phase 2 full-screen) =====
   if (game.kind === "slots") {
     return (
       <div className="mx-auto max-w-md" data-testid="slots-page">
@@ -130,49 +172,69 @@ export default function GameMapPage() {
 
   const levels = Array.from({ length: game.level_count }, (_, i) => i + 1);
 
-  // ===== Play / intro / result overlay =====
+  // ===== Full-screen Play / intro / result =====
   if (phase !== "map") {
     return (
-      <div className="mx-auto max-w-xl" data-testid="game-play">
-        <button onClick={() => setPhase("map")} className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground" data-testid="play-back">
-          <ArrowLeft size={16} /> Level map
-        </button>
-
-        {phase === "intro" && levelCfg && (
-          <div className="rounded-3xl border border-border bg-card/70 p-8 text-center" data-testid="level-intro">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-2xl font-black text-primary">{levelN}</div>
-            <h2 className="mt-4 text-2xl font-black">Level {levelN}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{INTRO_TEXT[levelCfg.kind] || INTRO_TEXT.match3}</p>
-            <div className="mt-5 flex justify-center gap-6">
-              {levelCfg.kind === "match3" && <div><div className="text-2xl font-black">{levelCfg.moves}</div><div className="text-[11px] uppercase text-muted-foreground">Moves</div></div>}
-              {levelCfg.kind === "memory" && <div><div className="text-2xl font-black">{levelCfg.pairs}</div><div className="text-[11px] uppercase text-muted-foreground">Pairs</div></div>}
-              {(levelCfg.kind === "memory" || levelCfg.kind === "tapper") && <div><div className="text-2xl font-black">{levelCfg.seconds || levelCfg.duration}s</div><div className="text-[11px] uppercase text-muted-foreground">Time</div></div>}
-              {levelCfg.kind === "quiz" && <div><div className="text-2xl font-black">{levelCfg.count}</div><div className="text-[11px] uppercase text-muted-foreground">Questions</div></div>}
-              <div><div className="text-2xl font-black">{levelCfg.target.toLocaleString()}</div><div className="text-[11px] uppercase text-muted-foreground">Target</div></div>
+      <GameScreen
+        game={game}
+        exitLabel="Back to level map"
+        onExit={() => setPhase("map")}
+        testId="game-play"
+        title={
+          <div className="flex items-center gap-2">
+            {game.cover_image ? (
+              <img src={game.cover_image} alt="" className="h-8 w-8 rounded-lg object-cover" />
+            ) : (
+              <span className="text-2xl leading-none">{game.cover_emoji}</span>
+            )}
+            <div className="min-w-0">
+              <div className="truncate text-sm font-black leading-tight">{game.title}</div>
+              <div className="text-[11px] text-white/70">Level {levelN}</div>
             </div>
-            <Button onClick={() => setPhase("play")} className="mt-6 w-full bg-primary text-primary-foreground" data-testid="level-start-btn">Start</Button>
+          </div>
+        }
+      >
+        {phase === "intro" && levelCfg && (
+          <div className="pmp-glass-card mt-6 p-8 text-center" data-testid="level-intro">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/25 text-2xl font-black text-primary">{levelN}</div>
+            <h2 className="mt-4 text-2xl font-black">Level {levelN}</h2>
+            <p className="mt-1 text-sm text-white/70">{INTRO_TEXT[levelCfg.kind] || INTRO_TEXT.match3}</p>
+            <div className="mt-5 flex flex-wrap justify-center gap-6">
+              {levelCfg.kind === "match3" && <div><div className="text-2xl font-black">{levelCfg.moves}</div><div className="text-[11px] uppercase text-white/60">Moves</div></div>}
+              {levelCfg.kind === "memory" && <div><div className="text-2xl font-black">{levelCfg.pairs}</div><div className="text-[11px] uppercase text-white/60">Pairs</div></div>}
+              {(levelCfg.kind === "memory" || levelCfg.kind === "tapper") && <div><div className="text-2xl font-black">{levelCfg.seconds || levelCfg.duration}s</div><div className="text-[11px] uppercase text-white/60">Time</div></div>}
+              {levelCfg.kind === "quiz" && <div><div className="text-2xl font-black">{levelCfg.count}</div><div className="text-[11px] uppercase text-white/60">Questions</div></div>}
+              <div><div className="text-2xl font-black">{levelCfg.target.toLocaleString()}</div><div className="text-[11px] uppercase text-white/60">Target</div></div>
+            </div>
+            <Button onClick={() => setPhase("play")} className="mt-6 h-12 w-full bg-primary text-base font-black text-primary-foreground" data-testid="level-start-btn">Start</Button>
           </div>
         )}
 
         {phase === "play" && levelCfg && (
-          levelCfg.kind === "memory" ? <MemoryGame key={levelN} level={levelCfg} onEnd={onEnd} />
-          : levelCfg.kind === "quiz" ? <QuizGame key={levelN} level={levelCfg} onEnd={onEnd} />
-          : levelCfg.kind === "tapper" ? <TapperGame key={levelN} level={levelCfg} onEnd={onEnd} />
-          : <Match3Board key={`${levelN}-${levelCfg.moves}`} level={levelCfg} onEnd={onEnd} />
+          <div className="mt-2">
+            {levelCfg.kind === "memory" ? <MemoryGame key={levelN} level={levelCfg} onEnd={onEnd} />
+            : levelCfg.kind === "quiz" ? <QuizGame key={levelN} level={levelCfg} onEnd={onEnd} />
+            : levelCfg.kind === "tapper" ? <TapperGame key={levelN} level={levelCfg} onEnd={onEnd} />
+            : <Match3Board key={`${levelN}-${levelCfg.moves}`} level={levelCfg} onEnd={onEnd} />}
+          </div>
         )}
 
         {phase === "result" && (
-          <div className="rounded-3xl border border-border bg-card/70 p-8 text-center" data-testid="level-result">
+          <div className="relative pmp-glass-card mt-6 overflow-hidden p-8 text-center" data-testid="level-result">
             {result ? (
               <>
-                <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${result.won ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                {result.won && <WinConfetti />}
+                <div className={`relative mx-auto flex h-16 w-16 items-center justify-center rounded-full ${result.won ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
                   {result.won ? <Check size={32} /> : <X size={32} />}
                 </div>
-                <h2 className="mt-4 text-2xl font-black">{result.won ? "Level complete!" : "Not quite — try again"}</h2>
-                <div className="mt-3 flex justify-center"><Stars n={result.stars} size={28} /></div>
-                <p className="mt-3 text-sm text-muted-foreground">Score <span className="font-black text-foreground">{(result.score || 0).toLocaleString()}</span></p>
-                <div className="mt-6 flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => openLevel(levelN)} data-testid="result-retry">Replay</Button>
+                <h2 className="relative mt-4 text-2xl font-black">{result.won ? "Level complete!" : "Not quite — try again"}</h2>
+                <div className="relative mt-3 flex justify-center"><Stars n={result.stars} size={28} /></div>
+                <p className="relative mt-3 text-sm text-white/70">Score <span className="font-black text-white">{(result.score || 0).toLocaleString()}</span></p>
+                {typeof result.tokens_earned === "number" && result.tokens_earned > 0 && (
+                  <p className="relative mt-1 text-sm font-bold text-primary">+{result.tokens_earned} tokens 🪙</p>
+                )}
+                <div className="relative mt-6 flex gap-2">
+                  <Button variant="outline" className="flex-1 border-white/20 bg-white/5 text-white hover:bg-white/15" onClick={() => openLevel(levelN)} data-testid="result-retry">Replay</Button>
                   {result.won && levelN < game.level_count ? (
                     <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => openLevel(levelN + 1)} data-testid="result-next">Next level</Button>
                   ) : (
@@ -185,34 +247,40 @@ export default function GameMapPage() {
             )}
           </div>
         )}
-      </div>
+      </GameScreen>
     );
   }
 
-  // ===== Saga level map =====
+  // ===== Full-screen Saga level map =====
   return (
-    <div className="mx-auto max-w-2xl" data-testid="game-map">
-      <button onClick={() => navigate("/games")} className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground" data-testid="map-back">
-        <ArrowLeft size={16} /> All games
-      </button>
-      <header className="mb-6 flex items-center gap-3">
-        <span className="text-4xl">{game.cover_emoji}</span>
-        <div>
-          <h1 className="text-2xl font-black tracking-tight">{game.title}</h1>
-          <p className="flex items-center gap-1 text-sm text-muted-foreground">
-            <Trophy size={13} className="text-primary" /> {progress.unlocked - 1}/{game.level_count} cleared
-          </p>
+    <GameScreen
+      game={game}
+      exitLabel="All games"
+      onExit={() => navigate("/games")}
+      testId="game-map"
+      title={
+        <div className="flex items-center gap-3">
+          {game.cover_image ? (
+            <img src={game.cover_image} alt="" className="h-10 w-10 rounded-xl object-cover" />
+          ) : (
+            <span className="text-3xl leading-none">{game.cover_emoji}</span>
+          )}
+          <div className="min-w-0">
+            <div className="truncate text-lg font-black leading-tight">{game.title}</div>
+            <div className="flex items-center gap-1 text-[11px] text-white/70">
+              <Trophy size={12} className="text-primary" /> {progress.unlocked - 1}/{game.level_count} cleared
+            </div>
+          </div>
         </div>
-      </header>
-
-      <div className="pmp-saga" data-testid="saga-map">
+      }
+    >
+      <div className="pmp-saga mt-4" data-testid="saga-map">
         <div className="flex flex-col items-center gap-2">
           {levels.map((n, idx) => {
             const info = progress.levels[String(n)];
             const done = info?.completed;
             const unlocked = n <= progress.unlocked;
             const cls = done ? "pmp-level-done" : unlocked ? "pmp-level-open" : "pmp-level-locked";
-            // zig-zag saga layout
             const offset = (idx % 4 === 1 ? 70 : idx % 4 === 3 ? -70 : 0);
             return (
               <React.Fragment key={n}>
@@ -237,6 +305,6 @@ export default function GameMapPage() {
           })}
         </div>
       </div>
-    </div>
+    </GameScreen>
   );
 }

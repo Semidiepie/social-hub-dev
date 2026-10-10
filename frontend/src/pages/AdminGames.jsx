@@ -24,6 +24,7 @@ function GameRow({ g, onSaved, onDeleted }) {
   const [prompt, setPrompt] = useState("");
   const [thinking, setThinking] = useState(false);
   const [tileBusy, setTileBusy] = useState(null);
+  const [coverBusy, setCoverBusy] = useState(false);
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
   useEffect(() => { setDraft(g); }, [g]);
@@ -107,6 +108,21 @@ function GameRow({ g, onSaved, onDeleted }) {
     await save({ tiles: next });
   };
 
+  const uploadCover = async (file) => {
+    if (!file) return;
+    if (!cloudinaryAvailable) { toast.error("Image uploads aren't configured."); return; }
+    setCoverBusy(true);
+    try {
+      const res = await uploadToCloudinary(file, { resourceType: "image" });
+      await save({ cover_image: res.secure_url });
+    } catch (e) {
+      toast.error(e.message || "Upload failed");
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+  const clearCover = async () => { await save({ cover_image: "" }); };
+
   return (
     <div className="rounded-xl border border-border p-3" data-testid={`admin-game-${g.slug}`}>
       <div className="flex items-center gap-2">
@@ -126,6 +142,32 @@ function GameRow({ g, onSaved, onDeleted }) {
         </label>
       </div>
       <Input value={draft.description} onChange={(e) => set("description", e.target.value)} placeholder="Description" className="mt-2 h-9 text-sm" />
+
+      {/* Custom cover image (card + in-play backdrop) */}
+      <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-2.5" data-testid={`cover-editor-${g.slug}`}>
+        <div className="relative h-14 w-24 flex-none overflow-hidden rounded-lg border border-border bg-gradient-to-br from-primary/25 to-transparent">
+          {draft.cover_image ? (
+            <img src={draft.cover_image} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-2xl">{draft.cover_emoji || "🎮"}</span>
+          )}
+          {coverBusy && <div className="absolute inset-0 flex items-center justify-center bg-black/50"><Loader2 size={16} className="animate-spin text-white" /></div>}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground"><ImagePlus size={13} /> Cover image (optional)</div>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">Fully covers the game card AND becomes the in-play backdrop. No image = emoji + gradient.</p>
+          <div className="mt-1.5 flex items-center gap-3">
+            <label className="cursor-pointer text-[11px] font-semibold text-primary hover:underline" data-testid={`cover-upload-${g.slug}`}>
+              {draft.cover_image ? "Change image" : "Upload image"}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadCover(e.target.files?.[0])} />
+            </label>
+            {draft.cover_image && (
+              <button onClick={clearCover} className="text-[11px] font-semibold text-muted-foreground hover:text-destructive" data-testid={`cover-clear-${g.slug}`}>Remove</button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="mt-2 flex flex-wrap items-end gap-3">
         {FIELDS.filter((f) => g.kind === "match3" || f.key === "cover_emoji" || f.key === "level_count").map((f) => (
           <div key={f.key}>
@@ -219,6 +261,8 @@ export default function AdminGamesPage() {
   const [studioBusy, setStudioBusy] = useState(false);
   const [specReady, setSpecReady] = useState(null);
   const [building, setBuilding] = useState(false);
+  const [studioCover, setStudioCover] = useState("");
+  const [studioCoverBusy, setStudioCoverBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -276,11 +320,12 @@ export default function AdminGamesPage() {
     if (!session) return;
     setBuilding(true);
     try {
-      const g = await api.post("/admin/games/studio/build", { session_id: session });
+      const g = await api.post("/admin/games/studio/build", { session_id: session, cover_image: studioCover || undefined });
       setGames((list) => [...list, g]);
       setMsgs([]);
       setSession(null);
       setSpecReady(null);
+      setStudioCover("");
       toast.success(`Built "${g.title}" (${g.kind}, private) — review it below, then publish.`);
     } catch (e) {
       toast.error(e.message || "Couldn't build the game");
@@ -289,11 +334,27 @@ export default function AdminGamesPage() {
     }
   };
 
+  const uploadStudioCover = async (file) => {
+    if (!file) return;
+    if (!cloudinaryAvailable) { toast.error("Image uploads aren't configured."); return; }
+    setStudioCoverBusy(true);
+    try {
+      const res = await uploadToCloudinary(file, { resourceType: "image" });
+      setStudioCover(res.secure_url);
+      toast.success("Cover image added");
+    } catch (e) {
+      toast.error(e.message || "Upload failed");
+    } finally {
+      setStudioCoverBusy(false);
+    }
+  };
+
   const resetStudio = () => {
     setMsgs([]);
     setSession(null);
     setSpecReady(null);
     setStudioInput("");
+    setStudioCover("");
   };
 
   return (
@@ -358,7 +419,32 @@ export default function AdminGamesPage() {
                 <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">{specReady.kind}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{specReady.description}</p>
-              <Button onClick={buildStudio} disabled={building} className="mt-2 h-9 w-full gap-1.5 bg-green-600 text-white hover:bg-green-700" data-testid="studio-build">
+
+              {/* Optional custom cover image */}
+              <div className="mt-2 flex items-center gap-3 rounded-lg border border-border bg-background/60 p-2">
+                <div className="relative h-12 w-20 flex-none overflow-hidden rounded-md border border-border bg-gradient-to-br from-primary/25 to-transparent">
+                  {studioCover ? (
+                    <img src={studioCover} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-xl">{specReady.cover_emoji}</span>
+                  )}
+                  {studioCoverBusy && <div className="absolute inset-0 flex items-center justify-center bg-black/50"><Loader2 size={14} className="animate-spin text-white" /></div>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground"><ImagePlus size={12} /> Cover image (optional)</div>
+                  <div className="mt-1 flex items-center gap-3">
+                    <label className="cursor-pointer text-[11px] font-semibold text-primary hover:underline" data-testid="studio-cover-upload">
+                      {studioCover ? "Change" : "Upload image"}
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadStudioCover(e.target.files?.[0])} />
+                    </label>
+                    {studioCover && (
+                      <button onClick={() => setStudioCover("")} className="text-[11px] font-semibold text-muted-foreground hover:text-destructive" data-testid="studio-cover-clear">Remove</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <Button onClick={buildStudio} disabled={building || studioCoverBusy} className="mt-2 h-9 w-full gap-1.5 bg-green-600 text-white hover:bg-green-700" data-testid="studio-build">
                 {building ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} Build &amp; save (private)
               </Button>
             </div>

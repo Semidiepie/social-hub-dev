@@ -5,6 +5,15 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — Games overhaul Phase 1: full-screen play + custom cover art (2026-06, web)
+- **Full-screen immersive play:** the level-based games (match3/memory/quiz/tapper) now render the level **map, intro, board and result** inside a full-screen `GameScreen` shell (`GameMap.jsx`) over the game's **backdrop** (its custom cover image if set, else a themed gradient + dark overlay), each with a persistent **exit X** (`game-exit`) — map→/games, play/intro/result→map. Board is centered/large on desktop, full-width on mobile (no horizontal overflow). Win result shows confetti + stars + token reward line.
+- **Rich Games list** (`Games.jsx`): each card is a full-bleed **cover image** with the title overlaid (`.pmp-gamecard`), emoji+gradient fallback when no image; kept progress/Play + private badge.
+- **Custom cover image upload** (`AdminGames.jsx`): per-game uploader in each GameRow (`cover-upload-<slug>` / `cover-clear-<slug>`) and in the Sage studio **ready** panel (`studio-cover-upload`, passed to build). Image fully covers the card AND becomes the in-play backdrop. Cloudinary upload; no AI/image credits.
+- **Backend (`routes/games.py`):** `cover_image` on `CreateGameBody`/`UpdateGameBody`/`StudioBuildBody`, in `_public_game`, `admin_create`, `_create_from_spec(spec, cover_image)`, `admin_studio_build`, and `admin_update` — `_clean_cover_image()` accepts **https only** (≤1000 chars); empty/invalid clears it to null (emoji/gradient fallback).
+- **Unchanged:** match-3 engine/visuals/sfx were already Candy-Crush-grade (iteration 45: glossy candies, pop/burst, cascade, combos, 4-match line / 5-match bomb specials, win/lose sfx); gameplay balance (scoring, levels, stars, token rewards, caps) untouched. Farm/slots full-screen framing deferred to Phase 2.
+- **Verified (testing agent iteration_48 — PASS):** backend 6/6 pytest (cover_image expose/set/clear/auth); web e2e of list cover card + immersive map/intro/play/result + persistent exit + admin cover UI; mobile 390×844 no overflow. Credit guardrail honored (no Sage/LLM calls). Preview-only — redeploy for production. Web-only. NOTE: a candy demo cover was set on the public `postmeplex-match` game — change/remove it in Admin → Games.
+
+
 ## Fix — Messages screen sideways-overflow on phones (2026-06, web)
 - **Bug:** on phones (browser + PWA, same web code) the Messages screen rendered wider than the screen — left edge cut off, top controls (New / admin add-person, and an open chat's back/call/video/settings) only reachable by scrolling sideways.
 - **Root cause:** the page wrapper used `grid` with only an `md:` column template, so on mobile it fell to a single implicit `auto` track; grid items default to `min-width:auto` (min-content), so wide content pushed the track past the phone width → horizontal overflow.
