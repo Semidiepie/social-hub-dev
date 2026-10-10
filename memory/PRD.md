@@ -853,3 +853,7 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 ### 2026-06 — Redesign follow-up fixes
 - Following tab was inert: added `?following=1` to GET /api/feed (filters posts/reels/videos to accounts the viewer follows; returns [] if not following anyone). Home now refetches on tab switch (For you → /feed, Following → /feed?following=1). Verified: fetch 200 + correct empty state.
 - Collapsed left rail showed a squished/peeking profile avatar: wrapped account Avatar in shrink-0 and switched the name block + logout button from width-reveal to `hidden group-hover:flex/block` so they take no space when collapsed. Verified at rail width 76 — clean avatar.
+
+### 2026-06 — Fix: can't reply to comments from the web feed
+- Root cause: Home.jsx used a local `PostComments` renderer (top-level add + delete only, NO reply/threading). The full `CommentThread` (reply/@mention/view-replies/delete) was only wired on PostDetail/ReelWatch/VideoWatch/ReelsFeed.
+- Fix: replaced the feed's inline `PostComments` with the shared `CommentThread` (type="post", id=post.id, onCountChange delta). Removed the dead local component. Now reply works in the feed on web (desktop + mobile browser). Verified: Reply + Delete actions show, inline reply composer prefills "@username". Code fix in PREVIEW — needs redeploy for production.

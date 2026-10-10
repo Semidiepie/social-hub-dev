@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/PostComposer";
 // StoryBar import removed while stories are hidden
 import { EditContentModal } from "@/components/EditContentModal";
+import CommentThread from "@/components/CommentThread";
 import { FeaturedBadge, FeatureToggle } from "@/components/FeaturedControls";
 import { timeAgo, formatNumber, userPath, videoPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { toast } from "sonner";
@@ -285,11 +286,14 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
       )}
 
       {showComments && (
-        <PostComments
-          postId={post.id}
-          user={user}
-          onCountChange={setCommentsCount}
-        />
+        <div className="border-t border-border px-4 py-3" data-testid={`post-comments-${post.id}`}>
+          <CommentThread
+            type="post"
+            id={post.id}
+            autoFocus
+            onCountChange={(delta) => setCommentsCount((c) => Math.max(0, c + delta))}
+          />
+        </div>
       )}
 
       <EditContentModal
@@ -299,125 +303,6 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
         onSaved={onUpdated}
       />
     </article>
-  );
-}
-
-function PostComments({ postId, user, onCountChange }) {
-  const [comments, setComments] = useState(null);
-  const [text, setText] = useState("");
-  const [posting, setPosting] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    api
-      .get(`/posts/${postId}/comments`)
-      .then((rows) => {
-        if (active) setComments(rows);
-      })
-      .catch(() => {
-        if (active) setComments([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, [postId]);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!user || !text.trim() || posting) return;
-    setPosting(true);
-    try {
-      await api.post(`/posts/${postId}/comments`, { text: text.trim() });
-      setText("");
-      const rows = await api.get(`/posts/${postId}/comments`);
-      setComments(rows);
-      onCountChange(rows.length);
-    } catch (err) {
-      toast.error(err.message || "Failed to comment");
-    } finally {
-      setPosting(false);
-    }
-  };
-
-  const removeComment = async (c) => {
-    if (!window.confirm("Delete this comment?")) return;
-    const prev = comments || [];
-    const next = prev.filter((x) => x.id !== c.id);
-    setComments(next);
-    onCountChange(next.length);
-    try {
-      await api.del(`/posts/${postId}/comments/${c.id}`);
-    } catch (e) {
-      setComments(prev);
-      onCountChange(prev.length);
-      toast.error(e.message || "Failed to delete");
-    }
-  };
-
-  return (
-    <section className="border-t border-border px-4 py-3" data-testid={`post-comments-${postId}`}>
-      <form onSubmit={submit} className="flex items-center gap-2">
-        {user && <Avatar src={user.avatar_url} size={32} frame={frameOf(user)} />}
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={user ? "Add a comment…" : "Sign in to comment"}
-          disabled={!user}
-          data-testid={`post-comment-input-${postId}`}
-          className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm outline-none focus:border-primary/60 disabled:opacity-60"
-        />
-        <button
-          type="submit"
-          disabled={posting || !text.trim() || !user}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-          data-testid={`post-comment-submit-${postId}`}
-        >
-          {posting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-        </button>
-      </form>
-
-      {comments === null ? (
-        <div className="flex justify-center py-4">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-        </div>
-      ) : comments.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">
-          No comments yet. Be the first to comment.
-        </p>
-      ) : (
-        <div className="mt-3 space-y-3">
-          {comments.map((c) => (
-            <div key={c.id} className="group flex items-start gap-2.5" data-testid={`post-comment-${c.id}`}>
-              <Avatar src={c.author?.avatar_url || c.avatar_url} size={32} frame={frameOf(c.author || c)} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1 text-sm">
-                  <span className="font-semibold">
-                    {c.author?.display_name || c.display_name || c.author?.username}
-                  </span>
-                  {(c.is_verified || c.author?.is_verified) && (
-                    <BadgeCheck size={13} className={badgeCls(c, "shrink-0")} style={badgeStyle(c)} />
-                  )}
-                  <span className="text-xs text-muted-foreground">· {timeAgo(c.created_at)}</span>
-                </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/95">{c.text}</p>
-              </div>
-              {user && c.user_id === user.id && (
-                <button
-                  type="button"
-                  onClick={() => removeComment(c)}
-                  title="Delete comment"
-                  aria-label="Delete comment"
-                  data-testid={`post-comment-delete-${c.id}`}
-                  className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                >
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 
