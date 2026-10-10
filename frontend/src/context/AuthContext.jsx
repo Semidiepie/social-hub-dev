@@ -60,6 +60,24 @@ export function AuthProvider({ children }) {
     refresh();
   }, [refresh]);
 
+  // Presence heartbeat — tells the backend we're active so mutually-followed
+  // friends can see us in their "Active now" row. Pings while the tab is visible.
+  useEffect(() => {
+    if (!user) return undefined;
+    const ping = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      api.post("/presence/ping").catch(() => {});
+    };
+    ping();
+    const t = setInterval(ping, 45000);
+    const onVis = () => { if (!document.hidden) ping(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [user]);
+
   const login = useCallback(async (email, password) => {
     const resp = await api.post("/auth/login", { email, password }, false);
     setToken(resp.access_token);

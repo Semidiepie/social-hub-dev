@@ -193,9 +193,20 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       appStateRef.current = next;
       if (prev.match(/inactive|background/) && next === "active" && user?.id) {
         registerPush(user.id);
+        api.post("/presence/ping", {}).catch(() => {});
       }
     });
     return () => sub.remove();
+  }, [user?.id]);
+
+  // Presence heartbeat — tells the backend we're active so mutually-followed
+  // friends can see us in their "Active now" row.
+  useEffect(() => {
+    if (!user?.id) return;
+    const ping = () => { api.post("/presence/ping", {}).catch(() => {}); };
+    ping();
+    const t = setInterval(ping, 45000);
+    return () => clearInterval(t);
   }, [user?.id]);
 
   const login = useCallback(async (email: string, password: string) => {

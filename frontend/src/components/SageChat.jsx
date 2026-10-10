@@ -152,7 +152,7 @@ export function SageChat({ onBack }) {
           })
         )}
         {sending && (
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2" data-testid="sage-typing">
             <Avatar src={SAGE.avatar_url} size={28} />
             <div className="rounded-2xl bg-secondary px-3 py-2 text-sm text-muted-foreground">Sage is typing…</div>
           </div>

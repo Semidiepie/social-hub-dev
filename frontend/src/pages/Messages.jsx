@@ -14,6 +14,12 @@ import { SageChat, SAGE } from "@/components/SageChat";
 import { AiCharacterChat } from "@/components/AiCharacterChat";
 import { toast } from "sonner";
 
+// Compact "active Xm ago" label from an ISO timestamp.
+function minsAgo(iso) {
+  const m = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`;
+}
+
 export default function MessagesPage() {
   const { user } = useAuth();
   const { convId } = useParams();
@@ -54,6 +60,33 @@ export default function MessagesPage() {
     [conversations, convId],
   );
 
+  const [activeFriends, setActiveFriends] = useState([]);
+  const loadActive = useCallback(async () => {
+    try {
+      const r = await api.get("/presence/active");
+      setActiveFriends(r.friends || []);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    loadActive();
+    const t = setInterval(loadActive, 20000);
+    return () => clearInterval(t);
+  }, [loadActive]);
+  const onlineIds = useMemo(
+    () => new Set(activeFriends.filter((f) => f.online).map((f) => f.id)),
+    [activeFriends],
+  );
+
+  const openDm = async (friendId) => {
+    try {
+      const c = await api.post("/conversations", { member_ids: [friendId] });
+      loadConversations();
+      navigate(`/messages/${c.id}`);
+    } catch (e) {
+      toast.error(e.message || "Couldn't open chat");
+    }
+  };
+
   const deleteConversation = async (id, e) => {
     e?.stopPropagation();
     if (!window.confirm("Delete this conversation? It will be removed from your list.")) return;
@@ -82,6 +115,32 @@ export default function MessagesPage() {
             <Plus size={16} /> New
           </button>
         </div>
+        {activeFriends.length > 0 && (
+          <div className="border-b border-border/60 px-3 py-3" data-testid="active-now-row">
+            <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Active now</div>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {activeFriends.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => openDm(f.id)}
+                  className="flex w-14 shrink-0 flex-col items-center gap-1"
+                  title={f.display_name}
+                  data-testid={`active-friend-${f.id}`}
+                >
+                  <span className="relative">
+                    <Avatar src={f.avatar_url} size={48} />
+                    {f.online ? (
+                      <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-card bg-green-500" data-testid={`active-dot-${f.id}`} />
+                    ) : null}
+                  </span>
+                  <span className="w-full truncate text-center text-[11px] text-muted-foreground">
+                    {f.online ? f.display_name.split(" ")[0] : minsAgo(f.last_active_at)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : (
@@ -151,7 +210,12 @@ export default function MessagesPage() {
                   }`}
                   data-testid={`conv-${c.id}`}
                 >
-                  <Avatar src={c.avatar_url} size={44} frame={c.is_group ? null : frameOf(c.peer)} live={!c.is_group && c.peer?.is_live} />
+                  <span className="relative shrink-0">
+                    <Avatar src={c.avatar_url} size={44} frame={c.is_group ? null : frameOf(c.peer)} live={!c.is_group && c.peer?.is_live} />
+                    {!c.is_group && c.peer && onlineIds.has(c.peer.id) && (
+                      <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card bg-green-500" data-testid={`conv-online-${c.id}`} />
+                    )}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between">
                       <span className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold">
@@ -377,6 +441,8 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const lastTypingPing = useRef(0);
   const listRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -394,15 +460,28 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   useEffect(() => {
     setLoading(true);
     setMessages([]);
+    setTypingUsers([]);
     load();
     if (!conv) return undefined;
-    const t = setInterval(load, 4000);
+    const t = setInterval(() => {
+      load();
+      api.get(`/conversations/${conv.id}/typing`).then((r) => setTypingUsers(r.users || [])).catch(() => {});
+    }, 3500);
     return () => clearInterval(t);
   }, [conv, load]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages]);
+  }, [messages, typingUsers]);
+
+  const onType = (e) => {
+    setText(e.target.value);
+    const ts = Date.now();
+    if (e.target.value && conv && ts - lastTypingPing.current > 2500) {
+      lastTypingPing.current = ts;
+      api.post(`/conversations/${conv.id}/typing`, {}).catch(() => {});
+    }
+  };
 
   const send = async (e) => {
     e.preventDefault();
@@ -454,7 +533,9 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
             {!conv.is_group && conv.peer?.is_verified && <BadgeCheck size={15} className={badgeCls(conv.peer, "shrink-0")} style={badgeStyle(conv.peer)} />}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
-            {conv.is_group ? `${conv.members.length} members` : `@${conv.peer?.username || ""}`}
+            {typingUsers.length > 0
+              ? (conv.is_group ? `${typingUsers[0].display_name} is typing…` : "typing…")
+              : (conv.is_group ? `${conv.members.length} members` : `@${conv.peer?.username || ""}`)}
           </div>
         </div>
         <button onClick={() => startCall(conv, "audio")} title="Audio call" aria-label="Audio call"
@@ -507,10 +588,19 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
             );
           })
         )}
+        {typingUsers.length > 0 && (
+          <div className="flex items-end gap-2" data-testid="dm-typing">
+            <div className="flex gap-1 rounded-2xl bg-secondary px-3 py-2.5">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "0ms" }} />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "150ms" }} />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "300ms" }} />
+            </div>
+          </div>
+        )}
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a message…"
+        <input value={text} onChange={onType} placeholder="Type a message…"
           className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="chat-input" />
         <Button type="submit" disabled={sending || !text.trim()}
           className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="chat-send">

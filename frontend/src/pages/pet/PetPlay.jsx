@@ -138,8 +138,10 @@ function Floor({ color }) {
   return <div className="absolute inset-x-0 bottom-0 h-1/3 rounded-t-[40%]" style={{ background: color, opacity: 0.55 }} />;
 }
 
-// Hook: completion guard + celebration -> onDone.
-function useComplete(onDone) {
+// Hook: commits the reward the instant the activity is completed (onComplete),
+// shows the celebration, then closes the room (onClose) — so the reward/cooldown
+// applies even if the player dismisses with the X instead of the Done button.
+function useComplete(onComplete, onClose) {
   const [celebrating, setCelebrating] = useState(false);
   const firedRef = useRef(false);
   const timerRef = useRef(null);
@@ -148,12 +150,13 @@ function useComplete(onDone) {
     firedRef.current = true;
     setCelebrating(true);
     playHappyChime();
-    timerRef.current = setTimeout(() => onDone(), delay);
-  }, [onDone]);
+    onComplete(); // commit reward + cooldown immediately on completion
+    timerRef.current = setTimeout(() => onClose(), delay);
+  }, [onComplete, onClose]);
   const finishNow = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    onDone();
-  }, [onDone]);
+    onClose();
+  }, [onClose]);
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
   return { celebrating, celebrate, finishNow };
 }
@@ -207,7 +210,7 @@ function FoodPiece({ emoji, home, petRef, onEat, testId }) {
   );
 }
 
-function FeedRoom({ theme, petImage, petName, petDescription, onDone, onCancel }) {
+function FeedRoom({ theme, petImage, petName, petDescription, onComplete, onClose }) {
   const t = theme || DEFAULT_THEME;
   const petRef = useRef(null);
   const [foods, setFoods] = useState(() => {
@@ -220,7 +223,7 @@ function FeedRoom({ theme, petImage, petName, petDescription, onDone, onCancel }
   });
   const [react, setReact] = useState(false);
   const [yum, setYum] = useState(false);
-  const { celebrating, celebrate, finishNow } = useComplete(onDone);
+  const { celebrating, celebrate, finishNow } = useComplete(onComplete, onClose);
   const eaten = FEED_PORTIONS - foods.length;
 
   const eat = (id) => {
@@ -241,7 +244,7 @@ function FeedRoom({ theme, petImage, petName, petDescription, onDone, onCancel }
     <CozyShell
       theme={t} emoji="🍽️" title="Bon appétit!" hint={`Drag ${petName}'s favourite foods to its mouth`}
       progress={eaten / FEED_PORTIONS} label={`${foods.length} left`} petName={petName}
-      onCancel={onCancel} celebrating={celebrating} doneMsg="Full and happy!" onDone={finishNow}
+      onCancel={onClose} celebrating={celebrating} doneMsg="Full and happy!" onDone={finishNow}
     >
       <Floor color={t.floor} />
       <div className="absolute inset-x-6 bottom-[8%] h-6 rounded-full" style={{ background: t.floor, opacity: 0.8 }} />
@@ -259,7 +262,7 @@ function FeedRoom({ theme, petImage, petName, petDescription, onDone, onCancel }
 }
 
 // ---------- BATH ----------
-function BathRoom({ theme, petImage, petName, onDone, onCancel }) {
+function BathRoom({ theme, petImage, petName, onComplete, onClose }) {
   const t = theme || DEFAULT_THEME;
   const [smudges, setSmudges] = useState(() =>
     Array.from({ length: BATH_SMUDGES }, (_, i) => ({
@@ -280,7 +283,8 @@ function BathRoom({ theme, petImage, petName, onDone, onCancel }) {
   const [react, setReact] = useState(false);
   const [rinsing, setRinsing] = useState(false);
   const spongeRef = useRef(null);
-  const { celebrating, celebrate, finishNow } = useComplete(onDone);
+  const rinseRef = useRef(false);
+  const { celebrating, celebrate, finishNow } = useComplete(onComplete, onClose);
   const cleaned = BATH_SMUDGES - smudges.length;
   const progress = cleaned / BATH_SMUDGES;
 
@@ -309,19 +313,18 @@ function BathRoom({ theme, petImage, petName, onDone, onCancel }) {
   };
 
   const removeSmudge = (id) => {
-    let becameClean = false;
     setSmudges((prev) => {
       if (!prev.some((s) => s.id === id)) return prev;
       const next = prev.filter((s) => s.id !== id);
       playSplash();
-      if (next.length === 0) becameClean = true;
+      if (next.length === 0 && !rinseRef.current) {
+        rinseRef.current = true;
+        setTimeout(() => { setRinsing(true); setTimeout(() => celebrate(), 1050); }, 200);
+      }
       return next;
     });
     setReact(true);
     setTimeout(() => setReact(false), 450);
-    if (becameClean) {
-      setTimeout(() => { setRinsing(true); setTimeout(() => celebrate(), 1050); }, 200);
-    }
   };
 
   const scrubAt = (cx, cy) => {
@@ -359,7 +362,7 @@ function BathRoom({ theme, petImage, petName, onDone, onCancel }) {
     <CozyShell
       theme={t} emoji="🫧" title="Scrub-a-dub!" hint="Scrub with the sponge — raise lots of bubbles!"
       progress={progress} label={`${Math.round(progress * 100)}% clean`} petName={petName}
-      onCancel={onCancel} celebrating={celebrating} doneMsg="Squeaky clean! ✨" onDone={finishNow}
+      onCancel={onClose} celebrating={celebrating} doneMsg="Squeaky clean! ✨" onDone={finishNow}
     >
       {/* tub */}
       <div className="absolute inset-x-5 bottom-[6%] top-[20%] rounded-[2.5rem] bg-white/55 shadow-inner ring-1 ring-black/5" />
@@ -412,7 +415,7 @@ function BathRoom({ theme, petImage, petName, onDone, onCancel }) {
 }
 
 // ---------- PLAY ----------
-function PlayRoom({ theme, petImage, petName, onDone, onCancel }) {
+function PlayRoom({ theme, petImage, petName, onComplete, onClose }) {
   const t = theme || DEFAULT_THEME;
   const sceneRef = useRef(null);
   const toyRef = useRef(null);
@@ -466,7 +469,7 @@ function PlayRoom({ theme, petImage, petName, onDone, onCancel }) {
     });
   };
 
-  const { celebrating, celebrate, finishNow } = useComplete(onDone);
+  const { celebrating, celebrate, finishNow } = useComplete(onComplete, onClose);
 
   const down = (e) => {
     e.preventDefault();
@@ -494,7 +497,7 @@ function PlayRoom({ theme, petImage, petName, onDone, onCancel }) {
     <CozyShell
       theme={t} emoji="🎾" title="Fetch!" hint={`Aim & fling the toy — ${petName} will chase it!`}
       progress={fetched / PLAY_FETCHES} label={`${fetched}/${PLAY_FETCHES}`} petName={petName}
-      onCancel={onCancel} celebrating={celebrating} doneMsg="So much fun! 🐾" onDone={finishNow}
+      onCancel={onClose} celebrating={celebrating} doneMsg="So much fun! 🐾" onDone={finishNow}
     >
       <div ref={sceneRef} className="absolute inset-0">
         <Floor color={t.floor} />
@@ -534,8 +537,8 @@ function PlayRoom({ theme, petImage, petName, onDone, onCancel }) {
 }
 
 // ---------- Public entry ----------
-export function CareRoom({ activity, petImage, petName, petDescription, theme, onDone, onCancel }) {
-  const common = { theme, petImage, petName: petName || "your pet", onDone, onCancel };
+export function CareRoom({ activity, petImage, petName, petDescription, theme, onComplete, onClose }) {
+  const common = { theme, petImage, petName: petName || "your pet", onComplete, onClose };
   if (activity === "feed") return <FeedRoom {...common} petDescription={petDescription} />;
   if (activity === "bath") return <BathRoom {...common} />;
   if (activity === "play") return <PlayRoom {...common} />;

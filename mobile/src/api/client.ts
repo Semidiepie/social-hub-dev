@@ -338,3 +338,19 @@ export interface Message {
 export interface TypingResponse {
   users: { id: string; username: string; display_name: string }[];
 }
+
+export interface ActiveFriend {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string;
+  is_verified: boolean;
+  verified_color?: string | null;
+  online: boolean;
+  last_active_at: string;
+}
+
+export interface ActivePresence {
+  appear_offline: boolean;
+  friends: ActiveFriend[];
+}

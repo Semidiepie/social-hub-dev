@@ -234,11 +234,6 @@ export default function PetPage() {
     setInteraction(action);
   };
 
-  const finishCare = async (action) => {
-    setInteraction(null);
-    await doCare(action);
-  };
-
   const saveName = async () => {
     if (nameDraft.trim().length < 1) return;
     try {
@@ -666,8 +661,8 @@ export default function PetPage() {
           petName={pet.name}
           petDescription={pet.description}
           theme={ROOM_THEMES[pet.room_theme] || ROOM_THEMES.cream}
-          onCancel={() => setInteraction(null)}
-          onDone={() => finishCare(interaction)}
+          onComplete={() => doCare(interaction)}
+          onClose={() => setInteraction(null)}
         />
       )}
     </div>

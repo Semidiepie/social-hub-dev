@@ -1,0 +1,30 @@
+{
+  "summary": "Verified the Bath mini-game bug fix in /app/frontend/src/pages/pet/PetPlay.jsx end-to-end on the web preview, plus Feed and Play regression. Bath: opened via pet-bath-btn, all 12 pet-smudge-* cleared via tap, progress label reached '100% clean', rinse played, pet-room-celebrate appeared, pet-room-done closed the room and returned to pet-card, and the backend confirmed bath cooldown applied (UI showed 'Bath 5h 59m' after Done). Feed: 4 pet-food-* delivered -> 'Full and happy!' celebration -> return to pet-card. Play: 5 taps on pet-ball reached '5/5' -> 'So much fun!' celebration -> return to pet-card (UI showed 'Play 1h 59m' cooldown). The reported bug 'bath is not successfully completing' is FIXED.",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "/pet", "issues": ["The PWA 'Get the app' install bar at the bottom of the preview can intercept taps on bottom-row controls; this is a known test-env quirk and the main agent already dismisses/bypasses it. No user-facing fix required but worth re-checking z-index on real small viewports."]}
+      ]
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "BathRoom.removeSmudge now correctly fires rinse + celebrate from INSIDE the setSmudges updater when next.length===0, guarded by rinseRef (single-fire). Mirrors the pattern used by FeedRoom.eat. Fix looks solid and race-safe.",
+    "smudgesRef mirror of smudges is maintained via a synchronous assignment during render — acceptable here since scrubAt only reads it; still worth noting as a mild React anti-pattern (prefer useEffect or useLayoutEffect sync).",
+    "useComplete.firedRef prevents double-celebrate even if both the final tap and a stray scrubAt call fire the same frame — defensive coverage is good."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "Called POST /api/admin/users/{founder-id}/refresh-pet twice to reset cooldowns before testing (founder super-admin, no AI credits consumed). No persistent seed data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug 'bath is not completing' is fixed and verified on web. Testing credential: PIN login as semidiepie@gmail.com / 7455. To clear cooldowns during a run: POST /api/admin/users/08bc3c6e-fbc2-4785-8071-a4abda487b36/refresh-pet with founder Bearer token. For Playwright-driven tests of the Play toy, use real locator.click() (not synthetic PointerEvent dispatches) because the toy calls setPointerCapture which requires a real pointerId. For Bath smudges, el.click() works fine. The PWA 'Get the app' bar can intercept bottom-of-screen taps — dismiss its 'X' or scroll before clicking. Testing was web-only per request; mobile Expo and backend not tested in this iteration.",
+  "rca of the issue": "ORIGINAL BUG RCA (fix verified): BathRoom.removeSmudge previously computed `becameClean = next.length === 0` inside the setSmudges updater but then READ it synchronously after the setter — because React batched updater runs asynchronously, becameClean was always its initial (false) value when consumed, so the rinse-then-celebrate sequence never fired and the bath could not complete. FIX: trigger setRinsing + celebrate from INSIDE the state updater when next.length===0, with a `rinseRef` guard so it fires exactly once. Rewards unchanged — onDone still calls /api/pet/bath. Reproduction (pre-fix): open Bath, clear 12 smudges, progress hits 100% but overlay never appears and Done never shows. Mitigation (post-fix): all 12 smudges cleared -> rinse sparkles -> celebrate overlay -> Done -> pet-card + bath cooldown 6h set server-side. Verified."
+}

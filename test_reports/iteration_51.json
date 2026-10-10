@@ -1,0 +1,42 @@
+{
+  "summary": "Full E2E for Messaging Presence + Sage AI text-only fix on web and mobile. 14/14 backend tests PASS. Web: Active-now row + green dot, tap-to-open DM, Settings 'Appear offline' toggle (reciprocal persistence verified), DM typing bubble + header 'typing…', Sage AI text chat returns TEXT ONLY with ZERO audio.play() calls, sage-call-btn present. Mobile Expo preview: Active-now scroller + testIDs, tap-to-open DM, typing bubble + 'is typing…' header, privacy-appear-offline toggle persists via PUT /users/me/privacy. One minor missing data-testid on web Sage typing bubble added by me (sage-typing).",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration51_presence.py",
+    "/app/test_reports/pytest/iteration51_presence.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend /api/presence/active correctly intersects outgoing + incoming follows for mutual friends, honors reciprocal appear_offline, filters blocked users, sorts online-first then by last_active_at desc. Clean.",
+    "/api/sage/send never returns audio_url and does not expose any TTS path — the audio is only generated under /api/sage/voice-turn which is strictly behind the phone-call button on the frontend. Verified assumption holds.",
+    "SageChat.jsx typing bubble was missing a data-testid — added data-testid=\"sage-typing\" (testID fix only, no behavior change).",
+    "Typing indicator poll is 3.5s on web — a 'typing…' heartbeat can take up to ~5s to appear/disappear in the UI; acceptable UX.",
+    "AsyncStorage web shim stores values as JSON.stringify(value); for test-only token injection on the Expo preview I had to write JSON.stringify('<token>') into localStorage. Not a product bug, just a testing note."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/SageChat.jsx",
+    "/app/backend/tests/test_iteration51_presence.py"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (web + mobile flows verified)"},
+  "test_credentials": "Created disposable test_* users for every run (auto-purged on backend restart). Mutual-follow pairs test_mb3_a_* / test_mb3_b_* were the last mobile pair; test_webp_a_* / test_webp_b_* for web.",
+  "seed_data_creation": "Each test flow registers two test_* users via /api/auth/register, mutually follows, and pings /api/presence/ping. No admin or founder credentials were needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Web Sage typing bubble now has data-testid=sage-typing. For mobile Expo preview, AsyncStorage web shim stores values via JSON.stringify, so inject the JWT with: localStorage.setItem('postmeplex.token', JSON.stringify('<token>')) — then navigate. The green active dot on conv-list avatars (testid conv-online-{conv.id}) only renders when the peer is still within the 2-min ONLINE_WINDOW; backend presence window is 120s so pings need to be fresh.",
+  "rca of the issue": ""
+}

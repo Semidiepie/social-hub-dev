@@ -9,6 +9,7 @@ import { colors, spacing, radii } from "@/src/theme";
 interface Privacy {
   followers_private: boolean;
   following_private: boolean;
+  appear_offline: boolean;
 }
 
 export default function PrivacySettings() {
@@ -78,6 +79,19 @@ export default function PrivacySettings() {
               busy={saving === "following_private"}
               onChange={(v) => toggle("following_private", v)}
               testID="privacy-following-private"
+            />
+          </View>
+
+          <Text style={styles.sectionLabel}>Active status</Text>
+          <View style={styles.card}>
+            <ToggleRow
+              icon="ellipse"
+              label="Appear offline"
+              hint="Hide your active status from everyone. You also won't see others' active status."
+              value={state.appear_offline}
+              busy={saving === "appear_offline"}
+              onChange={(v) => toggle("appear_offline", v)}
+              testID="privacy-appear-offline"
             />
           </View>
 

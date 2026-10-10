@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles, Link2 } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles, Link2, Circle } from "lucide-react";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,26 @@ export default function SettingsPage() {
 
   const [social, setSocial] = useState({ connections: [], tiktok_configured: false });
   const [socialBusy, setSocialBusy] = useState(false);
+
+  const [appearOffline, setAppearOffline] = useState(false);
+  const [presenceBusy, setPresenceBusy] = useState(false);
+
+  useEffect(() => {
+    api.get("/users/me/privacy").then((p) => setAppearOffline(!!p.appear_offline)).catch(() => {});
+  }, []);
+
+  const toggleAppearOffline = async () => {
+    setPresenceBusy(true);
+    try {
+      const p = await api.put("/users/me/privacy", { appear_offline: !appearOffline });
+      setAppearOffline(!!p.appear_offline);
+      toast.success(p.appear_offline ? "You now appear offline" : "Active status is on");
+    } catch (e) {
+      toast.error(e.message || "Failed");
+    } finally {
+      setPresenceBusy(false);
+    }
+  };
 
   const loadSocial = useCallback(async () => {
     try { setSocial(await api.get("/social/connections")); } catch { /* noop */ }
@@ -345,6 +365,29 @@ export default function SettingsPage() {
           >
             {pushBusy ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
             {pushOn ? "Turn off" : "Enable"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Circle size={14} className="fill-green-500 text-green-500" /> Active status</CardTitle></CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div>
+            <div className="font-semibold">Show when I'm active</div>
+            <p className="text-xs text-muted-foreground">
+              Friends you mutually follow see a green dot and an “Active now” badge when you&apos;re online. Turn this off to appear offline — you also won&apos;t see others&apos; active status.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant={appearOffline ? "default" : "outline"}
+            disabled={presenceBusy}
+            onClick={toggleAppearOffline}
+            className={`shrink-0 gap-2 ${appearOffline ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+            data-testid="settings-toggle-appear-offline"
+          >
+            {presenceBusy ? <Loader2 size={14} className="animate-spin" /> : null}
+            {appearOffline ? "Appear online" : "Appear offline"}
           </Button>
         </CardContent>
       </Card>

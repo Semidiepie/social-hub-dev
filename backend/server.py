@@ -1386,14 +1386,16 @@ async def list_following(user_id: str, viewer: Annotated[Optional[dict], Depends
 class PrivacyBody(BaseModel):
     followers_private: Optional[bool] = None
     following_private: Optional[bool] = None
+    appear_offline: Optional[bool] = None
 
 
 @app.get("/api/users/me/privacy")
 async def get_my_privacy(current: Annotated[dict, Depends(get_current_user)]):
-    u = await db.users.find_one({"id": current["id"]}, {"_id": 0, "followers_private": 1, "following_private": 1})
+    u = await db.users.find_one({"id": current["id"]}, {"_id": 0, "followers_private": 1, "following_private": 1, "appear_offline": 1})
     return {
         "followers_private": bool((u or {}).get("followers_private", False)),
         "following_private": bool((u or {}).get("following_private", False)),
+        "appear_offline": bool((u or {}).get("appear_offline", False)),
     }
 
 
@@ -1404,12 +1406,15 @@ async def update_my_privacy(body: PrivacyBody, current: Annotated[dict, Depends(
         patch["followers_private"] = bool(body.followers_private)
     if body.following_private is not None:
         patch["following_private"] = bool(body.following_private)
+    if body.appear_offline is not None:
+        patch["appear_offline"] = bool(body.appear_offline)
     if patch:
         await db.users.update_one({"id": current["id"]}, {"$set": patch})
-    u = await db.users.find_one({"id": current["id"]}, {"_id": 0, "followers_private": 1, "following_private": 1})
+    u = await db.users.find_one({"id": current["id"]}, {"_id": 0, "followers_private": 1, "following_private": 1, "appear_offline": 1})
     return {
         "followers_private": bool((u or {}).get("followers_private", False)),
         "following_private": bool((u or {}).get("following_private", False)),
+        "appear_offline": bool((u or {}).get("appear_offline", False)),
     }
 
 
@@ -3266,6 +3271,9 @@ app.include_router(_build_ai_characters(route_ctx))
 
 from routes.social import build_router as _build_social  # noqa: E402
 app.include_router(_build_social(route_ctx))
+
+from routes.presence import build_router as _build_presence  # noqa: E402
+app.include_router(_build_presence(route_ctx))
 
 
 @app.on_event("startup")
