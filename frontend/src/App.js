@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
+import { CheckCircle2, XCircle, Info, AlertTriangle, Loader2 } from "lucide-react";
 import { AuthProvider } from "@/context/AuthContext";
 import { PlayerProvider } from "@/context/PlayerContext";
 import { CallProvider } from "@/context/CallContext";
@@ -77,11 +78,22 @@ export default function App() {
           <Toaster
             theme="dark"
             position="top-right"
+            gap={10}
+            offset={16}
+            icons={{
+              success: <CheckCircle2 size={18} strokeWidth={2.5} className="text-green-500" />,
+              error: <XCircle size={18} strokeWidth={2.5} className="text-red-500" />,
+              info: <Info size={18} strokeWidth={2.5} className="text-primary" />,
+              warning: <AlertTriangle size={18} strokeWidth={2.5} className="text-amber-400" />,
+              loading: <Loader2 size={18} className="animate-spin text-primary" />,
+            }}
             toastOptions={{
-              style: {
-                background: "hsl(226 15% 12%)",
-                border: "1px solid hsl(226 13% 20%)",
-                color: "hsl(0 0% 98%)",
+              unstyled: false,
+              classNames: {
+                toast: "pmp-toast",
+                title: "pmp-toast-title",
+                description: "pmp-toast-desc",
+                icon: "pmp-toast-icon",
               },
             }}
           />

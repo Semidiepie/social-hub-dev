@@ -1,62 +1,54 @@
-# Messaging Presence & AI Voice Fix
+# Restyled In-App Notification Popups (Web)
 
-Make Messages feel alive and keep the AI quiet unless you want it talking. Adds an "active now" row of mutual-follower friends, live typing indicators, and stops the AI from reading its text replies aloud.
+A redesign of the small popups that slide in on the web app — the ones that say things like "Welcome back", "Posted", "Profile updated", "Failed to send", and so on. They move from a plain generic dark box to a polished, on-brand PostMePlex look.
 
 ## Who it's for
-PostMePlex users who chat with friends and with Sage AI. Every user can message Sage. They want to see which friends are around right now, know when someone is replying, and only hear Sage's voice when they deliberately start a phone call. (Note: creating custom AI characters is a separate admin-only feature and is out of scope here.)
+Everyone using PostMePlex on the web. These popups are the app's quick confirmations and error messages — they appear briefly after actions (logging in, posting, saving settings, sending a message, errors, etc.) and auto-dismiss. The goal is for them to feel like a deliberate part of the product, not a stock/default component.
 
 ## Core features and experience
-
-### 1. Sage AI chat stays silent (bug fix)
-When you text Sage AI, its reply appears as text only — no voice. Sage only speaks when you tap the phone-call button to start a voice call. Nothing else changes about how Sage answers, and Sage remains available to every user.
-
-### 2. Active status
-- A horizontal "Active now" row appears at the top of the Messages list, showing the avatars of friends who are currently active, placed side by side.
-- Only people you **mutually follow** (you follow each other) can see each other's active status.
-- A friend counts as active when their app is open/connected. When they were online recently but aren't connected right now, their avatar/label shows "active X min ago" instead of a live indicator.
-- Tapping a friend's avatar in the row opens a direct chat with that friend.
-- A green presence dot also appears on friend avatars inside the Messages list.
-- **Privacy toggle:** a setting lets you "appear offline." When on, your active status is hidden from everyone and you also stop seeing others' active status (standard reciprocal behavior), so the feature stays fair.
-
-### 3. Typing indicators
-- In a human-to-human DM, when the other person is typing, you see a "typing…" indicator in that conversation.
-- When you message Sage AI, a "typing…" bubble shows while Sage is composing its reply, then it's replaced by the text answer.
+- **One consistent popup style across the whole web app.** Every quick confirmation, info, and error message shares the same redesigned look, so the app feels cohesive. No message wording changes — only the appearance and motion.
+- **Clear status at a glance.** Each popup carries a small status icon that signals the type of message:
+  - success (e.g. "Posted", "Profile updated")
+  - error (e.g. "Failed to send")
+  - info / neutral (e.g. "Welcome back", general notices)
+  The icon uses the matching accent color so people can read the outcome instantly, even before reading the text.
+- **On-brand visual treatment.** Deep dark card matching the app background, a slim vivid-orange accent detail, bold readable text, soft elevation/shadow so it lifts off the page, and rounded corners consistent with the rest of the UI.
+- **Smooth, intentional motion.** The popup slides/springs in and fades out gently, rather than appearing abruptly. Stacking of multiple popups stays tidy.
+- **Position and timing.** Popups continue to appear in the top-right corner and auto-dismiss after a few seconds (same placement and behavior as today) — only the styling and motion change.
+- **No layout disruption.** Popups float above content and never push the page around; they remain dismissible and accessible.
 
 ## User flow
-1. Open Messages → an "Active now" row sits at the top showing mutually-followed friends who are online now (or recently, with an "active X min ago" label).
-2. Tap a friend's avatar in that row → their DM opens.
-3. As you type, the other person sees a "typing…" indicator; when they type, you see theirs.
-4. Open the Sage AI chat and send a message → a "typing…" bubble appears while Sage composes, then the text reply lands — with no sound.
-5. Tap the phone-call button in the Sage chat → now (and only now) Sage speaks.
-6. Go to Settings → toggle "Appear offline" to hide your active status.
+1. A person does something that triggers feedback — logs in, publishes a post, updates settings, hits an error, etc.
+2. A redesigned popup slides in at the top-right with a status icon, the brand accent, and the message text.
+3. It stays briefly, then fades out on its own (or can be dismissed).
+4. If several actions happen quickly, popups stack cleanly and clear one by one.
 
 ## UI/UX feel
-- The active-now row mirrors familiar social patterns (Instagram/Messenger): round avatars in a horizontal strip, a small green dot for live presence, subtle "active X min ago" captions for recent activity.
-- Typing indicators are lightweight animated dots in the conversation, unobtrusive and auto-clearing.
-- Presence updates feel near-instant without the user doing anything.
-- The "Appear offline" toggle lives with other privacy/account settings and reads clearly as off by default (you are visible unless you choose otherwise).
+- Matches the PostMePlex brand: near-black surface (#12141c family), vivid orange (#FF6B3D) as the accent, white primary text with muted secondary text.
+- A colored status icon (success green, error red, brand orange/neutral for info) anchors the left side; a thin accent bar or icon ring ties it to the brand.
+- Bold, confident typography for the headline line; lighter weight for any supporting detail.
+- Gentle spring-in / fade-out motion; subtle shadow and rounded corners (consistent with cards and buttons elsewhere).
+- No third-party or default-component "feel" — it should look purpose-built for the app. No external brand marks shown.
 
 ## Implementation phases
 
 ### Phase 1 — MVP (built now)
-- Sage AI voice fix: text replies never spoken; voice only via the phone-call button. Sage stays available to all users.
-- Typing indicators in human DMs and a Sage AI "typing…" bubble while it composes.
-- Active status: "Active now" row at top of Messages (mutual followers only), live green presence dots, "active X min ago" for recent activity, tap avatar to open DM.
-- "Appear offline" privacy toggle in Settings.
+- Redesign the web popup appearance and motion as described above: brand colors, status icon per type (success / error / info), slim accent, elevation, rounded corners, smooth slide/spring-in and fade-out.
+- Apply it globally so all existing web popups ("Welcome back", "Posted", errors, etc.) adopt the new look automatically — no message text changes.
+- Keep current top-right placement and auto-dismiss timing.
 
-### Phase 2 — Presence everywhere (later)
-- Show presence on profile pages and in the chat header ("Active now" / "last seen …").
-- Extend presence/typing to any group or multi-person conversations if present.
+### Phase 2 — Richer popups (later)
+- Optional action buttons inside a popup (e.g. "Undo", "View") for relevant events.
+- Optional support for a title + description two-line format where a message benefits from more context.
 
-### Phase 3 — Message status (later)
-- Delivered/seen (read receipts) for DMs, with a privacy toggle.
+### Phase 3 — Personality & reach (later)
+- Optional small brand mark or avatar on popups for an extra "owned" touch.
+- Optional sound/subtle cue, and extending the same styling to a matching mobile toast for cross-surface consistency.
 
 ## Assumptions
-- **Surface:** Built on **both web and mobile**, since Messages and AI chat exist on both and the presence backend is shared. The AI voice bug is treated as present on both and fixed on both.
-- **Mutual follow already exists:** The app already has a follow system; "mutual follow" means both users follow each other. No new follow mechanics are introduced.
-- **Active threshold:** "Recently active" uses a short rolling window (e.g., last ~5 minutes shown live; older shown as "active X min ago" up to a cutoff, after which the friend is simply not in the active row).
-- **Reciprocal privacy:** Turning on "Appear offline" both hides your status and hides others' status from you, matching common social-app behavior.
-- **Default visibility:** Active status is on by default; users opt out via the toggle.
-- **Tap action:** Avatars in the active-now row open a 1:1 DM (per your choice); the row shows friends only, not Sage.
-- **Sage is for everyone:** All users can chat with Sage AI. Creating custom AI characters is a separate admin-only feature and is not changed here.
-- **No change to Sage's answer content or speed** — this only changes whether text replies are spoken.
+- **Web only.** Mobile is out of scope for this change (per your choice). The matching mobile toast is deferred to Phase 3.
+- **Visual direction = brand-based default.** Deep dark card, vivid orange accent, bold text, colored status icon, slim accent bar, smooth slide/spring-in.
+- **Brand touch = status icon only.** Each popup shows the relevant action/status icon (check for success, etc.); no PostMePlex logo image on the popup.
+- **No wording or behavior changes.** The same messages fire at the same moments, in the same top-right position, with the same auto-dismiss timing — only the look and motion are upgraded.
+- **Covers all existing popups app-wide**, not just "Welcome back" — since they all share one component, restyling once updates them everywhere.
+- **Accessibility and dismissal preserved** (readable contrast, dismissible, non-blocking).
