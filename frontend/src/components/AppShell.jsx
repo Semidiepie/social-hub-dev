@@ -177,8 +177,10 @@ export function AppShell({ children }) {
           ) : user ? (
             <div className="flex items-center gap-2 rounded-xl p-1.5 hover:bg-secondary/60">
               <NavLink to="/profile" className="flex min-w-0 flex-1 items-center gap-3" data-testid="sidebar-profile-link">
-                <Avatar src={user.avatar_url} size={36} frame={user.frame_enabled ? user.equipped_frame : null} frameStyle={user.custom_frame} />
-                <div className={`min-w-0 leading-tight ${REVEAL}`}>
+                <span className="shrink-0">
+                  <Avatar src={user.avatar_url} size={36} frame={user.frame_enabled ? user.equipped_frame : null} frameStyle={user.custom_frame} />
+                </span>
+                <div className="hidden min-w-0 leading-tight group-hover:block group-focus-within:block">
                   <div className="truncate text-sm font-semibold">{user.display_name}</div>
                   <div className="flex items-center gap-1 text-xs font-bold text-primary" data-testid="sidebar-token-balance">
                     <Coins size={12} /> {user.tokens ?? 0}
@@ -189,7 +191,7 @@ export function AppShell({ children }) {
                 onClick={() => { logout(); navigate("/login"); }}
                 data-testid="sidebar-logout"
                 title="Log out"
-                className={`rounded-lg p-2 text-muted-foreground hover:text-destructive ${REVEAL}`}
+                className="hidden shrink-0 rounded-lg p-2 text-muted-foreground hover:text-destructive group-hover:flex group-focus-within:flex"
               >
                 <LogOut size={16} />
               </button>

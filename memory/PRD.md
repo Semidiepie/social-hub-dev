@@ -849,3 +849,7 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Discover reads ?q= so the sidebar search works.
 - Verified: testing agent iteration_53, web frontend, 64/66 (2 expected-by-design), no regressions across all 14 destinations, theme persists, core post/like/comment/delete intact, responsive OK. Applied 3 nits: fixed button-in-link nesting in RightSidebar, split theme-toggle testids (theme-toggle rail / theme-toggle-mobile), added focus-within a11y to rail.
 - Deferred (Phase 2/3): per-page fine-polish on Market/Wallet/Pet/Music/Admin internals, hover cards, skeletons everywhere, "Lights out" black variant, command palette, user accent colors + density. Landing/auth inherit tokens (not individually re-art-directed yet).
+
+### 2026-06 — Redesign follow-up fixes
+- Following tab was inert: added `?following=1` to GET /api/feed (filters posts/reels/videos to accounts the viewer follows; returns [] if not following anyone). Home now refetches on tab switch (For you → /feed, Following → /feed?following=1). Verified: fetch 200 + correct empty state.
+- Collapsed left rail showed a squished/peeking profile avatar: wrapped account Avatar in shrink-0 and switched the name block + logout button from width-reveal to `hidden group-hover:flex/block` so they take no space when collapsed. Verified at rail width 76 — clean avatar.

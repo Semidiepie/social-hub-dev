@@ -1463,7 +1463,7 @@ async def serialize_video_for_feed(v: dict, viewer_id: Optional[str] = None) -> 
 
 
 @app.get("/api/feed")
-async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
+async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)], following: bool = False):
     viewer_id = viewer["id"] if viewer else None
     blocked = await blocked_ids_for(viewer_id)
 
@@ -1474,6 +1474,17 @@ async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
         post_query["author_id"] = {"$nin": list(blocked)}
         reel_query["author_id"] = {"$nin": list(blocked)}
         video_query["author_id"] = {"$nin": list(blocked)}
+
+    # "Following" feed: only content from accounts the viewer follows.
+    if following:
+        if not viewer_id:
+            return []
+        follow_rows = await db.follows.find({"follower_id": viewer_id}, {"_id": 0, "followee_id": 1}).to_list(10000)
+        followed = [r["followee_id"] for r in follow_rows]
+        if not followed:
+            return []
+        for q in (post_query, reel_query, video_query):
+            q["author_id"] = {"$in": followed, **({"$nin": list(blocked)} if blocked else {})}
 
     post_rows = await db.posts.find(post_query, {"_id": 0}).sort("created_at", -1).to_list(50)
     reel_rows = await db.posts.find(reel_query, {"_id": 0}).sort("created_at", -1).to_list(50)

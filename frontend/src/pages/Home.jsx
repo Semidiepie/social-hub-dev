@@ -25,9 +25,10 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("for-you");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (which) => {
+    setLoading(true);
     try {
-      const rows = await api.get("/feed");
+      const rows = await api.get(which === "following" ? "/feed?following=1" : "/feed");
       setItems(rows);
     } catch (e) {
       toast.error(e.message || "Failed to load feed");
@@ -37,8 +38,8 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    load(tab);
+  }, [load, tab]);
 
   const toggleLike = async (post) => {
     const liked = post.liked_by_me;
