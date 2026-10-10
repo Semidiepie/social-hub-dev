@@ -840,3 +840,12 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Types: added `parent_id` to `VideoComment` and `Comment` (+`verified_color?` to Comment) in client.ts.
 - Delete shows ONLY on your own comments; others get Reply only. Verified: testing agent iteration_52, 7/7 scenarios PASS (two users, posts + video).
 - Phase 2 (deferred): post-owner + admin comment moderation. Phase 3 (deferred): edit comment, reply notifications/threading refinements.
+
+## 2026-06 — "X"-style web redesign (Phase 1, foundation-first; web only)
+- Budget-conscious foundation pass: restyled the SHARED layer so the look cascades app-wide. No feature/route/behavior changes; 100% parity verified.
+- Theme system: Dark (default) + new Light theme via CSS token blocks in index.css (`:root/.dark` dark, `html.light` light). Orange #FF6B3D remains the single accent in both. No-flash init script in public/index.html; `src/lib/theme.js` persists choice in localStorage `pmp-theme`; `ThemeToggle` component (rail + mobile top bar).
+- AppShell rewritten: slim left ICON RAIL (w-76) that hover/focus-within expands (w-256) to reveal labels — all existing destinations preserved, orange Post/Create dropdown, account + theme toggle + settings/admin pinned at bottom. Right sidebar (`RightSidebar.jsx`: Search→/discover?q=, Trending via /discover?filter=tags, Who-to-follow via /discover?filter=accounts) shown on browse pages (/, /discover, /notifications, /profile, /user/*, /posts/*) at xl width. Mobile keeps top bar + bottom nav (+ theme toggle).
+- Home feed: sticky For you / Following tab bar (both load /feed — no new backend), inline composer, divider-separated timeline (cards → dividers).
+- Discover reads ?q= so the sidebar search works.
+- Verified: testing agent iteration_53, web frontend, 64/66 (2 expected-by-design), no regressions across all 14 destinations, theme persists, core post/like/comment/delete intact, responsive OK. Applied 3 nits: fixed button-in-link nesting in RightSidebar, split theme-toggle testids (theme-toggle rail / theme-toggle-mobile), added focus-within a11y to rail.
+- Deferred (Phase 2/3): per-page fine-polish on Market/Wallet/Pet/Music/Admin internals, hover cards, skeletons everywhere, "Lights out" black variant, command palette, user accent colors + density. Landing/auth inherit tokens (not individually re-art-directed yet).

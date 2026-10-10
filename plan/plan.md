@@ -1,53 +1,84 @@
-# Comment Replies & Delete on Mobile
+# PostMePlex — "X"-Style Web Redesign
 
-Bring the mobile app's comments up to parity with the website: let people reply to any comment and delete the comments or replies they posted. On web this already works; this change adds it to the mobile app.
+A full visual overhaul of the PostMePlex web experience (public website + logged-in web app) modeled on the clean, dense, monochrome feel of X — rebuilt in PostMePlex's own brand.
+It keeps every existing feature and page exactly as they work today; only the layout, styling, and motion change.
+
+## Non-negotiable: feature parity & full functionality
+This redesign must preserve **100% of the current PostMePlex tools and features** — nothing is removed, hidden, or broken. Every destination, button, and flow that works today keeps working after the restyle: posting, comments/replies, likes/shares, reels, long videos, live, music, pet, market, wallet, messages, notifications, search, profiles, settings, blogs, admin, and auth. The change is strictly visual/layout/motion. Before completion, the full app is tested end-to-end to confirm no regressions and that everything is fully functional.
 
 ## Who it's for
-Everyone using the PostMePlex mobile app who reads or writes comments on posts, reels, and long videos. Today they can only add a flat comment — they cannot reply to someone and cannot remove their own comment. This closes that gap so the mobile comment experience matches the web.
+Everyone who uses PostMePlex in a browser — visitors landing on the public pages and signed-in creators/gamers using the full app. The goal is a sharper, more premium, instantly familiar social-app feel while staying unmistakably PostMePlex (orange on near-black). Mobile app users are unaffected (the native mobile app is out of scope for this pass).
 
 ## Core features and experience
-- **Reply to any comment.** Every comment shows a "Reply" action. Tapping it opens an inline reply composer pre-filled with an "@username" mention, so a reply is clearly directed at a person.
-- **Single-level threads.** Replies group under their top-level comment (matching the website). Replying to a reply still attaches it under the same top comment, with the "@username" mention showing who it's aimed at — no endlessly nested threads.
-- **View / hide replies.** A top comment with replies shows a "View N replies" toggle that expands or collapses them, keeping the list tidy.
-- **Delete your own.** A "Delete" action appears only on comments and replies you posted. Deleting asks for a quick confirm, then removes it. Deleting a top-level comment also removes its replies. The comment count updates accordingly.
-- **No one else's delete.** You cannot delete other people's comments. (Post-owner and admin moderation are out of scope here — see Assumptions.)
-- **Consistent across content.** Works everywhere comments appear on mobile — posts, reels, and long videos — using the same behavior.
+
+### 1. Signature three-column desktop layout
+- **Slim left icon rail** that expands on hover to show labels. Icons for the primary destinations (Home, Videos, Live, Reels, Music, Pet, Market, Wallet, Messages, Notifications, Profile, etc.), a prominent orange **Post/Create** button, and the account menu pinned at the bottom.
+- **Center feed column** — the main content, a fixed comfortable reading width, with a sticky top bar.
+- **Right sidebar** — a persistent column with a **Search** box, a **Trending** panel (trending game tags / topics), and a **Who to follow** panel (suggested creators), plus small footer links.
+
+### 2. X-style feed and content
+- Sticky top bar on the feed with segmented tabs (e.g., **For you / Following**) and the page title.
+- Inline compose box at the top of the feed (avatar + "What's happening?"-style prompt) that opens the existing composer.
+- Posts presented as a clean, **divider-separated timeline** (not boxed cards): round avatar, name + handle + verified badge + timestamp on one line, content below, and a row of understated actions (comment, like, share, etc.) with hover states and counts.
+- Reels, long videos, music, and other content types keep their current behavior but adopt the same visual language.
+
+### 3. Dark + Light themes with a toggle
+- **Dark** stays the default (near-black background, the current PostMePlex dark look, refined).
+- A new **Light** theme is added.
+- A clearly accessible **theme toggle** (in the nav/account area) switches between them, and the choice is remembered across visits.
+- **Orange (#FF6B3D)** remains the single brand accent in both themes — used for the Post/Create button, active nav item, links, key highlights, and the verified/active states. Everything else uses a monochrome gray scale (X-like restraint).
+
+### 4. Consistent restyle across every page
+Applied app-wide in this pass, so the whole product feels like one redesigned surface:
+- Public **website / landing + login/register** pages get the new look (hero, auth forms, buttons).
+- Logged-in pages — Home, Profile, Post detail, Messages, Notifications, Search/Explore, Videos, Reels, Live, Music, Pet, Market, Wallet, Settings, Blogs, Admin — all adopt the shared system: pill buttons, round avatars, monochrome surfaces with orange accents, thin dividers, refined inputs, and subtle motion.
+
+### 5. Responsive behavior
+- **Desktop:** full three columns (rail + feed + right sidebar).
+- **Tablet / medium:** right sidebar drops; left rail stays as icons.
+- **Narrow / mobile-web:** collapses to a top bar plus a bottom or slide-out navigation, with a floating orange Post button — the mobile-web stays usable, not a squeezed desktop.
 
 ## User flow
-1. A person opens the comments on a post, reel, or video in the mobile app.
-2. They tap "Reply" on a comment → an inline composer opens with "@username " ready → they type and send → the reply appears under that comment, and the thread is expanded.
-3. Comments with replies show "View N replies"; tapping expands/collapses them.
-4. On a comment or reply they posted, they tap "Delete" → confirm → it's removed and the count drops. Deleting a top comment removes its replies too.
-5. The author sees no "Delete" on comments that aren't theirs.
+1. A visitor opens the public site → sees the redesigned landing and sign-in in the new style → signs in.
+2. The signed-in app loads the three-column layout: icon rail on the left, feed in the center, search + trending + who-to-follow on the right.
+3. They switch feed tabs (For you / Following), compose a post from the inline prompt, and interact with the divider-separated timeline.
+4. They hover the left rail to reveal labels, or navigate via the rail icons; on a phone browser they use the top/bottom nav instead.
+5. They flip the theme toggle between Dark and Light at any time; the preference sticks on their next visit.
+6. Every page they open — profile, messages, wallet, settings, etc. — carries the same refreshed look, with all existing tools intact.
 
 ## UI/UX feel
-- Matches the existing mobile comment sheet styling (dark sheet, rounded avatars, brand accents) and the website's comment behavior, so the two surfaces feel like one product.
-- Replies are visually indented/smaller under their parent; the "Reply" and "Delete" actions sit as light, unobtrusive text actions beneath each comment with timestamp.
-- Reply composer appears inline under the comment being answered, with a cancel option.
-- Delete uses a confirm step (consistent with how the app guards destructive actions) rather than deleting instantly.
-- Empty, loading, and post-action states stay smooth; the keyboard behavior of the existing comment sheet is preserved.
+- **Monochrome-with-one-accent:** near-black (dark) or near-white (light) surfaces, layered grays, and a single confident orange accent — the X discipline, PostMePlex color.
+- **Dense but breathable:** tighter, information-rich columns like X, with clear type hierarchy (bold names, muted handles/meta) and thin hairline dividers instead of heavy cards.
+- **Pill-shaped controls**, round avatars, crisp focus/hover/active states, and a bold rounded Post button.
+- **Subtle, intentional motion:** rail hover-expand, tab underline slide, gentle fade/slide on feed load and menus — fast and understated, never flashy.
+- **Familiar yet branded:** anyone who has used X feels at home immediately, but the color, logo, badges, and personality read as PostMePlex.
 
 ## Implementation phases
 
 ### Phase 1 — MVP (built now)
-- Mobile: reply to any comment (single-level, @mention), view/hide replies toggle, inline reply composer.
-- Mobile: delete your own comments and replies with a confirm step; deleting a top comment removes its replies; comment counts update.
-- Applied wherever comments appear on mobile (posts, reels, long videos).
-- Web is unchanged (already has these).
+- New shared visual system (dark + light themes, orange accent, typography, pill buttons, inputs, avatars, dividers, motion primitives) applied across the **entire web app and public website**.
+- The three-column desktop layout: hover-expanding left icon rail, center feed, right sidebar (search + trending + who-to-follow).
+- X-style feed presentation (sticky tab bar, inline compose prompt, divider-separated timeline, understated action row).
+- Theme toggle with remembered preference.
+- Responsive collapse for tablet and mobile-web.
+- **Full feature-parity pass:** every existing tool/page verified working end-to-end after the restyle (no regressions).
 
-### Phase 2 — Moderation reach (later)
-- Let the post/content owner delete comments on their own content.
-- Let admins delete any comment anywhere.
+### Phase 2 — Depth & polish (later)
+- Richer micro-interactions (hover cards on avatars/handles, animated counts, skeleton loading states everywhere).
+- A pure-black "Lights out" variant in addition to Dark/Light.
+- Command/quick-search palette and keyboard shortcuts in the X spirit.
 
-### Phase 3 — Richer threads (later)
-- Optional edit-your-comment.
-- Optional reply counts/threading refinements and reply notifications.
+### Phase 3 — Personalization (later)
+- User-selectable accent colors and font size/density options.
+- Customizable left rail (pin/reorder destinations) and layout density presets.
 
 ## Assumptions
-- **Scope is the mobile app only.** The website already supports reply and delete and is left as-is (per your choice).
-- **Delete = your own only.** Only the person who posted a comment or reply can delete it. Post-owner and admin deletion are deferred to Phase 2 (you skipped this question; this is the safe default matching your wording "delete any comment or reply they post").
-- **Single-level threads with @mention**, mirroring the website — no deeply nested replies (you skipped this; chosen for consistency).
-- **Deleting a top-level comment removes its replies**, and the displayed comment count is adjusted — matching current web behavior.
-- **Confirm before delete**, consistent with the app's other destructive actions.
-- **No change to what a comment contains or how it's written** — same text limits and posting behavior as today; only reply and delete are added on mobile.
-- **Behavior parity with web** is the target for anything not explicitly specified above.
+- **"Website and web app" both mean the single web (browser) product** — the public/marketing + auth pages and the signed-in app, all restyled. The **native mobile app is unchanged** in this pass.
+- **No feature, content, route, or behavior changes** — this is purely look, layout, motion, and theming. All existing pages, tools, and flows remain and stay fully functional (verified before completion).
+- **Themes = Dark (default) + Light**, switchable via a remembered toggle. (A pure-black "Lights out" mode is deferred to Phase 2.)
+- **Orange #FF6B3D stays the one accent** in both themes; everything else is monochrome gray.
+- **Right-sidebar content** = Search, Trending (game tags/topics), and Who-to-follow (suggested creators), sourced from existing data where available; panels that lack a data source show a tasteful placeholder rather than being omitted.
+- **Primary left-rail destinations** mirror the app's current navigation; secondary/less-used items move into the account or "more" menu to keep the rail clean — but remain reachable (nothing is dropped).
+- **Feed tabs** are "For you / Following"; if a dedicated "Following" feed isn't already available it will reuse the closest existing feed behavior without inventing new backend logic.
+- **Stories stay hidden on web** (as currently configured) unless requested otherwise.
+- **Desktop-first three columns**, gracefully collapsing on smaller widths as described.

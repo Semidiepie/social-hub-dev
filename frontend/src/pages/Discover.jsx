@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, Search, BadgeCheck, Play } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
@@ -17,6 +17,12 @@ export default function DiscoverPage() {
   const [q, setQ] = useState("");
   const [searchResults, setSearchResults] = useState(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const sp = searchParams.get("q");
+    if (sp) setQ(sp);
+  }, [searchParams]);
 
   const load = useCallback(async () => {
     setLoading(true);

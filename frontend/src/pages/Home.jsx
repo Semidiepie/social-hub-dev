@@ -23,6 +23,7 @@ export default function HomePage() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("for-you");
 
   const load = useCallback(async () => {
     try {
@@ -80,13 +81,24 @@ export default function HomePage() {
     setItems((rows) => rows.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <header className="mb-6">
-        <h1 className="text-3xl font-black tracking-tight">
-          Welcome{user ? `, ${user.display_name}` : ""}
-        </h1>
-        <p className="text-muted-foreground">Fresh from your community.</p>
-      </header>
+    <div className="mx-auto max-w-[620px]">
+      <div className="relative z-20 -mt-4 mb-4 border-b border-border bg-background/80 backdrop-blur md:sticky md:top-0 md:-mt-6">
+        <div className="flex">
+          {[["for-you", "For you"], ["following", "Following"]].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              data-testid={`feed-tab-${key}`}
+              className="relative flex-1 py-4 text-sm font-bold transition-colors hover:bg-secondary/40"
+            >
+              <span className={tab === key ? "text-foreground" : "text-muted-foreground"}>{label}</span>
+              {tab === key && (
+                <span className="absolute bottom-0 left-1/2 h-1 w-14 -translate-x-1/2 rounded-full bg-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -99,7 +111,7 @@ export default function HomePage() {
           {items.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="space-y-4">
+            <div className="divide-y divide-border border-t border-border">
               {items.map((p) =>
                 p.type === "video" ? (
                   <VideoCard
@@ -163,7 +175,7 @@ function PostCard({ post, user, onToggleLike, canManage, onDelete, onUpdated }) 
   const [featured, setFeatured] = useState(!!post.featured);
   return (
     <article
-      className="overflow-hidden rounded-2xl border border-border bg-card"
+      className="bg-transparent pb-2"
       data-testid={`post-${post.id}`}
     >
       <div className="flex items-center gap-3 px-4 pt-4">
@@ -414,7 +426,7 @@ function VideoCard({ video, canManage, onDelete, onUpdated }) {
   const [featured, setFeatured] = useState(!!video.featured);
   return (
     <article
-      className="overflow-hidden rounded-2xl border border-border bg-card"
+      className="bg-transparent pb-2"
       data-testid={`feed-video-${video.id}`}
     >
       <div className="flex items-center gap-3 px-4 pt-4">
@@ -524,7 +536,7 @@ function ReelCard({ reel, canManage, onDelete, onUpdated }) {
   const [featured, setFeatured] = useState(!!reel.featured);
   return (
     <article
-      className="overflow-hidden rounded-2xl border border-border bg-card"
+      className="bg-transparent pb-2"
       data-testid={`feed-reel-${reel.id}`}
     >
       <div className="flex items-center gap-3 px-4 pt-4">

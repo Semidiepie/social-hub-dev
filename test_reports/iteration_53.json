@@ -1,0 +1,30 @@
+{
+  "summary": "X-style web redesign verified end-to-end on desktop (1440x900) and mobile (390x844) viewports — purely visual/layout change with 100% feature parity preserved. 64/66 individual UI assertions passed; the 2 'failures' are both expected-by-design (sidebar-token-balance only shows when rail is hover-expanded; theme-toggle has two matching nodes because desktop rail + mobile top bar each render one, mutually exclusive via md: breakpoint). All 14 primary destinations load without crash/blank (Home, Videos, Live, Reels, Music, Pet, Market, Wallet, Blogs, Discover, Messages, Notifications, Profile, Settings, Admin). Theme toggle switches html.light, persists to localStorage(pmp-theme), and survives reload on both themes. Right sidebar correctly shows ONLY on /, /discover, /notifications, /profile (hidden on /messages, /settings, /market, /wallet, /admin/verify as intended). Rail-create dropdown exposes all four create actions. Home feed sticky tabs (For you / Following) render and are clickable. Core interactions after restyle work: compose a post (TEST_restyle_* text appeared in feed), like/unlike a post, open comment sheet, delete own post. Mobile responsive collapse is correct: left rail hidden, bottom nav + top-bar theme toggle visible. Light theme readability on Home / Profile / Settings is good (crisp white bg, readable dark text, orange accent preserved).",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AppShell.jsx: `data-testid=sidebar-token-balance` is nested inside the REVEAL wrapper (lines 181-185), so it is width:0 opacity:0 when the rail is collapsed and only materializes on hover. Playwright's is_visible on `[data-testid=sidebar-token-balance]` therefore returns false in the collapsed state. BY DESIGN — token count is only visible when rail is expanded on hover (verified: hovering `aside.group` makes it visible). Not a bug; just a test note so future testers know to hover first before asserting on this testID.",
+    "AppShell.jsx + ThemeToggle.jsx: there are TWO elements with `data-testid=theme-toggle` in the DOM at once — one in the sticky left rail (lines 146-147, hidden on <md viewports via `hidden md:flex`), one in the mobile top bar (line 219, hidden on >=md via `md:hidden`). Both work correctly for their respective viewports (verified: at 390px, the second one is visible at ~x=200, 40x40 touch target, and clicking it flips html.light). This is not a user-facing bug, but for test determinism consider using distinct testIDs like `theme-toggle-rail` + `theme-toggle-mobile` so selectors don't depend on DOM order / viewport-dependent visibility.",
+    "AppShell.jsx line 94: left rail uses `hover:w-[256px]` for expand — pure CSS hover, no focus-within fallback, so keyboard-only users navigating by Tab cannot expand labels. Minor a11y nit; low priority given this is a desktop-only expansion.",
+    "RightSidebar.jsx `FollowBtn` uses Link wrapping the entire row, with `e.preventDefault()+e.stopPropagation()` on the Follow button — nested interactive elements (button inside anchor) is invalid HTML and can confuse screen readers / cause double-activation on some browsers. Consider splitting the row so the Follow button is a sibling of the Link rather than a descendant.",
+    "No regressions detected in the redesign — all restored flows (compose/like/comment/delete) work on the shared backend without any changes to API wiring. Orange accent #FF6B3D is correctly applied as the single primary color token across post button, send button, logo glow, Follow CTA, and nav-active state."
+  ],
+  "updated_files": [],
+  "success_rate": {"frontend": "100% (all expected behaviors verified; both 'failures' are known-by-design)"},
+  "test_credentials": "semidiepie / PIN 7455 (founder). Login via POST /api/auth/login-pin → stash access_token into localStorage key 'postmeplex.token' and navigate.",
+  "seed_data_creation": "Created one disposable post 'TEST_restyle_<ts>' by semidiepie during compose-flow verification; immediately deleted via post-delete-<id>. No lingering TEST_* artifacts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "X-style redesign is fully functional on web — 3-column desktop layout + collapsible icon rail + sticky feed tabs + right sidebar + Dark/Light theme + mobile bottom nav all verified. For future rail hover-only elements (sidebar-token-balance, nav labels), hover `aside.group` before asserting visibility. For theme-toggle, prefer `.locator('[data-testid=theme-toggle]').last()` on mobile viewports (the rail one is first in DOM but display:none at <768px). Right-sidebar visibility rule (whitelist: /, /discover, /notifications, /profile, /user/*, /posts/*) is codified in AppShell.jsx's `showRightSidebarFor(path)` helper — update there if scope changes. Theme is applied pre-paint by a script in /app/frontend/public/index.html + /app/frontend/src/lib/theme.js; localStorage key is `pmp-theme` with values `dark|light`.",
+  "rca of the issue": ""
+}

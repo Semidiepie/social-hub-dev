@@ -2,9 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* PostMePlex web — dark #12141c background, orange accents.
- * Force dark theme everywhere; there is no light-mode toggle. */
-:root, .dark, html {
+/* PostMePlex web — monochrome + single orange accent (#FF6B3D).
+ * Dark is the default theme; `html.light` opts into the Light theme. */
+:root, .dark {
   --background: 227 18% 9%;         /* #12141c */
   --foreground: 0 0% 98%;
   --card: 226 15% 12%;              /* #1a1d27 */
@@ -29,6 +29,8 @@
   --input: 226 13% 15%;
   --ring: 15 100% 62%;
 
+  --elevated: #252936;
+
   --radius: 0.75rem;
 
   --chart-1: 15 100% 62%;
@@ -36,6 +38,35 @@
   --chart-3: 43 96% 60%;
   --chart-4: 280 65% 65%;
   --chart-5: 340 75% 60%;
+}
+
+/* Light theme — near-white surfaces, layered grays, same orange accent. */
+html.light, .light {
+  --background: 0 0% 100%;
+  --foreground: 220 24% 12%;        /* #171b24 */
+  --card: 0 0% 100%;
+  --card-foreground: 220 24% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 24% 12%;
+
+  --primary: 15 100% 60%;           /* #FF6B3D accent */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 210 20% 96%;         /* #f1f3f6 */
+  --secondary-foreground: 220 24% 12%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 218 11% 46%;  /* #6b7280 */
+  --accent: 15 100% 60%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 80% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 214 20% 89%;            /* #dde1e7 hairline */
+  --input: 214 20% 89%;
+  --ring: 15 100% 60%;
+
+  --elevated: #eef1f5;
 }
 
 html, body {
