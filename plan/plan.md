@@ -1,59 +1,73 @@
-# Games: Candy-Crush-Grade Overhaul — Full-Screen Play, Custom Icons, Juicier Engines
+# Pet Care Mini-Games — Make Feed, Bath & Play Genuinely Fun
 
-The PostMePlex arcade gets a look-and-feel overhaul: games play full-screen and immersive instead of inside a narrow card, with hand-crafted candy-style graphics and satisfying animations.
-Admins can upload a custom image that becomes a game's cover and in-play backdrop, and Sage keeps turning any game idea into the best-fitting playable engine — with more engine types added over time.
+Rework the virtual pet's three care activities so they feel playful and worth doing, not like chores. Feeding shows foods the pet actually likes, bathing becomes a bubbly, satisfying scrub, and playing becomes a lively aim-and-throw fetch.
+This is a polish/retention pass on the existing Feed, Bath and Play rooms — the rewards don't change, only how much fun they are.
 
 ## Who it's for
 
-- Players on the web app who open **Games** and want polished, console-feeling mini-games that are fun to look at and play.
-- The app owner/admin who creates games with Sage and wants each game to look bespoke — upload their own art, see a Candy-Crush-grade result, and not feel boxed into one or two game styles.
+Verified PostMePlex members who own a Sage AI virtual pet and open its care screen on the web app (including on a phone browser). The goal is that caring for the pet feels delightful enough that people want to come back and do it.
 
 ## Core features and experience
 
-- **Full-screen, immersive play.** Starting a game/level fills the screen edge-to-edge instead of sitting in a bordered box in a narrow column. The level map, start screen, and results all read as game screens rather than web forms. A clear close/back control is always visible. On desktop the play area is large and centered rather than cramped.
-- **Candy-Crush-grade match-3 overhaul.** The default match-3 engine (what a "Candy Crush" request becomes) gets redesigned glossy "candy" pieces with depth and shine, plus real juice: pieces pop/burst when matched, remaining pieces cascade and fall with a bounce, combos and chain reactions trigger effects and floating score popups, big clears shake the board with sound, and clearing a level plays a celebratory moment. Bigger matches create special pieces (a line-clearing piece from a 4-match and a bigger board-clearing effect from a 5-match).
-- **Custom game cover image.** In the Sage game creator, upload an image for a game. It fully covers that game's card in the Games list (replacing the emoji), and the same art becomes the game's in-play background/theme. If no image is uploaded, today's emoji + gradient is the fallback.
-- **Sage still turns any idea into a playable game.** The creator keeps accepting any request and maps it to the best-fitting built-in engine, now themed with the uploaded art and the upgraded visuals — and it tells you which engine it picked. The range of engines widens across the phases.
-- **Light, mute-respecting sound.** Match, cascade, and win sounds that follow the app's existing mute/volume behavior.
-- **Same rules, better feel.** Scoring, levels, stars, token rewards, and daily caps are unchanged — this effort is about look, feel, the custom icon, and the full-screen experience.
+### Feed — "the right food, no ugly backdrop"
+- The distracting white circle/ring drawn behind each food piece is removed; food now sits cleanly in the scene with a soft shadow.
+- The foods shown match what the pet would actually like, based on the pet's own description. Examples: a bunny gets carrots, leafy greens and berries; a cat gets fish and milk; a dog gets a bone and meat; a dragon/dino gets meat and a chili; a bird gets seeds and fruit; and a friendly default mix (fruit, berries) for anything unusual. This is worked out automatically and instantly — it costs nothing extra.
+- Dragging (or tapping) a piece to the pet still makes it chomp happily; a short "yum" reaction and the portion counter remain.
+
+### Bath — "way more bubbles, longer, more satisfying"
+- Noticeably more dirt to clean so the scrub lasts longer and feels earned (not over in two swipes).
+- Dragging the sponge lays down a lively trail of foam and bubbles that drift and pop all over the scene — lots of them, everywhere, not one at a time.
+- A foam/bubble layer builds up as cleaning progresses, and reaching 100% triggers a satisfying rinse-and-sparkle moment where the pet shakes off and shines.
+- Tapping dirt directly still works as a fallback, and the sponge stays easy to grab.
+
+### Play — "a real game of fetch"
+- Instead of a ball that just pops left or right, the player aims and flings: the throw's direction and strength decide where the toy goes, and it arcs with a bit of bounce.
+- The pet runs to wherever the toy lands, grabs it, and trots it back for the next throw, reacting with excitement.
+- A few successful fetches build a happiness meter; a short "catch streak" adds a little flourish, and the round ends on an excited celebration.
+- More than one toy (e.g. ball, then a flying disc) keeps it from feeling repetitive. Tapping to throw still works for anyone who doesn't want to drag.
+
+### Shared
+- The player's own pet remains the star, with its idle / reacting / happy animations.
+- Each activity keeps its friendly banner, progress meter, close/cancel control, celebratory finish, and light mute-respecting sound effects.
+- Every activity grants the exact same stat boost, XP and cooldown as today — balance is unchanged; only the experience is richer.
 
 ## User flow
 
-1. Open **Games**. Each game shows as a rich card — a full-bleed custom image (or themed art) with its title and your progress.
-2. Tap a game → its level map / start screen opens in a game-like, full-screen view.
-3. Tap a level → full-screen play begins over the game's backdrop; the board and graphics are polished and animated; a clean HUD shows moves, target, and score.
-4. Clear it → a celebratory full-screen result with stars and rewards; continue to the next level or return to the map. A close/back control is always available to exit.
-5. (Admin) In the Sage creator: describe a game, confirm the engine Sage chose, upload a cover image, preview it, and publish.
+1. On the pet screen, tap Feed, Bath or Play (when off cooldown).
+2. The matching room opens full-screen with the pet inside.
+3. **Feed:** drag/tap the pet's favourite foods to its mouth until it's full.
+4. **Bath:** scrub with the sponge; bubbles spread everywhere and foam builds until the pet is 100% clean, then it rinses and sparkles.
+5. **Play:** aim and fling the toy; the pet chases it down and brings it back; land a few fetches to fill the happiness meter.
+6. A celebration plays, the room closes, and the pet's stats/XP update with the normal cooldown. A close control is always available to leave early.
 
 ## UI/UX feel
 
-Arcade-grade and tactile — full-bleed, colorful, high-contrast game screens with depth (glossy pieces, soft shadows, bursts/particles) and bouncy spring motion, a clear step up from the current flat "emoji on a gradient, boxed in a card" look. Match-3 should feel juicy: every match rewards the eye and the ear. Uploaded art makes each game feel custom-made. It stays consistent with PostMePlex branding (orange energy) while letting each game carry its own themed art and palette, and it respects the app's mute/volume behavior and large, readable touch targets.
+Warm, bright and tactile — the same cozy pastel rooms and the existing theme picker, with bouncier, more generous motion and feedback. Bathing should look foamy and alive (bubbles drifting and popping across the whole scene); feeding should look clean and appetising with no stray white shapes; playing should feel energetic, with the pet visibly chasing and fetching. Interactions stay forgiving and immediate, readable on a phone, with large touch targets.
 
 ## Implementation phases
 
 **Phase 1 — built now (MVP)**
-- Full-screen, immersive play for the match-3 engine (board, start/intro, and result screens), with a persistent close/back control; the Games list and level map restyled to feel like game screens.
-- Candy-Crush-grade match-3 visual + animation overhaul: glossy candy pieces, pop/burst, cascade-with-bounce, combo/chain effects, floating score, special pieces from 4- and 5-matches, and win/lose celebrations — hand-crafted, with no per-game AI art cost.
-- Custom cover-image upload in the Sage game creator: the image fully covers the game card and becomes the in-play backdrop, with an emoji/gradient fallback.
-- Light, mute-respecting match/cascade/win sound effects.
+- Feed: remove the white slab behind food; show species-appropriate foods derived automatically (free) from the pet's description, with a sensible default.
+- Bath: more dirt, a longer scrub, a lively foam/bubble trail that spreads and pops everywhere, a building foam layer, and a rinse-and-sparkle finish.
+- Play: aim-and-throw fetch with directional/arced throws, the pet chasing to where the toy lands and bringing it back, a happiness meter, a catch streak, and at least a second toy. Tap-to-throw fallback kept.
+- All existing rewards, XP and cooldowns preserved; light mute-respecting sound effects.
 
 **Phase 2 — later**
-- Bring the same full-screen framing, custom-art backdrop, and polish to the other existing engines (spin & raid / "Coin Master", farm sim, memory, quiz, tapper) so each feels bespoke.
-- Deeper match-3 boosters (wrapped / striped / color-bomb-style special pieces and their combinations) and optional level goals beyond score (e.g. clear-the-jelly / collect-the-target).
+- Food variety the pet "prefers" vs "tolerates" (favourites give a little extra flourish), plus more foods and feeding props.
+- Bath extras: choosable soaps/scents, bubble-pop combos, and a few bath toys.
+- Play extras: more toys, simple difficulty/skill scoring, and optional mini-goals — all still on top of the unchanged base reward.
 
 **Phase 3 — later**
-- Add new engine types to widen what Sage can build — for example endless runner, bubble-shooter, and merge/2048-style — each with the same polished, full-screen, custom-art treatment.
-- Optional per-game theme controls (palette, music) and richer celebration / shareable "win" moments.
+- Bring the richer Feed/Bath/Play experience to the native mobile app.
+- Seasonal/limited-time themed rooms, props and shareable "happy pet" moments.
 
 ## Assumptions
 
-- Scope is the **web app** (the arcade is a web feature); the mobile app is out of scope for this work.
-- **Custom icon (question skipped → default):** the uploaded image both fully covers the game's card AND becomes its in-play background/theme; when no image is uploaded, the current emoji + gradient is the fallback.
-- **MVP (question skipped → default):** Phase 1 is the match-3 ("Candy Crush") overhaul + full-screen play + custom cover upload; the other engines and brand-new engine types come in later phases.
-- "Better graphics" are **hand-crafted once** (art + animation), so creating a game costs **no extra AI/image credits**; Sage's design step keeps using the same lightweight text model it uses today.
-- Sage continues to **map any idea to the best-fitting built-in engine** (the set of engines grows across the phases) rather than writing and running brand-new arbitrary game code, and it will tell you which engine it chose.
-- **Gameplay balance is unchanged:** scoring, level counts, star thresholds, token rewards, and daily earning caps all stay as they are.
-- Uploaded images use the app's existing image hosting; large images are resized/optimized for fast loading, with a sensible file-size and type limit.
-- In the MVP, match-3 special pieces are limited to a **line-clear** (from 4-matches) and a bigger **board-clearing effect** (from 5-matches); full Candy-Crush-style booster combinations are Phase 2.
-- Match-3 keeps its current board size and tap/slide controls; only the visuals, animation, and screen framing change.
-- Full-screen play always shows a clear exit/back control and keeps a readable HUD and large touch targets.
+- **Foods are matched for free (user chose option a):** the pet's foods are inferred automatically from its stored description using built-in keyword rules plus a friendly default — no AI image/text generation, so no extra credits are spent.
+- The decorative white circle/ring behind food pieces is removed entirely (not restyled); food shows directly with a soft shadow.
+- "More bubbles / longer scrub / more fun" is delivered by increasing the amount to clean, adding a continuous spreading foam-and-bubble trail with a build-up layer, and a rinse-and-sparkle finish — while keeping the drag-the-sponge control and the tap fallback.
+- "More interactive play" is delivered as an aim-and-throw fetch (direction + strength, arc and bounce, pet chases and returns), a catch streak, and at least one additional toy — keeping tap-to-throw as a fallback.
+- Rewards, XP, stat gains, level thresholds and cooldowns are unchanged for all three activities; only visuals, animation, interactivity and sound change.
+- Scope is the web pet experience only (the pet is a web feature today, including in a phone browser); native mobile is Phase 3.
+- The existing cozy room theme picker, full-screen framing, progress meter, celebration and mute/volume behaviour are kept as-is.
+- Activities continue to feel good on a phone, with large touch targets and no sideways scrolling.

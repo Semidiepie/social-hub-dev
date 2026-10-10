@@ -664,6 +664,7 @@ export default function PetPage() {
           activity={interaction}
           petImage={pet.image_url}
           petName={pet.name}
+          petDescription={pet.description}
           theme={ROOM_THEMES[pet.room_theme] || ROOM_THEMES.cream}
           onCancel={() => setInteraction(null)}
           onDone={() => finishCare(interaction)}

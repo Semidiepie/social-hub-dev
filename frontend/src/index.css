@@ -180,6 +180,32 @@ html, body {
 }
 .animate-cozy-bubble { animation: cozy-bubble 1.1s ease-out forwards; }
 
+/* Bath — drifting, popping foam bubbles spawned along the sponge trail */
+@keyframes bath-bubble {
+  0%   { transform: translate(-50%, -50%) scale(.3); opacity: 0; }
+  18%  { opacity: .92; }
+  72%  { opacity: .8; }
+  100% { transform: translate(calc(-50% + var(--bx, 0px)), calc(-50% + var(--by, -90px))) scale(1.15); opacity: 0; }
+}
+.animate-bath-bubble { animation: bath-bubble var(--bd, 1.2s) ease-out forwards; }
+
+/* Bath — rinse sparkle burst on 100% clean */
+@keyframes pet-sparkle {
+  0%   { transform: translate(-50%, -50%) scale(0) rotate(0deg); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.5) rotate(90deg); opacity: 0; }
+}
+.animate-pet-sparkle { animation: pet-sparkle .9s ease-out forwards; }
+
+/* Play — arced fetch throw (uses --tx/--ty landing offset + --apex peak) */
+@keyframes toy-throw {
+  0%   { transform: translate(-50%, -50%) translate(0, 0) rotate(0deg); }
+  50%  { transform: translate(-50%, -50%) translate(calc(var(--tx, 0px) / 2), var(--apex, -140px)) rotate(200deg); }
+  100% { transform: translate(-50%, -50%) translate(var(--tx, 0px), var(--ty, 0px)) rotate(400deg); }
+}
+.animate-toy-throw { animation: toy-throw var(--td, 0.62s) cubic-bezier(.3,.6,.5,1) forwards; }
+
+
 @keyframes confetti-fall {
   0%   { transform: translateY(-20px) rotate(0); opacity: 1; }
   100% { transform: translateY(var(--cf, 480px)) rotate(var(--cr, 540deg)); opacity: 0; }

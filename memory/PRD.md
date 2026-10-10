@@ -5,6 +5,15 @@
 
 # PostMePlex — Product Requirements
 
+## Feature — Pet care mini-games made genuinely fun (Phase 1) (2026-06, web)
+- Polish pass on the existing Feed/Bath/Play cozy rooms (`pages/pet/PetPlay.jsx`); **rewards/XP/cooldowns unchanged** (still call the same care endpoints), only the experience is richer. No AI/image credits used.
+- **Feed:** removed the white ring/slab behind each food (food now sits cleanly with a soft drop-shadow); foods are **species-appropriate, inferred for FREE** from the pet's `description` via keyword rules + a friendly default (`inferFoods()`), e.g. snake → 🥚🐁🍖🐸, bunny → 🥕🥬🫐🍓, cat → 🐟🥛🍗, dog → 🦴🍖🥩. `pet.description` now passed from `Pet.jsx` → `CareRoom` → `FeedRoom`. Kept drag/tap, chomp, "yum" reaction, portion counter.
+- **Bath:** more dirt (12 smudges) for a longer scrub; dragging the sponge spawns a **lively trail of drifting, popping bubbles everywhere** (2–3 per move, capped ~48, `animate-bath-bubble`); a **foam layer builds up** with progress; reaching 100% triggers a **rinse-and-sparkle** finish (pet shakes off + ✨ `animate-pet-sparkle`). Tap-a-smudge fallback kept.
+- **Play:** real **aim-and-throw fetch** — the release drag vector sets direction + strength; the toy **arcs with a peak** (`animate-toy-throw`, `--tx/--ty/--apex`) to a computed landing; the **pet runs to the toy and trots back**; a **happiness meter** (5 fetches), a **catch-streak** flourish ("combo xN! 🔥"), an excited celebration, and **multiple toys** (🎾/🥏/🧸 cycle). Tap-to-throw fallback kept. Toy sits at 74% (raised so overlays don't cover it).
+- New CSS in `index.css`: `bath-bubble`, `pet-sparkle`, `toy-throw` keyframes.
+- **Verified (self-test, screenshots @430×920):** Feed shows snake foods + no white ring; Bath = 12 smudges, 26 live bubbles mid-scrub, foam building at 42%; Play = throws 1→5 register, combo x3 flourish, celebration, 2nd toy cycles in. Lint clean. Preview-only — redeploy for production. Web-only (native mobile = Phase 3).
+
+
 ## Removal — Games feature fully removed (2026-06, web) per user request
 - User asked to completely remove the games/arcade feature. Removed:
   - **Nav/entry points:** sidebar + bottom nav (`AppShell.jsx`), hamburger shortcut (`HamburgerMenu.jsx`), admin tab (`AdminTabs.jsx`), and the "Games — Win levels" earn promo in `Wallet.jsx` (earn grid now 2-col; the historical `game` transaction label is kept so old wallet entries still render).
