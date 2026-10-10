@@ -5,6 +5,17 @@
 
 # PostMePlex — Product Requirements
 
+## Removal — Games feature fully removed (2026-06, web) per user request
+- User asked to completely remove the games/arcade feature. Removed:
+  - **Nav/entry points:** sidebar + bottom nav (`AppShell.jsx`), hamburger shortcut (`HamburgerMenu.jsx`), admin tab (`AdminTabs.jsx`), and the "Games — Win levels" earn promo in `Wallet.jsx` (earn grid now 2-col; the historical `game` transaction label is kept so old wallet entries still render).
+  - **Routes:** `/games`, `/games/:slug`, `/admin/games` deleted from `App.js` (unknown paths already redirect to `/` via the existing `path="*"` catch-all).
+  - **Admin tooling:** games-only "reset-spins" button (`AdminAccounts.jsx`) + `POST /api/admin/users/{id}/reset-spins` (`server.py`).
+  - **Backend:** games router mount + default-game seed startup removed (`server.py`); `routes/games.py` deleted. Backend healthy; `GET /api/games` → 404.
+  - **Deleted files:** `pages/Games.jsx`, `pages/GameMap.jsx`, `pages/AdminGames.jsx`, `components/Match3Board.jsx`, `components/games/*` (Farm/Slots/Memory/Quiz/Tapper), `games/match3.js`, `games/sfx.js`, `routes/games.py`, and the stale `tests/test_games_cover.py`.
+- **Kept (harmless):** unused game CSS classes in `index.css` (inert, never referenced) and orphaned Mongo collections (`games`, `game_states`, `slots_state`, `game_studio_sessions`) + historical `game` wallet txns — no code reads/writes them now.
+- **Verified:** lint clean (6 files + server.py); web app loads with user; no `nav-games`; `/games` redirects to `/`; backend startup clean, no leftover symbol refs; mobile had no games code. Preview-only — redeploy for production.
+
+
 ## Fix — Match-3 candies redesigned to real Candy-Crush pieces (2026-06, web)
 - **Why:** user reported the match-3 still looked bad — pieces were flat colored rounded-squares with app ICONS (hearts/cameras) inside, nothing like Candy Crush.
 - **Fix:** each piece now renders as a distinct glossy 3D **SVG candy shape** keyed by colour index (`Match3Board.jsx`: `CandyShape` + shared `CandyDefs` gradients): 0 blue sphere, 1 yellow teardrop, 2 green jelly-square, 3 orange lozenge (with seam), 4 red jelly-bean, 5 purple cluster — each with a top-light→base→dark vertical gradient, a specular gloss highlight, and a drop-shadow. Admin-uploaded custom tile IMAGES still render (respected). Board tray lightened to CC-style grey rounded cells over the immersive backdrop; selection = scale + glow (shape-agnostic); wrap special = pulsing glow; bomb = rainbow sphere. Removed the old icon-tile rendering + unused lucide imports.

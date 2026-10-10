@@ -9,7 +9,6 @@ import {
   Radio,
   Music2,
   PawPrint,
-  Gamepad2,
   BookText,
   ShoppingBag,
   Compass,
@@ -40,7 +39,6 @@ const SHORTCUTS = [
   { label: "Live", route: "/live", icon: Radio },
   { label: "Music", route: "/music", icon: Music2 },
   { label: "My Pet", route: "/pet", icon: PawPrint },
-  { label: "Games", route: "/games", icon: Gamepad2 },
   { label: "Blogs", route: "/blogs", icon: BookText },
 ];
 

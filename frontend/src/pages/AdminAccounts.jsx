@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Users, Loader2, Trash2, Search, BadgeCheck, Ban, ShieldCheck, Coins, Plus, Minus, Equal, Zap, Heart } from "lucide-react";
+import { Users, Loader2, Trash2, Search, BadgeCheck, Ban, ShieldCheck, Coins, Plus, Minus, Equal, Heart } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
@@ -41,18 +41,6 @@ function AccountRow({ u, onChange, onDeleted }) {
       toast.success(banning ? `Banned @${u.username}` : `Unbanned @${u.username}`);
     } catch (e) {
       toast.error(e.message || "Failed");
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const resetSpins = async () => {
-    setBusy("spins");
-    try {
-      const r = await api.post(`/admin/users/${u.id}/reset-spins`, {});
-      toast.success(r.games > 0 ? `Refilled spins on ${r.games} game(s) for @${u.username}` : `@${u.username} hasn't played a slot game yet`);
-    } catch (e) {
-      toast.error(e.message || "Couldn't reset spins");
     } finally {
       setBusy("");
     }
@@ -122,15 +110,6 @@ function AccountRow({ u, onChange, onDeleted }) {
         </button>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <button
-            onClick={resetSpins}
-            disabled={!!busy}
-            className="flex items-center gap-1 rounded-lg bg-blue-500/15 px-2.5 py-1.5 text-xs font-bold text-blue-400 hover:bg-blue-500/25 disabled:opacity-40"
-            data-testid={`account-reset-spins-${u.id}`}
-            title="Refill this user's slot spins (energy)"
-          >
-            {busy === "spins" ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />} Spins
-          </button>
           <button
             onClick={refreshPet}
             disabled={!!busy}

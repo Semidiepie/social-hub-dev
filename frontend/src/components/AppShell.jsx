@@ -20,7 +20,6 @@ import {
   ShoppingBag,
   User,
   Phone,
-  Gamepad2,
   Coins,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -44,7 +43,6 @@ const NAV = [
   { to: "/reels", label: "Reels", icon: Film, testId: "nav-reels" },
   { to: "/music", label: "Music", icon: Music2, testId: "nav-music" },
   { to: "/pet", label: "Pet", icon: PawPrint, testId: "nav-pet" },
-  { to: "/games", label: "Games", icon: Gamepad2, testId: "nav-games" },
   { to: "/market", label: "Market", icon: ShoppingBag, testId: "nav-market" },
   { to: "/wallet", label: "Wallet", icon: Coins, testId: "nav-wallet" },
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },

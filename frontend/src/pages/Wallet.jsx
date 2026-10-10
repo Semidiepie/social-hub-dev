@@ -121,10 +121,9 @@ export default function WalletPage() {
           </div>
 
           {/* How to earn */}
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          <div className="mt-4 grid grid-cols-2 gap-2 text-center">
             {[
               { icon: Gift, t: "Daily", d: `+${wallet.daily_reward}/day` },
-              { icon: Gamepad2, t: "Games", d: "Win levels" },
               { icon: ArrowDownLeft, t: "Gifts", d: "Receive live" },
             ].map((x) => (
               <div key={x.t} className="rounded-2xl border border-border bg-card/60 p-3">
