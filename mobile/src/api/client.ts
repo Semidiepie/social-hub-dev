@@ -230,6 +230,7 @@ export interface VideoItem {
 export interface VideoComment {
   id: string;
   text: string;
+  parent_id?: string | null;
   created_at: string;
   author: Author | null;
 }
@@ -272,11 +273,13 @@ export interface UserStoriesResponse {
 export interface Comment {
   id: string;
   post_id: string;
+  parent_id?: string | null;
   user_id: string;
   username: string;
   display_name: string;
   avatar_url: string;
   is_verified?: boolean;
+  verified_color?: string | null;
   text: string;
   created_at: string;
 }

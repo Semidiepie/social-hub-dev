@@ -190,11 +190,13 @@ export default function Home() {
         postId={commentTarget?.id ?? null}
         visible={!!commentTarget}
         onClose={() => setCommentTarget(null)}
-        onPosted={() => {
+        onCountChange={(delta) => {
           if (!commentTarget) return;
           setFeed((prev) =>
             prev.map((p) =>
-              p.id === commentTarget.id ? { ...p, comments_count: p.comments_count + 1 } : p,
+              p.id === commentTarget.id
+                ? { ...p, comments_count: Math.max(0, p.comments_count + delta) }
+                : p,
             ),
           );
         }}

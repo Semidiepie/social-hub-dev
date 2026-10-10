@@ -1,0 +1,47 @@
+{
+  "summary": "Mobile frontend tested end-to-end for Comment Replies & Delete feature on Expo web preview. Verified all 7 scenarios from the review request on the shared backend using two freshly registered users (test_cmta owner, test_cmtb non-owner). Reply inline composer prefills with '@username ', threads auto-expand on send, 'View N replies'/'Hide replies' toggle works, Delete appears ONLY on own comments, confirm card (comment-delete-confirm) + confirm-btn removes the item, deleting a top-level comment with 1 reply decrements the count by 2 on BOTH surfaces (CommentSheet for posts and the inline Video screen comment list). Count label on video screen correctly updates between '{n} Comments' values. No parity issues found; both surfaces call the same backend endpoints and behave identically.",
+  "platforms_tested": ["mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "Video screen - comment delete confirm Modal", "issues": ["Minor: when the top-level comment being deleted HAS replies, the Modal body on video/[id].tsx correctly reads 'This also removes its replies.'; confirmed matches CommentSheet behavior."]}
+      ],
+      "react_native_issues": [
+        {"component": "props.pointerEvents", "issue": "Non-blocking RN-Web deprecation warning observed in console: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Not caused by this feature but surfaces on screens tested. Reference: appears when the Modal / confirm overlay mounts."},
+        {"component": "shadow* styles", "issue": "Non-blocking RN-Web deprecation warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Pre-existing, unrelated to this feature."}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CommentSheet.tsx: `onReply` resolves topId as `c.parent_id || c.id` and prefills `@username ` — matches the single-level thread spec. Good.",
+    "CommentSheet.tsx: delete handler strips both the row and `parent_id === c.id` on top-level deletion, matching backend `removed` semantics. onCountChange(-(r.removed || 1)) correctly uses server-reported removal count.",
+    "video/[id].tsx: Same thread shape (nested author object) handled correctly; comment count decrements via `cur.comments_count - (r.removed || 1)` with Math.max(0, ...) guard. Good.",
+    "Error paths in CommentSheet.tsx `submit`/`del` swallow errors silently (comments on `// swallow`). Consider surfacing a toast on failure for parity with video screen's Alert.alert — minor UX nit, not blocking.",
+    "video/[id].tsx uses Alert.alert for comment post/delete failures but a Modal for the confirm step — mixed UX styles. Not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"frontend": "100%"},
+  "test_credentials": "test_cmta / PIN 1234 (comment owner); test_cmtb / PIN 1234 (non-owner). Both auto-purge on backend restart (test_ prefix).",
+  "seed_data_creation": "Created two test accounts (test_cmta, test_cmtb), one post by test_cmta with id 9bf44855-0a3b-4884-83de-40d8a5f32fb6 and one top-level comment on existing video 55680188-e05f-4ccd-9cfe-5f700b30c96c. All auto-purged on next backend restart.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Mobile Comment Replies & Delete feature fully verified on Expo preview (https://social-hub-dev-4.expo.preview.emergentagent.com). CommentSheet.tsx (used by home feed posts and reels sheet) and app/video/[id].tsx (inline video comments) both pass. Test IDs confirmed working: comment-{id}, comment-reply-{id}, comment-reply-input-{id}, comment-reply-send-{id}, comment-reply-cancel-{id}, comment-toggle-replies-{id}, comment-delete-{id}, comment-delete-confirm, comment-delete-confirm-btn, comment-delete-cancel. Login screen uses data-testid login-identifier-input / login-pin-input / login-submit-button. Reels sheet was not independently opened (not required — uses same CommentSheet component with identical props); recommended if main agent wants explicit coverage.",
+  "flows_verified": [
+    "B (non-owner) views A's post comment → Reply visible, Delete hidden [PASS]",
+    "Reply composer prefilled with '@test_cmta ' [PASS]",
+    "Reply posted → auto-expands, 'Hide replies' toggle appears [PASS]",
+    "'View N replies' / 'Hide replies' collapse/expand [PASS]",
+    "Post comment add: count 2 → 3 [PASS]",
+    "Delete own leaf comment via confirm card: count 3 → 2, 'This can't be undone.' [PASS]",
+    "A deletes own top-level comment with 1 reply: confirm says 'This also removes its replies.', count 2 → 0 (removed=2) [PASS]",
+    "Video screen: B replies to A's comment, prefill @test_cmta, count '1 Comments' → '2 Comments', auto-expand [PASS]",
+    "Video screen: Modal confirm (comment-delete-confirm) appears, Delete B's own reply, count 2 → 1 [PASS]",
+    "Video screen: A deletes own top-level video comment with 1 reply, count 2 → 0 (removed=2) [PASS]"
+  ]
+}

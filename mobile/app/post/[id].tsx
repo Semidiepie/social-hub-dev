@@ -73,7 +73,9 @@ export default function PostDetail() {
         postId={post?.id ?? null}
         visible={showComments}
         onClose={() => setShowComments(false)}
-        onPosted={() => post && setPost({ ...post, comments_count: post.comments_count + 1 })}
+        onCountChange={(delta) =>
+          post && setPost({ ...post, comments_count: Math.max(0, post.comments_count + delta) })
+        }
       />
     </SafeAreaView>
   );

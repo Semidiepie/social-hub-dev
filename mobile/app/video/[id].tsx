@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
+  Modal,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -55,6 +56,10 @@ export default function WatchVideoScreen() {
   const [subscribed, setSubscribed] = useState(false);
   const [sending, setSending] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [replyTo, setReplyTo] = useState<{ topId: string; mention?: string } | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [openThreads, setOpenThreads] = useState<Record<string, boolean>>({});
+  const [confirmDelete, setConfirmDelete] = useState<VideoComment | null>(null);
   const viewRegistered = useRef(false);
 
   const player = useVideoPlayer(video?.video_url ?? "", (p) => {
@@ -146,21 +151,72 @@ export default function WatchVideoScreen() {
     }
   }, [subscribed, video?.author?.id, user?.id]);
 
-  const submitComment = useCallback(async () => {
-    if (!video || !commentText.trim()) return;
-    setSending(true);
-    try {
-      await api.post(`/videos/${video.id}/comments`, { text: commentText.trim() }, true);
-      setCommentText("");
-      const cmts = await api.get<VideoComment[]>(`/videos/${video.id}/comments`);
-      setComments(cmts);
-      setVideo({ ...video, comments_count: video.comments_count + 1 });
-    } catch (e: any) {
-      Alert.alert("Comment failed", e?.message || "Try again.");
-    } finally {
-      setSending(false);
-    }
-  }, [video, commentText]);
+  const postComment = useCallback(
+    async (value: string, parentId?: string | null) => {
+      const v = value.trim();
+      if (!video || !v || sending) return;
+      setSending(true);
+      try {
+        const created = await api.post<VideoComment>(
+          `/videos/${video.id}/comments`,
+          { text: v, parent_id: parentId || null },
+          true,
+        );
+        setComments((prev) => (parentId ? [...prev, created] : [created, ...prev]));
+        setVideo((cur) => (cur ? { ...cur, comments_count: cur.comments_count + 1 } : cur));
+        if (parentId) setOpenThreads((s) => ({ ...s, [parentId]: true }));
+      } catch (e: any) {
+        Alert.alert("Comment failed", e?.message || "Try again.");
+      } finally {
+        setSending(false);
+      }
+    },
+    [video, sending],
+  );
+
+  const submitComment = useCallback(() => {
+    postComment(commentText);
+    setCommentText("");
+  }, [postComment, commentText]);
+
+  const onReply = useCallback((c: VideoComment) => {
+    const topId = c.parent_id || c.id;
+    setReplyTo({ topId, mention: c.author?.username });
+    setReplyText(c.author?.username ? `@${c.author.username} ` : "");
+    setOpenThreads((s) => ({ ...s, [topId]: true }));
+  }, []);
+
+  const deleteComment = useCallback(
+    async (c: VideoComment) => {
+      if (!video) return;
+      try {
+        const r = await api.del<{ removed: number }>(`/videos/${video.id}/comments/${c.id}`);
+        setComments((prev) => prev.filter((x) => x.id !== c.id && x.parent_id !== c.id));
+        setVideo((cur) =>
+          cur ? { ...cur, comments_count: Math.max(0, cur.comments_count - (r?.removed || 1)) } : cur,
+        );
+      } catch (e: any) {
+        Alert.alert("Delete failed", e?.message || "Try again.");
+      } finally {
+        setConfirmDelete(null);
+      }
+    },
+    [video],
+  );
+
+  const { tops, repliesOf } = useMemo(() => {
+    const tops = comments.filter((c) => !c.parent_id);
+    const repliesOf: Record<string, VideoComment[]> = {};
+    comments
+      .filter((c) => c.parent_id)
+      .forEach((r) => {
+        (repliesOf[r.parent_id as string] ||= []).push(r);
+      });
+    Object.values(repliesOf).forEach((arr) =>
+      arr.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+    );
+    return { tops, repliesOf };
+  }, [comments]);
 
   const isOwner = video?.author?.id && user?.id && video.author.id === user.id;
 
@@ -373,20 +429,87 @@ export default function WatchVideoScreen() {
                 </TouchableOpacity>
               </View>
             )}
-            {comments.map((c) => (
-              <View key={c.id} style={styles.commentRow}>
-                <Image
-                  source={{ uri: c.author?.avatar_url || "" }}
-                  style={styles.commentAvatar}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.commentAuthor}>
-                    @{c.author?.username ?? "unknown"} · {timeAgo(c.created_at)}
-                  </Text>
-                  <Text style={styles.commentText}>{c.text}</Text>
+            {tops.map((c) => {
+              const replies = repliesOf[c.id] || [];
+              const open = !!openThreads[c.id];
+              const renderRow = (cm: VideoComment, isReply: boolean) => (
+                <View style={[styles.commentRow, isReply && styles.replyRow]} testID={`comment-${cm.id}`}>
+                  <Image
+                    source={{ uri: cm.author?.avatar_url || "" }}
+                    style={[styles.commentAvatar, isReply && styles.replyAvatar]}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.commentAuthor}>
+                      @{cm.author?.username ?? "unknown"} · {timeAgo(cm.created_at)}
+                    </Text>
+                    <Text style={styles.commentText}>{cm.text}</Text>
+                    <View style={styles.cActionRow}>
+                      <TouchableOpacity onPress={() => onReply(cm)} testID={`comment-reply-${cm.id}`} hitSlop={8}>
+                        <Text style={styles.cActionBtn}>Reply</Text>
+                      </TouchableOpacity>
+                      {user && cm.author?.id === user.id && (
+                        <TouchableOpacity onPress={() => setConfirmDelete(cm)} testID={`comment-delete-${cm.id}`} hitSlop={8}>
+                          <Text style={[styles.cActionBtn, styles.cDeleteBtn]}>Delete</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+              return (
+                <View key={c.id} style={{ marginBottom: 14, gap: 8 }}>
+                  {renderRow(c, false)}
+                  {replies.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setOpenThreads((s) => ({ ...s, [c.id]: !s[c.id] }))}
+                      style={styles.cToggleRow}
+                      testID={`comment-toggle-replies-${c.id}`}
+                    >
+                      <Ionicons name="return-down-forward" size={14} color={colors.primary} />
+                      <Text style={styles.cToggleText}>
+                        {open
+                          ? "Hide replies"
+                          : `View ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {open && replies.map((r) => <View key={r.id}>{renderRow(r, true)}</View>)}
+                  {replyTo?.topId === c.id && user && (
+                    <View style={styles.cReplyComposer}>
+                      <TextInput
+                        autoFocus
+                        value={replyText}
+                        onChangeText={setReplyText}
+                        placeholder={`Reply${replyTo.mention ? " to @" + replyTo.mention : ""}…`}
+                        placeholderTextColor={colors.textMuted}
+                        style={styles.cReplyInput}
+                        testID={`comment-reply-input-${c.id}`}
+                        multiline
+                      />
+                      <TouchableOpacity
+                        style={[styles.cReplySend, (!replyText.trim() || sending) && { opacity: 0.4 }]}
+                        disabled={!replyText.trim() || sending}
+                        onPress={() => {
+                          postComment(replyText, c.id);
+                          setReplyText("");
+                          setReplyTo(null);
+                        }}
+                        testID={`comment-reply-send-${c.id}`}
+                      >
+                        <Ionicons name="arrow-up" size={16} color={colors.bg} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => { setReplyTo(null); setReplyText(""); }}
+                        testID={`comment-reply-cancel-${c.id}`}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.cCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
           </View>
 
           {/* Related */}
@@ -430,6 +553,35 @@ export default function WatchVideoScreen() {
         onClose={() => setEditing(false)}
         onSaved={(u) => setVideo((cur) => (cur ? { ...cur, ...(u as any) } : cur))}
       />
+
+      <Modal visible={!!confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(null)}>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard} testID="comment-delete-confirm">
+            <Text style={styles.confirmTitle}>Delete comment?</Text>
+            <Text style={styles.confirmBody}>
+              {confirmDelete && repliesOf[confirmDelete.id]?.length
+                ? "This also removes its replies. This can't be undone."
+                : "This can't be undone."}
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmCancel]}
+                onPress={() => setConfirmDelete(null)}
+                testID="comment-delete-cancel"
+              >
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmDeleteBtn]}
+                onPress={() => confirmDelete && deleteComment(confirmDelete)}
+                testID="comment-delete-confirm-btn"
+              >
+                <Text style={styles.confirmDeleteText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -559,10 +711,42 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
   },
   postBtnText: { color: colors.bg, fontWeight: "900", fontSize: 13 },
-  commentRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
+  commentRow: { flexDirection: "row", gap: 10 },
+  replyRow: { marginLeft: 36 },
   commentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface },
+  replyAvatar: { width: 26, height: 26, borderRadius: 13 },
   commentAuthor: { color: colors.textSecondary, fontSize: 11.5, fontWeight: "700" },
   commentText: { color: colors.textPrimary, fontSize: 13.5, lineHeight: 19, marginTop: 2 },
+  cActionRow: { flexDirection: "row", gap: spacing.md, marginTop: 6 },
+  cActionBtn: { color: colors.textSecondary, fontSize: 12, fontWeight: "800" },
+  cDeleteBtn: { color: colors.danger },
+  cToggleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginLeft: 42 },
+  cToggleText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
+  cReplyComposer: { flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 42 },
+  cReplyInput: {
+    flex: 1,
+    backgroundColor: colors.elevated,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: colors.textPrimary,
+    fontSize: 13,
+    maxHeight: 100,
+  },
+  cReplySend: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  cCancelText: { color: colors.textMuted, fontSize: 12, fontWeight: "800" },
+  confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center", padding: spacing.lg },
+  confirmCard: { width: "100%", maxWidth: 340, backgroundColor: colors.elevated, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.sm },
+  confirmTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: "900" },
+  confirmBody: { color: colors.textSecondary, fontSize: 13.5, lineHeight: 19 },
+  confirmActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  confirmBtn: { flex: 1, height: 44, borderRadius: radii.md, alignItems: "center", justifyContent: "center" },
+  confirmCancel: { backgroundColor: colors.surface },
+  confirmCancelText: { color: colors.textPrimary, fontSize: 14, fontWeight: "800" },
+  confirmDeleteBtn: { backgroundColor: colors.danger },
+  confirmDeleteText: { color: "#fff", fontSize: 14, fontWeight: "900" },
 
   relatedRow: {
     flexDirection: "row",

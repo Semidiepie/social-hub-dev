@@ -1,54 +1,53 @@
-# Restyled In-App Notification Popups (Web)
+# Comment Replies & Delete on Mobile
 
-A redesign of the small popups that slide in on the web app — the ones that say things like "Welcome back", "Posted", "Profile updated", "Failed to send", and so on. They move from a plain generic dark box to a polished, on-brand PostMePlex look.
+Bring the mobile app's comments up to parity with the website: let people reply to any comment and delete the comments or replies they posted. On web this already works; this change adds it to the mobile app.
 
 ## Who it's for
-Everyone using PostMePlex on the web. These popups are the app's quick confirmations and error messages — they appear briefly after actions (logging in, posting, saving settings, sending a message, errors, etc.) and auto-dismiss. The goal is for them to feel like a deliberate part of the product, not a stock/default component.
+Everyone using the PostMePlex mobile app who reads or writes comments on posts, reels, and long videos. Today they can only add a flat comment — they cannot reply to someone and cannot remove their own comment. This closes that gap so the mobile comment experience matches the web.
 
 ## Core features and experience
-- **One consistent popup style across the whole web app.** Every quick confirmation, info, and error message shares the same redesigned look, so the app feels cohesive. No message wording changes — only the appearance and motion.
-- **Clear status at a glance.** Each popup carries a small status icon that signals the type of message:
-  - success (e.g. "Posted", "Profile updated")
-  - error (e.g. "Failed to send")
-  - info / neutral (e.g. "Welcome back", general notices)
-  The icon uses the matching accent color so people can read the outcome instantly, even before reading the text.
-- **On-brand visual treatment.** Deep dark card matching the app background, a slim vivid-orange accent detail, bold readable text, soft elevation/shadow so it lifts off the page, and rounded corners consistent with the rest of the UI.
-- **Smooth, intentional motion.** The popup slides/springs in and fades out gently, rather than appearing abruptly. Stacking of multiple popups stays tidy.
-- **Position and timing.** Popups continue to appear in the top-right corner and auto-dismiss after a few seconds (same placement and behavior as today) — only the styling and motion change.
-- **No layout disruption.** Popups float above content and never push the page around; they remain dismissible and accessible.
+- **Reply to any comment.** Every comment shows a "Reply" action. Tapping it opens an inline reply composer pre-filled with an "@username" mention, so a reply is clearly directed at a person.
+- **Single-level threads.** Replies group under their top-level comment (matching the website). Replying to a reply still attaches it under the same top comment, with the "@username" mention showing who it's aimed at — no endlessly nested threads.
+- **View / hide replies.** A top comment with replies shows a "View N replies" toggle that expands or collapses them, keeping the list tidy.
+- **Delete your own.** A "Delete" action appears only on comments and replies you posted. Deleting asks for a quick confirm, then removes it. Deleting a top-level comment also removes its replies. The comment count updates accordingly.
+- **No one else's delete.** You cannot delete other people's comments. (Post-owner and admin moderation are out of scope here — see Assumptions.)
+- **Consistent across content.** Works everywhere comments appear on mobile — posts, reels, and long videos — using the same behavior.
 
 ## User flow
-1. A person does something that triggers feedback — logs in, publishes a post, updates settings, hits an error, etc.
-2. A redesigned popup slides in at the top-right with a status icon, the brand accent, and the message text.
-3. It stays briefly, then fades out on its own (or can be dismissed).
-4. If several actions happen quickly, popups stack cleanly and clear one by one.
+1. A person opens the comments on a post, reel, or video in the mobile app.
+2. They tap "Reply" on a comment → an inline composer opens with "@username " ready → they type and send → the reply appears under that comment, and the thread is expanded.
+3. Comments with replies show "View N replies"; tapping expands/collapses them.
+4. On a comment or reply they posted, they tap "Delete" → confirm → it's removed and the count drops. Deleting a top comment removes its replies too.
+5. The author sees no "Delete" on comments that aren't theirs.
 
 ## UI/UX feel
-- Matches the PostMePlex brand: near-black surface (#12141c family), vivid orange (#FF6B3D) as the accent, white primary text with muted secondary text.
-- A colored status icon (success green, error red, brand orange/neutral for info) anchors the left side; a thin accent bar or icon ring ties it to the brand.
-- Bold, confident typography for the headline line; lighter weight for any supporting detail.
-- Gentle spring-in / fade-out motion; subtle shadow and rounded corners (consistent with cards and buttons elsewhere).
-- No third-party or default-component "feel" — it should look purpose-built for the app. No external brand marks shown.
+- Matches the existing mobile comment sheet styling (dark sheet, rounded avatars, brand accents) and the website's comment behavior, so the two surfaces feel like one product.
+- Replies are visually indented/smaller under their parent; the "Reply" and "Delete" actions sit as light, unobtrusive text actions beneath each comment with timestamp.
+- Reply composer appears inline under the comment being answered, with a cancel option.
+- Delete uses a confirm step (consistent with how the app guards destructive actions) rather than deleting instantly.
+- Empty, loading, and post-action states stay smooth; the keyboard behavior of the existing comment sheet is preserved.
 
 ## Implementation phases
 
 ### Phase 1 — MVP (built now)
-- Redesign the web popup appearance and motion as described above: brand colors, status icon per type (success / error / info), slim accent, elevation, rounded corners, smooth slide/spring-in and fade-out.
-- Apply it globally so all existing web popups ("Welcome back", "Posted", errors, etc.) adopt the new look automatically — no message text changes.
-- Keep current top-right placement and auto-dismiss timing.
+- Mobile: reply to any comment (single-level, @mention), view/hide replies toggle, inline reply composer.
+- Mobile: delete your own comments and replies with a confirm step; deleting a top comment removes its replies; comment counts update.
+- Applied wherever comments appear on mobile (posts, reels, long videos).
+- Web is unchanged (already has these).
 
-### Phase 2 — Richer popups (later)
-- Optional action buttons inside a popup (e.g. "Undo", "View") for relevant events.
-- Optional support for a title + description two-line format where a message benefits from more context.
+### Phase 2 — Moderation reach (later)
+- Let the post/content owner delete comments on their own content.
+- Let admins delete any comment anywhere.
 
-### Phase 3 — Personality & reach (later)
-- Optional small brand mark or avatar on popups for an extra "owned" touch.
-- Optional sound/subtle cue, and extending the same styling to a matching mobile toast for cross-surface consistency.
+### Phase 3 — Richer threads (later)
+- Optional edit-your-comment.
+- Optional reply counts/threading refinements and reply notifications.
 
 ## Assumptions
-- **Web only.** Mobile is out of scope for this change (per your choice). The matching mobile toast is deferred to Phase 3.
-- **Visual direction = brand-based default.** Deep dark card, vivid orange accent, bold text, colored status icon, slim accent bar, smooth slide/spring-in.
-- **Brand touch = status icon only.** Each popup shows the relevant action/status icon (check for success, etc.); no PostMePlex logo image on the popup.
-- **No wording or behavior changes.** The same messages fire at the same moments, in the same top-right position, with the same auto-dismiss timing — only the look and motion are upgraded.
-- **Covers all existing popups app-wide**, not just "Welcome back" — since they all share one component, restyling once updates them everywhere.
-- **Accessibility and dismissal preserved** (readable contrast, dismissible, non-blocking).
+- **Scope is the mobile app only.** The website already supports reply and delete and is left as-is (per your choice).
+- **Delete = your own only.** Only the person who posted a comment or reply can delete it. Post-owner and admin deletion are deferred to Phase 2 (you skipped this question; this is the safe default matching your wording "delete any comment or reply they post").
+- **Single-level threads with @mention**, mirroring the website — no deeply nested replies (you skipped this; chosen for consistency).
+- **Deleting a top-level comment removes its replies**, and the displayed comment count is adjusted — matching current web behavior.
+- **Confirm before delete**, consistent with the app's other destructive actions.
+- **No change to what a comment contains or how it's written** — same text limits and posting behavior as today; only reply and delete are added on mobile.
+- **Behavior parity with web** is the target for anything not explicitly specified above.

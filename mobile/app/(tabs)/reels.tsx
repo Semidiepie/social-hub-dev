@@ -399,11 +399,13 @@ export default function ReelsScreen() {
         postId={commentTarget?.id ?? null}
         visible={!!commentTarget}
         onClose={() => setCommentTarget(null)}
-        onPosted={() => {
+        onCountChange={(delta) => {
           if (!commentTarget) return;
           setReels((prev) =>
             prev.map((r) =>
-              r.id === commentTarget.id ? { ...r, comments_count: r.comments_count + 1 } : r,
+              r.id === commentTarget.id
+                ? { ...r, comments_count: Math.max(0, r.comments_count + delta) }
+                : r,
             ),
           );
         }}
