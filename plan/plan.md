@@ -1,58 +1,84 @@
-# Faster Video Uploads & Smooth Playback (Videos page)
+# Games on PostMePlex — admin-curated, embedded game hub
 
-Rebuild the Videos upload and watch experience so creators can upload large videos fast, import a video from a Google Drive or direct link that gets re-hosted on PostMePlex, and watch everything with smooth, adaptive playback.
+Admins add games through a form in the admin panel; a single "Games" entry appears in the web side menu once the first game exists, and all games live inside it. Selecting a game opens a full in-app player with the game embedded on the left and a Facebook-style action panel on the right.
 
 ## Who it's for
-Creators on PostMePlex who post long-form videos — people who record gameplay/IRL content, often in large files, and want a YouTube-like upload-and-watch experience instead of slow uploads and choppy playback.
+Logged-in PostMePlex members who want to play web games without leaving the app, and admins who curate which games appear.
 
 ## Core features and experience
-- **Accurate size guidance.** The current mismatch (the page says "up to 5GB" but blocks anything over 1GB) is fixed. The upload page states the real limits for each method.
-- **Two upload methods, as tabs:**
-  - **Upload file** — pick a video from the device. Uploads are fast and resumable (they survive a flaky connection and pick up where they left off). Capped at **1GB** on this tab, with a clear label: *"Files over 1GB? Use the Import from link tab."*
-  - **Import from link** — paste a **Google Drive share link** ("Anyone with the link") or a **direct video file URL** (e.g. a `.mp4` link). PostMePlex's server hands the link to the video engine, which downloads and re-hosts the video on PostMePlex — up to **30GB**. YouTube/other platform links are **not** in this first version (see phases).
-- **Smooth, adaptive playback.** New videos play through adaptive streaming: the quality auto-adjusts to the viewer's connection so playback starts quickly and doesn't stall. If the source was recorded at 60fps, 60fps is preserved.
-- **Processing status.** After an upload or import finishes, the video is prepared for streaming. The page shows a clear "Processing…" state and tells the creator when it's ready to publish/play. Upload is fast; this one-time preparation step takes a short while depending on length.
-- **Existing videos keep working.** Videos already on PostMePlex continue to play unchanged; only new uploads/imports use the new engine.
+
+### Admin: add and manage games (admin panel → "Games" tab)
+- A form to add a game with:
+  - **Game icon** (image, shown as a circle like a profile picture) — required
+  - **Game name** — required
+  - **Play / website URL** — required (the page that loads when the game opens)
+  - **Short description**
+  - **Developer / studio name** (e.g. "by King")
+  - **Category** (free text, e.g. Puzzle, Action)
+  - **Banner image** (optional; used on cards and the fallback screen)
+- A list of existing games where **every field and setting above can be edited at any time** (icon, name, URL, description, developer, category, banner), plus **delete**.
+- Per game, the admin can **post and manage "Game updates"** (a title + message) that followers see in the game's Updates panel.
+
+### Members: the "Games" side-menu entry (single, auto-appearing)
+- There is exactly **one "Games" item** in the web side menu. It is **hidden while no games exist** and appears automatically **once the first game is added**. Every game after that is listed inside the Games hub — never as additional side-menu entries.
+- Visible to logged-in users only (hidden when logged out).
+- Opening it shows the catalog of games as cards (circular icon, name, developer, category), with simple sections: **Continue playing** (recently played), **Following**, **Saved**, and **All games**.
+
+### Members: the game player (opens when a game is selected)
+Mirrors the reference layout:
+- **Left:** large embedded play area that loads the game's site inside PostMePlex, with **close (X)** and **fullscreen (expand)** controls. The game's own loading screen (e.g. a "Downloading" bar) shows inside the embed.
+- **Right panel (fully functional):**
+  - **Currently playing:** game icon, name, "by {developer}".
+  - **Save** — bookmark the game; it appears in the hub's Saved section. Toggle on/off.
+  - **Follow** — follow the game to receive its updates; shows followed state and a follower count. Toggle on/off.
+  - **Game updates** — opens the list of updates posted by admins for this game, with a simple "new" indicator when there are unseen updates.
+  - **Game privacy** — a per-game toggle controlling whether your playing activity (currently/recently played) is visible to other members. Default: visible.
+  - **More** — menu with **Open in new tab**, **Copy link**, and (for admins) **Edit / Delete**.
+  - **Recently played** — your recent games.
+  - **Related games** — other games in the same category (falling back to the newest games), with a "See more" link.
+- **Embed fallback:** if a game's website refuses to load inside another site (a common security setting), the play area shows the banner, a short explanation, and a prominent **"Open in new tab"** button so the game is still reachable.
 
 ## User flow
-1. Creator opens **Upload a video**.
-2. They choose a tab:
-   - *Upload file* → select a file (≤1GB) → it uploads quickly with a live progress bar.
-   - *Import from link* → paste a Google Drive or direct video URL (≤30GB) → the server fetches and re-hosts it.
-3. The page shows upload/import progress, then **Processing…** until the video is ready.
-4. Creator adds title, description, category, tags, thumbnail, and visibility (as today), then publishes.
-5. Viewers watch on the video page with adaptive, smooth playback (60fps where the source supports it).
+1. Admin opens the admin panel → **Games** → fills the form → the game goes live, and the single "Games" item appears in the side menu (if it wasn't already there).
+2. A member clicks **Games** in the side menu → sees the catalog of all games.
+3. They pick a game → the player opens with the game embedded and the right-side panel.
+4. They can Save, Follow, read Game updates, set Game privacy, see Recently played and Related games, or open the game in a new tab.
+5. If embedding is blocked, they use "Open in new tab" to play.
+6. Admin can return anytime to edit any game's info/settings or remove it.
 
 ## UI/UX feel
-Keeps the current PostMePlex look (dark theme, orange accent, rounded cards). The upload area becomes two clean tabs with short helper text under each. Clear, friendly states throughout: progress bars for upload/import, a labeled "Processing…" state, and plain-language errors (e.g. if a Drive link is private/expired and can't be fetched). A short notice reminds creators that imported videos must be content they own or are licensed to use.
+Keeps the PostMePlex look: dark theme, orange accent, rounded cards, circular game icons. The player uses the reference's split layout — large dark play area on the left (~two-thirds), a card-style action panel on the right (~one-third) — with a slim top bar holding the close and fullscreen controls. Clear states throughout: loading while the embed starts, friendly empty states (no games yet, nothing saved/followed), and the plain-language "can't embed → open in new tab" fallback.
 
 ## Implementation phases
 
 **Phase 1 — MVP (built now)**
-- Fix the size-limit label mismatch and show accurate per-method limits.
-- Two-tab upload: *Upload file* (≤1GB, fast + resumable) and *Import from link* (Google Drive "anyone with link" + direct video URLs, up to 30GB).
-- Server-side re-hosting of pasted links onto the new video engine.
-- Processing status with a "ready to publish/play" signal.
-- Adaptive, smooth playback on the watch page for new videos (60fps preserved from 60fps sources); existing videos still play.
-- The "over 1GB → use Import from link" guidance label.
+- Admin "Games" tab: add games, **edit every field/setting of any game**, delete games, and post/manage Game updates per game.
+- A single auto-appearing "Games" side-menu entry (hidden at zero games, shown once one exists) for logged-in users; the catalog hub with Continue playing / Following / Saved / All games.
+- The full game player: embedded play area with close + fullscreen, and the complete right panel — Currently playing, Save, Follow, Game updates, Game privacy, More (Open in new tab / Copy link / admin Edit-Delete), Recently played, Related games — all functional.
+- Embed-blocked fallback to "Open in new tab".
 
-**Phase 2 — Links, polish & privacy**
-- YouTube and other platform links — only if pursued, with an explicit **rights/ownership attestation** the creator must confirm (this carries Terms-of-Service and copyright risk; deferred by choice).
-- Custom thumbnail picker (choose a frame), captions/subtitles, and basic trim/clip before publishing.
-- Enforced private/unlisted playback via secured links (today visibility is a label; this makes it actually restrict access).
+**Phase 2 — Discovery & social**
+- Browse and search games; category browsing; featured / trending row.
+- Ratings and reviews.
+- "Friends who play" / who's currently playing (built on the privacy toggle).
+- Notifications and unread badges when followed games post updates.
+- Play-time tracking.
 
-**Phase 3 — Scale & insights**
-- Per-video analytics: views, watch time, and retention.
-- Background re-host queue with progress for very large imports, scheduled publishing, and "download original."
+**Phase 3 — Scale**
+- Leaderboards / achievements where a game exposes them; per-game analytics for admins.
+- Curated collections and scheduled features.
+- Games in the mobile app.
+- Optional developer self-serve submission with an admin review queue.
 
 ## Assumptions
-- **Video engine: Cloudflare Stream** (you confirmed). It's a paid Cloudflare add-on billed on **your** Cloudflare account (~$5 per 1,000 min stored + $1 per 1,000 min delivered). You'll enable the Stream subscription and grant the API token Stream permission. If Stream isn't enabled/authorized, uploads and imports won't work.
-- **Direct "Upload file" tab = 1GB cap; "Import from link" tab = up to 30GB** (the engine's max), per your choice.
-- **Phase 1 links = Google Drive + direct video URLs only. No YouTube** in Phase 1.
-- **Imported links must be publicly fetchable.** Google Drive links must be set to "Anyone with the link"; direct URLs must point straight at a video file. Private, login-required, or expiring links can't be fetched and will show a clear error. Some very large Drive files behind Google's download warning may fail to import directly; those cases surface an error rather than silently hanging.
-- **Content ownership.** Imported videos are assumed to be owned or licensed by the creator; Phase 1 shows a reminder notice, Phase 2 adds a required attestation.
-- **"Smooth, no delays" refers to playback**, achieved via adaptive streaming once a video is processed. There is a one-time processing step after upload/import before a video is playable (with a visible status). The upload/import itself is fast.
-- **60fps** is preserved only when the original video is 60fps; it isn't manufactured for 30fps sources.
-- **Scope is the long-form Videos upload and watch pages.** Short reels and other media keep the current pipeline unless you ask to move them too.
-- **A default maximum video length** (about 2 hours) is applied to bound processing/cost; this can be adjusted.
-- **Existing Cloudinary videos are not migrated** — they keep playing as-is; only new uploads/imports use Cloudflare Stream.
+- There is only **one "Games" side-menu entry**; it is hidden when no games exist and appears automatically after the first game is added. All games live inside the Games hub, not as separate menu items.
+- Games open **embedded (iframe)** inside PostMePlex. Websites that block embedding (via security headers) or that aren't served over https **cannot** be embedded — those automatically use the **"Open in new tab"** fallback. This is a browser-enforced limitation that can't be bypassed, so admins should prefer embeddable, https game URLs.
+- Only **admins** add, edit, remove games and post game updates; **all game info and settings are editable from the admin panel at any time**.
+- Games are for **logged-in users only**; the side-menu item is hidden when logged out.
+- **"Game privacy"** means a per-member, per-game toggle for whether your playing activity (currently/recently played) is visible to other members — not management of app data permissions (embedded games can't access your PostMePlex account or data).
+- **Follow** = receive that game's updates and have it in a Following list; **Save** = bookmark to a Saved list; **Recently played** = auto-tracked history; **Related games** = same category, falling back to the newest games.
+- **Game updates** are authored by admins (title + message); in v1 the follower "new updates" indicator is a simple unseen marker (full notifications come in Phase 2).
+- Form fields are: circular icon (required), banner image (optional), name (required), play URL (required), short description, developer name, category (free text). The icon renders as a circle like a profile picture.
+- The "Downloading / loading" bar seen in the reference is the game's own loading screen inside the embed, not something PostMePlex renders.
+- **Web only** in this version; the mobile Games tab is deferred to Phase 3.
+- No payments and no account/data linking with the game providers.

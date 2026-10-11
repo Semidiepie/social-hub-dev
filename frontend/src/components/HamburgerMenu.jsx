@@ -17,6 +17,7 @@ import {
   User,
   Settings,
   Shield,
+  Gamepad2,
   Phone,
   Download,
   LogOut,
@@ -57,6 +58,7 @@ export function HamburgerMenu() {
   const [open, setOpen] = useState(false);
   const [wallet, setWallet] = useState(null);
   const [claiming, setClaiming] = useState(false);
+  const [hasGames, setHasGames] = useState(false);
 
   const loadWallet = useCallback(async () => {
     try {
@@ -67,7 +69,10 @@ export function HamburgerMenu() {
   }, []);
 
   useEffect(() => {
-    if (open) loadWallet();
+    if (open) {
+      loadWallet();
+      api.get("/games/count").then((r) => setHasGames((r?.count || 0) > 0)).catch(() => {});
+    }
   }, [open, loadWallet]);
 
   const go = (route) => {
@@ -178,6 +183,15 @@ export function HamburgerMenu() {
 
         {/* Links list */}
         <div className="mt-1 flex flex-col px-2">
+          {hasGames && (
+            <button
+              data-testid="menu-games"
+              onClick={() => go("/games")}
+              className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition-colors hover:bg-secondary"
+            >
+              <Gamepad2 size={20} className="text-muted-foreground" /> Games
+            </button>
+          )}
           {LINKS.map((l) => (
             <button
               key={l.route}

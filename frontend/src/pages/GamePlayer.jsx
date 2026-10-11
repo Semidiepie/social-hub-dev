@@ -1,0 +1,306 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Loader2, X, Maximize2, Bookmark, Heart, Megaphone, Eye, EyeOff,
+  MoreHorizontal, ExternalLink, Link2, Trash2, Pencil, Gamepad2, ChevronRight,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
+
+export default function GamePlayerPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = !!(user?.is_super_admin || user?.is_admin);
+
+  const [game, setGame] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [related, setRelated] = useState([]);
+  const [recent, setRecent] = useState([]);
+  const [embedLoaded, setEmbedLoaded] = useState(false);
+  const [embedFailed, setEmbedFailed] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
+  const [updates, setUpdates] = useState([]);
+  const playAreaRef = useRef(null);
+  const loadedRef = useRef(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    loadedRef.current = false;
+    setEmbedLoaded(false);
+    setEmbedFailed(false);
+    try {
+      const g = await api.get(`/games/${id}`);
+      setGame(g);
+      api.post(`/games/${id}/play`).catch(() => {});
+      api.get(`/games/${id}/related`).then((r) => setRelated(Array.isArray(r) ? r : [])).catch(() => {});
+      api.get("/games/recent").then((r) => setRecent((Array.isArray(r) ? r : []).filter((x) => x.id !== id))).catch(() => {});
+    } catch (e) {
+      toast.error(e.message || "Couldn't open this game");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const insecure = !!game && /^http:\/\//i.test(game.play_url || "");
+
+  // We can't read a cross-origin iframe, so detect obvious failures: insecure
+  // (mixed-content) URLs are blocked outright, and if nothing loads within a
+  // few seconds we surface the "open in new tab" fallback. A persistent escape
+  // chip also covers sites that fire a fake load event while staying blank.
+  useEffect(() => {
+    if (!game) return undefined;
+    if (insecure) { setEmbedFailed(true); return undefined; }
+    const t = setTimeout(() => { if (!loadedRef.current) setEmbedFailed(true); }, 5000);
+    return () => clearTimeout(t);
+  }, [game, insecure]);
+
+  const openNewTab = () => window.open(game.play_url, "_blank", "noopener,noreferrer");
+  const copyLink = () => {
+    navigator.clipboard?.writeText(`${window.location.origin}/games/${id}`);
+    toast.success("Link copied!");
+  };
+  const goFullscreen = () => {
+    const el = playAreaRef.current;
+    if (!el || !document.fullscreenEnabled || !el.requestFullscreen) {
+      toast.message("Full screen isn't available here — opening in a new tab");
+      openNewTab();
+      return;
+    }
+    el.requestFullscreen().catch(() => openNewTab());
+  };
+
+  const toggleSave = async () => {
+    setGame((g) => ({ ...g, saved: !g.saved }));
+    try {
+      const r = await api.post(`/games/${id}/save`);
+      setGame((g) => ({ ...g, saved: r.saved }));
+      toast.success(r.saved ? "Saved" : "Removed from saved");
+    } catch (e) {
+      setGame((g) => ({ ...g, saved: !g.saved }));
+      toast.error(e.message || "Failed");
+    }
+  };
+
+  const toggleFollow = async () => {
+    try {
+      const r = await api.post(`/games/${id}/follow`);
+      setGame((g) => ({ ...g, following: r.following, followers: r.followers }));
+    } catch (e) {
+      toast.error(e.message || "Failed");
+    }
+  };
+
+  const setPrivacy = async (visible) => {
+    setGame((g) => ({ ...g, activity_visible: visible }));
+    try {
+      await api.post(`/games/${id}/privacy`, { visible });
+    } catch (e) {
+      setGame((g) => ({ ...g, activity_visible: !visible }));
+      toast.error(e.message || "Failed");
+    }
+  };
+
+  const openUpdates = async () => {
+    setUpdatesOpen(true);
+    try {
+      setUpdates(await api.get(`/games/${id}/updates`));
+      api.post(`/games/${id}/updates/seen`).catch(() => {});
+      setGame((g) => ({ ...g, unseen_updates: 0 }));
+    } catch {
+      setUpdates([]);
+    }
+  };
+
+  const removeGame = async () => {
+    if (!window.confirm(`Delete "${game.name}"?`)) return;
+    try {
+      await api.del(`/admin/games/${id}`);
+      toast.success("Game deleted");
+      navigate("/games");
+    } catch (e) {
+      toast.error(e.message || "Failed");
+    }
+  };
+
+  if (loading) {
+    return <div className="flex justify-center py-24" data-testid="game-player-loading"><Loader2 className="animate-spin text-primary" /></div>;
+  }
+  if (!game) {
+    return (
+      <div className="py-24 text-center text-muted-foreground">
+        <p>Game not found.</p>
+        <Link to="/games" className="mt-2 inline-block font-semibold text-primary">Back to Games</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3" data-testid="game-player-page">
+      {/* Slim top bar */}
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-card/50 px-3 py-2">
+        <img src={game.icon_url} alt="" className="h-7 w-7 rounded-full object-cover" />
+        <span className="truncate font-bold">{game.name}</span>
+        <div className="flex-1" />
+        <button onClick={goFullscreen} className="pmp-iconchip" title="Fullscreen" data-testid="game-fullscreen-btn"><Maximize2 size={16} /></button>
+        <button onClick={() => navigate(`/games/${id}`)} className="pmp-iconchip" title="Close" data-testid="game-close-btn"><X size={16} /></button>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-3">
+        {/* Left: embedded play area */}
+        <div ref={playAreaRef} className="relative lg:col-span-2">
+          <div className="relative h-[62vh] min-h-[380px] w-full overflow-hidden rounded-2xl border border-border bg-black">
+            {!embedLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-sm text-white/70" data-testid="game-embed-loading">
+                <Loader2 className="mr-2 animate-spin" /> Loading game…
+              </div>
+            )}
+            {!insecure && (
+              <iframe
+                key={game.id}
+                src={game.play_url}
+                title={game.name}
+                onLoad={() => { loadedRef.current = true; setEmbedLoaded(true); }}
+                onError={() => setEmbedFailed(true)}
+                className="h-full w-full"
+                allow="autoplay; fullscreen; gamepad; microphone; camera; clipboard-write; accelerometer; gyroscope"
+                allowFullScreen
+                referrerPolicy="no-referrer"
+                data-testid="game-iframe"
+              />
+            )}
+            {/* Always-available escape hatch for blank/blocked embeds */}
+            <button onClick={openNewTab} className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" data-testid="game-embed-newtab-chip">
+              <ExternalLink size={13} /> New tab
+            </button>
+            {embedFailed && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/90 p-6 text-center" data-testid="game-embed-fallback">
+                {game.banner_url ? <img src={game.banner_url} alt="" className="mb-1 max-h-32 rounded-xl object-cover" /> : <Gamepad2 size={40} className="text-primary" />}
+                <p className="font-semibold text-white">This game can&apos;t be embedded here</p>
+                <p className="max-w-sm text-sm text-white/60">This game&apos;s site blocks loading inside other apps. Open it in a new tab to play — your Save, Follow and updates stay here.</p>
+                <Button onClick={openNewTab} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90" data-testid="game-fallback-newtab">
+                  <ExternalLink size={16} /> Open in new tab
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: action panel */}
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-border bg-card/50 p-4" data-testid="game-currently-playing">
+            <div className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">Currently playing</div>
+            <div className="mt-2 flex items-center gap-3">
+              <img src={game.icon_url} alt="" className="h-12 w-12 rounded-full object-cover ring-2 ring-primary/40" />
+              <div className="min-w-0">
+                <div className="truncate font-bold">{game.name}</div>
+                {game.developer ? <div className="truncate text-xs text-muted-foreground">by {game.developer}</div> : null}
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant={game.saved ? "default" : "outline"} onClick={toggleSave} className="gap-2" data-testid="game-save-btn">
+                <Bookmark size={16} className={game.saved ? "fill-current" : ""} /> {game.saved ? "Saved" : "Save"}
+              </Button>
+              <Button variant={game.following ? "default" : "outline"} onClick={toggleFollow} className="gap-2" data-testid="game-follow-btn">
+                <Heart size={16} className={game.following ? "fill-current" : ""} /> {game.following ? "Following" : "Follow"}
+              </Button>
+            </div>
+            <button onClick={openUpdates} className="mt-2 flex w-full items-center gap-2 rounded-xl border border-border px-3 py-2.5 text-sm font-semibold hover:bg-secondary" data-testid="game-updates-open">
+              <Megaphone size={16} className="text-primary" /> Game updates
+              {game.unseen_updates > 0 && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground" data-testid="game-updates-badge">new</span>}
+              <ChevronRight size={16} className="ml-auto text-muted-foreground" />
+            </button>
+            <div className="mt-2 flex items-center justify-between rounded-xl border border-border px-3 py-2.5" data-testid="game-privacy-row">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                {game.activity_visible ? <Eye size={16} className="text-primary" /> : <EyeOff size={16} className="text-muted-foreground" />} Show my activity
+              </span>
+              <Switch checked={game.activity_visible} onCheckedChange={setPrivacy} data-testid="game-privacy-switch" />
+            </div>
+            <div className="mt-2 flex gap-2">
+              <Button variant="outline" onClick={openNewTab} className="flex-1 gap-2" data-testid="game-open-newtab"><ExternalLink size={16} /> New tab</Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="px-3" data-testid="game-more-btn"><MoreHorizontal size={16} /></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={openNewTab} data-testid="game-more-newtab"><ExternalLink size={15} /> Open in new tab</DropdownMenuItem>
+                  <DropdownMenuItem onClick={copyLink} data-testid="game-more-copy"><Link2 size={15} /> Copy link</DropdownMenuItem>
+                  {isAdmin && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => navigate("/admin/games")} data-testid="game-more-edit"><Pencil size={15} /> Edit in admin</DropdownMenuItem>
+                      <DropdownMenuItem onClick={removeGame} className="text-destructive" data-testid="game-more-delete"><Trash2 size={15} /> Delete game</DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          {recent.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card/50 p-4" data-testid="game-recent">
+              <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-muted-foreground">Recently played</div>
+              <div className="space-y-1.5">
+                {recent.slice(0, 4).map((g) => (
+                  <Link key={g.id} to={`/games/${g.id}`} className="flex items-center gap-2.5 rounded-xl p-1.5 hover:bg-secondary" data-testid={`game-recent-${g.id}`}>
+                    <img src={g.icon_url} alt="" className="h-9 w-9 rounded-full object-cover" />
+                    <span className="truncate text-sm font-semibold">{g.name}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {related.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card/50 p-4" data-testid="game-related">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">Related games</div>
+                <Link to="/games" className="text-xs font-semibold text-primary">See more</Link>
+              </div>
+              <div className="space-y-1.5">
+                {related.slice(0, 5).map((g) => (
+                  <Link key={g.id} to={`/games/${g.id}`} className="flex items-center gap-2.5 rounded-xl p-1.5 hover:bg-secondary" data-testid={`game-related-${g.id}`}>
+                    <img src={g.icon_url} alt="" className="h-9 w-9 rounded-full object-cover" />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{g.name}</div>
+                      {g.category ? <div className="truncate text-[11px] text-muted-foreground">{g.category}</div> : null}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Updates dialog */}
+      <Dialog open={updatesOpen} onOpenChange={setUpdatesOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto" data-testid="game-updates-view">
+          <DialogHeader><DialogTitle>{game.name} — updates</DialogTitle></DialogHeader>
+          {updates.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No updates yet. Follow to get notified when there are.</p>
+          ) : (
+            <div className="space-y-2">
+              {updates.map((u) => (
+                <div key={u.id} className="rounded-xl border border-border p-3" data-testid={`game-update-view-${u.id}`}>
+                  <div className="font-semibold">{u.title}</div>
+                  <div className="mt-0.5 text-sm text-muted-foreground">{u.message}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

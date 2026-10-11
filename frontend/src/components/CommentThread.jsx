@@ -70,7 +70,7 @@ export default function CommentThread({ type, id, onCountChange, autoFocus }) {
   const [openThreads, setOpenThreads] = useState({});
   const inputRef = useRef(null);
 
-  const base = type === "video" ? `/videos/${id}/comments` : `/posts/${id}/comments`;
+  const base = type === "video" ? `/videos/${id}/comments` : type === "game" ? `/games/${id}/comments` : `/posts/${id}/comments`;
 
   useEffect(() => {
     let alive = true;

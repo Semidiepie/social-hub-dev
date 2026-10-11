@@ -3356,6 +3356,9 @@ app.include_router(_build_social(route_ctx))
 from routes.presence import build_router as _build_presence  # noqa: E402
 app.include_router(_build_presence(route_ctx))
 
+from routes.games import build_router as _build_games  # noqa: E402
+app.include_router(_build_games(route_ctx))
+
 
 @app.on_event("startup")
 async def _load_api_key_overrides():

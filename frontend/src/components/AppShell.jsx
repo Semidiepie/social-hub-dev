@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   Home,
@@ -19,8 +19,10 @@ import {
   ShoppingBag,
   User,
   Coins,
+  Gamepad2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { HamburgerMenu } from "@/components/HamburgerMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -87,6 +89,23 @@ export function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const showRight = showRightSidebarFor(location.pathname);
+  const [gamesCount, setGamesCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    api.get("/games/count").then((r) => setGamesCount(r?.count || 0)).catch(() => setGamesCount(0));
+  }, [user, location.pathname]);
+
+  // Single auto-appearing "Games" entry: shown only to logged-in users once a
+  // game exists. Placed right after Pet.
+  const navItems = user && gamesCount > 0
+    ? (() => {
+        const items = [...NAV];
+        const i = items.findIndex((n) => n.to === "/pet");
+        items.splice(i + 1, 0, { to: "/games", label: "Games", icon: Gamepad2, testId: "nav-games" });
+        return items;
+      })()
+    : NAV;
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -95,7 +114,7 @@ export function AppShell({ children }) {
         <RailBrand />
 
         <nav className="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-3 no-scrollbar">
-          {NAV.map((n) => (
+          {navItems.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
