@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/PageHeader";
 import { toast } from "sonner";
 
 const KIND_META = {
@@ -87,15 +88,11 @@ export default function WalletPage() {
 
   return (
     <div className="mx-auto max-w-2xl pb-12" data-testid="wallet-page">
-      <header className="mb-6 flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Coins size={24} />
-        </span>
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">Wallet</h1>
-          <p className="text-sm text-muted-foreground">Collect tokens, send gifts, shop the Market and e-transfer to friends.</p>
-        </div>
-      </header>
+      <PageHeader
+        icon={Coins}
+        title="Wallet"
+        subtitle="Collect tokens, send gifts, shop the Market and e-transfer to friends."
+      />
 
       {loading ? (
         <Skeleton className="h-40 w-full rounded-3xl" />

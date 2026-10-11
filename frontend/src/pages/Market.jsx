@@ -7,6 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FREE_FRAMES, THEMES } from "@/lib/cosmetics";
+import { PageHeader } from "@/components/PageHeader";
 import { toast } from "sonner";
 
 export default function MarketPage() {
@@ -121,24 +122,20 @@ export default function MarketPage() {
 
   return (
     <div className="mx-auto max-w-5xl pb-12" data-testid="market-page">
-      <header className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <ShoppingBag size={24} />
-          </span>
-          <div>
-            <h1 className="text-3xl font-black tracking-tight">Market</h1>
-            <p className="text-sm text-muted-foreground">Spend your tokens on premium frames, or equip free cosmetics.</p>
-          </div>
-        </div>
-        <Link
-          to="/wallet"
-          data-testid="market-balance-pill"
-          className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-2 text-sm font-black text-primary"
-        >
-          <Coins size={16} /> {balance}
-        </Link>
-      </header>
+      <PageHeader
+        icon={ShoppingBag}
+        title="Market"
+        subtitle="Spend your tokens on premium frames, or equip free cosmetics."
+        right={
+          <Link
+            to="/wallet"
+            data-testid="market-balance-pill"
+            className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-2 text-sm font-black text-primary"
+          >
+            <Coins size={16} /> {balance}
+          </Link>
+        }
+      />
 
       {/* Sage Cosmetic Studio */}
       <section className="mb-10 rounded-2xl border border-primary/40 bg-card/60 p-4" data-testid="cosmetic-studio">

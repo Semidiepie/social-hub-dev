@@ -4,6 +4,7 @@ import { Heart, MessageCircle, Trash2, Send, Pencil, Bookmark, Gamepad2 } from "
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
+import { PostMediaGallery } from "@/components/PostMediaGallery";
 import { FeaturedBadge, FeatureToggle } from "@/components/FeaturedControls";
 import { timeAgo, formatNumber, userPath, frameOf } from "@/lib/format";
 
@@ -67,10 +68,10 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
         )}
       </div>
 
-      {post.image_url && (
-        <div className="relative mx-2 mt-2 overflow-hidden rounded-2xl bg-secondary/40">
-          <img src={post.image_url} alt="" className="max-h-[600px] w-full object-cover" />
-          <div className="pointer-events-none absolute right-2.5 top-2.5 flex gap-1.5">
+      {(post.image_urls?.length || post.image_url) && (
+        <div className="relative mx-2 mt-2">
+          <PostMediaGallery images={post.image_urls?.length ? post.image_urls : [post.image_url]} />
+          <div className="pointer-events-none absolute right-2.5 top-2.5 z-10 flex gap-1.5">
             <span className="pmp-statchip"><Heart size={11} className="fill-primary text-primary" /> {formatNumber(post.likes)}</span>
             {commentsCount > 0 && (
               <span className="pmp-statchip"><MessageCircle size={11} /> {formatNumber(commentsCount)}</span>

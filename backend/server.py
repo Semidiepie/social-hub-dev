@@ -8,7 +8,7 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
 import bcrypt
 import httpx
@@ -174,6 +174,7 @@ class UpdateProfileBody(BaseModel):
 class CreatePostBody(BaseModel):
     caption: str = ""
     image_url: Optional[str] = None
+    image_urls: Optional[List[str]] = None
     video_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     duration: Optional[float] = None
@@ -589,11 +590,13 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
     liked_by_me = False
     if viewer_id:
         liked_by_me = await db.likes.find_one({"post_id": post["id"], "user_id": viewer_id}) is not None
+    images = post.get("image_urls") or ([post["image_url"]] if post.get("image_url") else [])
     return {
         "id": post["id"],
         "type": post.get("type", "post"),
         "caption": post.get("caption", ""),
-        "image_url": post.get("image_url"),
+        "image_url": post.get("image_url") or (images[0] if images else None),
+        "image_urls": images,
         "video_url": _cloudinary_compat_url(post.get("video_url")),
         "thumbnail_url": post.get("thumbnail_url"),
         "game_tag": post.get("game_tag"),
@@ -1790,12 +1793,14 @@ async def _notify_followers_new_post(author: dict, post: dict) -> None:
 @app.post("/api/posts")
 async def create_post(body: CreatePostBody, current: Annotated[dict, Depends(get_current_user)]):
     post_id = str(uuid.uuid4())
+    imgs = body.image_urls or ([body.image_url] if body.image_url else [])
     doc = {
         "id": post_id,
         "type": "post",
         "author_id": current["id"],
         "caption": body.caption,
-        "image_url": body.image_url,
+        "image_url": imgs[0] if imgs else None,
+        "image_urls": imgs,
         "video_url": body.video_url,
         "thumbnail_url": body.thumbnail_url,
         "duration": body.duration,

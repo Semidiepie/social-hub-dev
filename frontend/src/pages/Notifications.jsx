@@ -4,6 +4,7 @@ import { Loader2, Bell, Heart, MessageCircle, UserPlus, PawPrint, Megaphone, Rad
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/PageHeader";
 import { timeAgo } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -56,14 +57,17 @@ export default function NotificationsPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-black tracking-tight">Notifications</h1>
-        {items.some((n) => !n.read) && (
-          <Button variant="outline" onClick={markAll} data-testid="notifications-mark-all">
-            Mark all read
-          </Button>
-        )}
-      </header>
+      <PageHeader
+        icon={Bell}
+        title="Notifications"
+        right={
+          items.some((n) => !n.read) && (
+            <Button variant="outline" onClick={markAll} data-testid="notifications-mark-all">
+              Mark all read
+            </Button>
+          )
+        }
+      />
 
       {loading ? (
         <div className="flex justify-center py-16">

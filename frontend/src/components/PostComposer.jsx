@@ -12,9 +12,11 @@ import { toast } from "sonner";
 // Homepage composer: create a text post with an optional photo OR video.
 export function PostComposer({ onPosted }) {
   const { user } = useAuth();
+  const MAX_IMAGES = 4;
   const [caption, setCaption] = useState("");
   const [gameTag, setGameTag] = useState("");
-  const [media, setMedia] = useState(null); // { kind: 'image'|'video', url, thumbnail_url }
+  const [images, setImages] = useState([]); // array of image URLs (max 4)
+  const [video, setVideo] = useState(null); // { url, thumbnail_url, duration }
   const [uploading, setUploading] = useState(false);
   const [phase, setPhase] = useState("");
   const [progress, setProgress] = useState(0);
@@ -24,7 +26,38 @@ export function PostComposer({ onPosted }) {
 
   if (!user) return null;
 
-  const pickMedia = async (e, kind) => {
+  const pickPhotos = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    if (!cloudinaryAvailable) return toast.error("Uploads aren't configured.");
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0) return toast.error(`You can add up to ${MAX_IMAGES} photos.`);
+    const batch = files.slice(0, room);
+    if (batch.some((f) => f.size > MAX_UPLOAD_BYTES)) {
+      return toast.error("A file is too large. Max size is 1GB.");
+    }
+    setVideo(null);
+    setUploading(true);
+    setPhase("Uploading");
+    setProgress(0);
+    try {
+      for (let i = 0; i < batch.length; i++) {
+        const res = await uploadToCloudinary(batch[i], {
+          resourceType: "image",
+          onProgress: (f) => setProgress(Math.round(((i + f) / batch.length) * 100)),
+        });
+        setImages((prev) => (prev.length < MAX_IMAGES ? [...prev, res.secure_url] : prev));
+      }
+    } catch (err) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      setPhase("");
+    }
+  };
+
+  const pickVideo = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
@@ -32,12 +65,13 @@ export function PostComposer({ onPosted }) {
     if (file.size > MAX_UPLOAD_BYTES) {
       return toast.error("File is too large. Max size is 1GB.");
     }
+    setImages([]);
     setUploading(true);
     setProgress(0);
     try {
       let toUpload = file;
       // Auto-compress oversized videos to fit the upload cap, regardless of size.
-      if (kind === "video" && file.size > TARGET_MAX_BYTES) {
+      if (file.size > TARGET_MAX_BYTES) {
         setPhase("Compressing");
         const { file: compressed, wasCompressed } = await compressVideoToTarget(file, {
           onProgress: (f) => setProgress(Math.round(f * 100)),
@@ -48,16 +82,12 @@ export function PostComposer({ onPosted }) {
       setPhase("Uploading");
       setProgress(0);
       const res = await uploadToCloudinary(toUpload, {
-        resourceType: kind === "video" ? "video" : "image",
+        resourceType: "video",
         onProgress: (f) => setProgress(Math.round(f * 100)),
       });
-      setMedia({
-        kind,
+      setVideo({
         url: res.secure_url,
-        thumbnail_url:
-          kind === "video"
-            ? res.secure_url.replace(/\.(mp4|mov|webm|m4v)$/i, ".jpg")
-            : null,
+        thumbnail_url: res.secure_url.replace(/\.(mp4|mov|webm|m4v)$/i, ".jpg"),
         duration: res.duration || null,
       });
     } catch (err) {
@@ -69,21 +99,24 @@ export function PostComposer({ onPosted }) {
   };
 
   const submit = async () => {
-    if (!caption.trim() && !media) return;
+    const hasMedia = images.length > 0 || !!video;
+    if (!caption.trim() && !hasMedia) return;
     setPosting(true);
     try {
       const body = {
         caption: caption.trim(),
         game_tag: gameTag.trim() || null,
-        image_url: media?.kind === "image" ? media.url : null,
-        video_url: media?.kind === "video" ? media.url : null,
-        thumbnail_url: media?.thumbnail_url || null,
-        duration: media?.duration || null,
+        image_url: images[0] || null,
+        image_urls: images.length ? images : null,
+        video_url: video?.url || null,
+        thumbnail_url: video?.thumbnail_url || null,
+        duration: video?.duration || null,
       };
       const created = await api.post("/posts", body);
       setCaption("");
       setGameTag("");
-      setMedia(null);
+      setImages([]);
+      setVideo(null);
       playPostChime();
       toast.success("Posted!");
       onPosted?.(created);
@@ -109,15 +142,36 @@ export function PostComposer({ onPosted }) {
             className="w-full resize-none rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary/60"
           />
 
-          {media && (
+          {images.length > 0 && (
+            <div
+              className={`mt-3 grid gap-1.5 ${images.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
+              data-testid="composer-preview-images"
+            >
+              {images.map((url, i) => (
+                <div key={i} className="relative overflow-hidden rounded-xl border border-border bg-black">
+                  <img
+                    src={url}
+                    alt=""
+                    className={`w-full object-cover ${images.length === 1 ? "max-h-[420px]" : "h-40"}`}
+                  />
+                  <button
+                    onClick={() => setImages((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black/90"
+                    data-testid={`composer-remove-image-${i}`}
+                    aria-label="Remove image"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {video && (
             <div className="relative mt-3 overflow-hidden rounded-xl border border-border bg-black">
-              {media.kind === "image" ? (
-                <img src={media.url} alt="" className="max-h-[420px] w-full object-contain" data-testid="composer-preview-image" />
-              ) : (
-                <video src={media.url} controls className="max-h-[420px] w-full" data-testid="composer-preview-video" />
-              )}
+              <video src={video.url} controls className="max-h-[420px] w-full" data-testid="composer-preview-video" />
               <button
-                onClick={() => setMedia(null)}
+                onClick={() => setVideo(null)}
                 className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black/90"
                 data-testid="composer-remove-media"
               >
@@ -127,24 +181,24 @@ export function PostComposer({ onPosted }) {
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={(e) => pickMedia(e, "image")} />
-            <input ref={videoRef} type="file" accept="video/*" className="hidden" onChange={(e) => pickMedia(e, "video")} />
+            <input ref={photoRef} type="file" accept="image/*" multiple className="hidden" onChange={pickPhotos} />
+            <input ref={videoRef} type="file" accept="video/*" className="hidden" onChange={pickVideo} />
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={uploading || posting}
+              disabled={uploading || posting || !!video || images.length >= MAX_IMAGES}
               onClick={() => photoRef.current?.click()}
               className="gap-1.5"
               data-testid="composer-add-photo"
             >
-              <ImagePlus size={15} /> Photo
+              <ImagePlus size={15} /> Photo{images.length > 0 ? ` (${images.length}/${MAX_IMAGES})` : ""}
             </Button>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={uploading || posting}
+              disabled={uploading || posting || images.length > 0}
               onClick={() => videoRef.current?.click()}
               className="gap-1.5"
               data-testid="composer-add-video"
@@ -166,7 +220,7 @@ export function PostComposer({ onPosted }) {
             )}
             <Button
               onClick={submit}
-              disabled={posting || uploading || (!caption.trim() && !media)}
+              disabled={posting || uploading || (!caption.trim() && images.length === 0 && !video)}
               className="ml-auto gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
               data-testid="composer-submit"
             >

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles, Link2, Circle, Image as ImageIcon } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles, Link2, Circle, Image as ImageIcon, Settings as SettingsIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/Avatar";
+import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { uploadToCloudinary, cloudinaryAvailable } from "@/lib/cloudinary";
@@ -237,10 +238,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6" data-testid="settings-page">
-      <header>
-        <h1 className="text-3xl font-black tracking-tight">Settings</h1>
-        <p className="mt-1 text-muted-foreground">Manage your account and preferences.</p>
-      </header>
+      <PageHeader icon={SettingsIcon} title="Settings" subtitle="Manage your account and preferences." />
 
       <Card>
         <CardHeader><CardTitle>Profile</CardTitle></CardHeader>

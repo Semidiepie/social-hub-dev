@@ -6,6 +6,7 @@ import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
+import { PostMediaGallery } from "@/components/PostMediaGallery";
 import { timeAgo, formatNumber, userPath, badgeCls, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -121,8 +122,10 @@ export default function PostDetailPage() {
 
         {post.caption && <p className="px-4 pt-3 text-[15px] leading-relaxed">{post.caption}</p>}
 
-        {post.image_url && (
-          <img src={post.image_url} alt="" className="mt-3 max-h-[600px] w-full rounded-2xl border border-border object-cover" />
+        {(post.image_urls?.length || post.image_url) && (
+          <div className="mt-3 overflow-hidden rounded-2xl border border-border">
+            <PostMediaGallery images={post.image_urls?.length ? post.image_urls : [post.image_url]} rounded={false} />
+          </div>
         )}
         {post.video_url && !post.image_url && (
           <video src={post.video_url} controls poster={post.thumbnail_url || undefined} className="mt-3 max-h-[720px] w-full rounded-2xl border border-border bg-black" />
