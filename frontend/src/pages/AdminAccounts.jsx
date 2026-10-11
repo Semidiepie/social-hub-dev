@@ -78,7 +78,7 @@ function AccountRow({ u, onChange, onDeleted }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-sm font-semibold">{u.display_name}</span>
-            {u.is_verified && <BadgeCheck size={14} className="flex-none text-primary" />}
+            {u.is_verified && <BadgeCheck size={14} className="flex-none fill-primary text-background" style={u.verified_color ? { fill: u.verified_color } : undefined} />}
             {u.banned && <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[9px] font-black uppercase text-destructive">Banned</span>}
             {protectedAcct && <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] font-black uppercase text-muted-foreground">Protected</span>}
           </div>

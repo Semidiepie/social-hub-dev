@@ -1837,6 +1837,32 @@ async def create_reel(body: CreateReelBody, current: Annotated[dict, Depends(get
     return await serialize_post(doc, current["id"])
 
 
+@app.post("/api/reels/{reel_id}/view")
+async def register_reel_view(reel_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
+    """Count a reel view, deduped per viewer within a 30-minute window (mirrors videos)."""
+    reel = await db.posts.find_one({"id": reel_id, "type": "reel"})
+    if not reel:
+        raise HTTPException(404, "Reel not found")
+    if viewer:
+        recent = await db.reel_views.find_one({
+            "reel_id": reel_id,
+            "viewer_id": viewer["id"],
+            "created_at": {"$gt": now() - timedelta(minutes=30)},
+        })
+        if recent:
+            return {"views": reel.get("views", 0)}
+    await db.reel_views.insert_one({
+        "id": str(uuid.uuid4()),
+        "reel_id": reel_id,
+        "viewer_id": viewer["id"] if viewer else None,
+        "created_at": now(),
+    })
+    result = await db.posts.find_one_and_update(
+        {"id": reel_id}, {"$inc": {"views": 1}}, return_document=True
+    )
+    return {"views": result.get("views", 0)}
+
+
 @app.get("/api/posts/{post_id}")
 async def get_post(post_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
     post = await db.posts.find_one({"id": post_id}, {"_id": 0})

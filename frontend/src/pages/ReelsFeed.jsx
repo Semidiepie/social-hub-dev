@@ -134,6 +134,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
   const { user } = useAuth();
   const videoRef = useRef(null);
   const wrapRef = useRef(null);
+  const viewedRef = useRef(false);
   const [liked, setLiked] = useState(reel.liked_by_me);
   const [likes, setLikes] = useState(reel.likes || 0);
   const [playing, setPlaying] = useState(false);
@@ -146,6 +147,10 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
       ([entry]) => {
         if (entry.intersectionRatio >= 0.6) {
           vid.play().then(() => setPlaying(true)).catch(() => {});
+          if (!viewedRef.current) {
+            viewedRef.current = true;
+            api.post(`/reels/${reel.id}/view`).catch(() => {});
+          }
         } else {
           vid.pause();
           setPlaying(false);
@@ -155,7 +160,7 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
     );
     io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [reel.id]);
 
   const togglePlay = () => {
     const vid = videoRef.current;

@@ -43,6 +43,7 @@ export default function ReelWatchPage() {
       try {
         const r = await api.get(`/posts/${id}`);
         if (active) setReel(r);
+        api.post(`/reels/${id}/view`).catch(() => {});
       } catch (e) {
         toast.error(e.message || "Reel not found");
         navigate("/discover");

@@ -84,7 +84,7 @@ export default function AdminBlogsPage() {
                   <div className="min-w-0 flex-1 leading-tight">
                     <div className="flex items-center gap-1">
                       <span className="truncate font-semibold">{r.display_name}</span>
-                      {r.is_verified && <BadgeCheck size={14} className="shrink-0 text-primary" />}
+                      {r.is_verified && <BadgeCheck size={14} className="shrink-0 fill-primary text-background" style={r.verified_color ? { fill: r.verified_color } : undefined} />}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">@{r.username}</div>
                   </div>
