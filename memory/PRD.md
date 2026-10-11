@@ -903,3 +903,8 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Verified: backend endpoints via curl; FULL browser resumable upload → Ready via UI screenshot; publish+serialize; existing Cloudinary video still plays. All test Stream assets deleted after testing (account back to 0 — no lingering billing). SELF-TESTED, not testing-agent verified.
 - Deps added (frontend): tus-js-client, hls.js.
 - Phase 2/3 deferred: YouTube links w/ ownership attestation, custom frame thumbnail picker, captions/trim, enforced private/unlisted secured playback, per-video analytics, background re-host queue.
+
+### 2026-06 — Fix: Google Drive import of large files
+- Bug: importing a Drive link for a large file (e.g. 808MB .mov) failed with "Couldn't process this video" — Cloudflare's /copy rejected the uc?export=download URL because Google serves an HTML "virus scan" interstitial for files >~100MB instead of the bytes.
+- Fix: _resolve_drive_url now returns https://drive.usercontent.google.com/download?id={id}&export=download&confirm=t, which serves the raw file bytes (verified: 200 application/octet-stream, content-length 808MB) and bypasses the interstitial. Verified end-to-end: Cloudflare now accepts the exact user link and moves to state=downloading (was 400 before). Test asset deleted after.
+- Residual limits: Google enforces per-file daily download quotas; a heavily-downloaded public file can be temporarily blocked by Google and would surface as an import error.

@@ -35,14 +35,14 @@ def _stream_base(account_id: str) -> str:
 
 
 def _resolve_drive_url(url: str) -> str:
-    """Turn a Google Drive share link into a direct download URL. Other URLs pass
-    through unchanged. Large Drive files behind the virus-scan interstitial may
-    still fail — Cloudflare surfaces that as an error."""
-    if "drive.google.com" not in url:
+    """Turn a Google Drive share link into a direct-download URL that serves the
+    raw bytes. We use drive.usercontent.google.com with confirm=t, which bypasses
+    the "virus scan" HTML interstitial Google shows for large files (>~100MB)."""
+    if "drive.google.com" not in url and "drive.usercontent.google.com" not in url:
         return url
     m = re.search(r"/file/d/([^/]+)", url) or re.search(r"[?&]id=([^&]+)", url)
     if m:
-        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+        return f"https://drive.usercontent.google.com/download?id={m.group(1)}&export=download&confirm=t"
     return url
 
 
