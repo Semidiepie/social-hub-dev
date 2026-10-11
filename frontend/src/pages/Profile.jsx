@@ -34,6 +34,7 @@ export default function ProfilePage() {
   const [videos, setVideos] = useState([]);
   const [blogs, setBlogs] = useState([]);
   const [tiktok, setTiktok] = useState([]);
+  const [saved, setSaved] = useState([]);
   const [loading, setLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(true);
   const [following, setFollowing] = useState(false);
@@ -70,6 +71,9 @@ export default function ProfilePage() {
       setVideos(v);
       setBlogs(b);
       setTiktok(Array.isArray(tk) ? tk : []);
+      if (me && u.id === me.id) {
+        api.get("/me/bookmarks").then((s) => setSaved(Array.isArray(s) ? s : [])).catch(() => setSaved([]));
+      }
     } catch (e) {
       toast.error(e.message || "User not found");
       navigate("/discover");
@@ -136,6 +140,20 @@ export default function ProfilePage() {
 
   const onPostUpdated = (updated) =>
     setPosts((rows) => rows.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+
+  const toggleSavedLike = async (post) => {
+    const liked = post.liked_by_me;
+    setSaved((rows) =>
+      rows.map((r) => (r.id === post.id ? { ...r, liked_by_me: !liked, likes: r.likes + (liked ? -1 : 1) } : r)),
+    );
+    try {
+      if (liked) await api.del(`/posts/${post.id}/like`);
+      else await api.post(`/posts/${post.id}/like`);
+    } catch (e) {
+      setSaved((rows) => rows.map((r) => (r.id === post.id ? { ...r, liked_by_me: liked, likes: post.likes } : r)));
+      toast.error(e.message || "Failed");
+    }
+  };
 
   const initialTab = useMemo(() => {
     if (reels.length) return "reels";
@@ -294,6 +312,9 @@ export default function ProfilePage() {
             <TabsTrigger value="tiktok" data-testid="profile-tab-tiktok">TikTok{contentLoading ? "" : ` · ${tiktok.length}`}</TabsTrigger>
           )}
           <TabsTrigger value="blogs" data-testid="profile-tab-blogs">Blogs{contentLoading ? "" : ` · ${blogs.length}`}</TabsTrigger>
+          {isSelf && (
+            <TabsTrigger value="saved" data-testid="profile-tab-saved">Saved{contentLoading ? "" : ` · ${saved.length}`}</TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="posts">
           {contentLoading ? (
@@ -331,6 +352,21 @@ export default function ProfilePage() {
         <TabsContent value="blogs">
           {contentLoading ? <BlogsSkeleton /> : <BlogsList blogs={blogs} />}
         </TabsContent>
+        {isSelf && (
+          <TabsContent value="saved">
+            {saved.length === 0 ? (
+              <div className="py-12 text-center text-sm text-muted-foreground" data-testid="profile-saved-empty">
+                Nothing saved yet. Tap the bookmark on any post to save it here.
+              </div>
+            ) : (
+              <div className="divide-y divide-border border-t border-border" data-testid="profile-saved-timeline">
+                {saved.map((p) => (
+                  <FeedPostCard key={p.id} post={p} onToggleLike={() => toggleSavedLike(p)} />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        )}
       </Tabs>
 
       <FollowListDialog

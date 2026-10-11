@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Heart, Clock, Eye, ArrowLeft, Loader2, BadgeCheck, Pencil } from "lucide-react";
+import { Heart, Clock, Eye, ArrowLeft, Loader2, BadgeCheck, Pencil, Share2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { shareUrl, origin } from "@/lib/share";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { timeAgo, formatNumber, userPath, badgeCls, badgeStyle } from "@/lib/format";
@@ -139,6 +140,14 @@ export default function BlogReadPage() {
         >
           <Heart size={18} className={blog.liked_by_me ? "fill-current" : ""} />
           {formatNumber(blog.likes)} {blog.liked_by_me ? "liked" : "like"}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => shareUrl(`${origin()}/api/share/blog/${blog.id}`, blog.title, "Blog link copied!")}
+          className="gap-2"
+          data-testid="blog-share-btn"
+        >
+          <Share2 size={18} /> Share
         </Button>
       </div>
     </article>

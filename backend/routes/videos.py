@@ -6,20 +6,60 @@ of the short-form `posts.type=reel` records. Schema:
     size_bytes, visibility: public|unlisted|private, tags[], category,
     views, likes, comments_count, created_at, updated_at }
 """
+import base64
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+import settings_store
+
 VIDEO_VISIBILITIES = ("public", "unlisted", "private")
+
+# Cloudflare Stream limits (application policy).
+STREAM_MAX_BYTES_FILE = 1 * 1024 ** 3     # 1GB — "Upload file" tab
+STREAM_MAX_BYTES_URL = 30 * 1024 ** 3     # 30GB — "Import from link" tab
+STREAM_MAX_SECONDS = 2 * 60 * 60          # 2h default max duration
+
+
+def _stream_cfg():
+    return settings_store.get("CLOUDFLARE_ACCOUNT_ID"), settings_store.get("CLOUDFLARE_API_TOKEN")
+
+
+def _stream_base(account_id: str) -> str:
+    return f"https://api.cloudflare.com/client/v4/accounts/{account_id}/stream"
+
+
+def _resolve_drive_url(url: str) -> str:
+    """Turn a Google Drive share link into a direct download URL. Other URLs pass
+    through unchanged. Large Drive files behind the virus-scan interstitial may
+    still fail — Cloudflare surfaces that as an error."""
+    if "drive.google.com" not in url:
+        return url
+    m = re.search(r"/file/d/([^/]+)", url) or re.search(r"[?&]id=([^&]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
+
+
+def _is_public_http_url(url: str) -> bool:
+    if not re.match(r"^https?://", url, re.I):
+        return False
+    host = re.sub(r"^https?://", "", url, flags=re.I).split("/")[0].split(":")[0].lower()
+    blocked = ("localhost", "127.", "10.", "192.168.", "169.254.", "0.0.0.0", "::1")
+    return not (host in ("localhost",) or any(host.startswith(b) for b in blocked))
 
 
 class CreateVideoBody(BaseModel):
     title: str = Field(min_length=1, max_length=140)
     description: str = Field(default="", max_length=5000)
-    video_url: str = Field(min_length=1)
+    video_url: Optional[str] = None
+    stream_uid: Optional[str] = None
+    hls_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     duration: Optional[float] = None
     size_bytes: Optional[int] = None
@@ -40,6 +80,10 @@ class UpdateVideoBody(BaseModel):
 class VideoCommentBody(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
     parent_id: Optional[str] = None
+
+
+class StreamUrlBody(BaseModel):
+    url: str = Field(min_length=4)
 
 
 def build_router(ctx) -> APIRouter:
@@ -63,6 +107,9 @@ def build_router(ctx) -> APIRouter:
             "title": v.get("title", ""),
             "description": v.get("description", ""),
             "video_url": cloudinary_compat_url(v.get("video_url")),
+            "stream_uid": v.get("stream_uid"),
+            "hls_url": v.get("hls_url"),
+            "provider": v.get("provider", "cloudinary"),
             "thumbnail_url": v.get("thumbnail_url"),
             "duration": v.get("duration"),
             "size_bytes": v.get("size_bytes"),
@@ -91,6 +138,98 @@ def build_router(ctx) -> APIRouter:
 
     # Expose for other modules/server that may need it.
     ctx.serialize_video = serialize_video
+
+    # ---- Cloudflare Stream: fast resumable upload + link import + status ----
+    @router.post("/api/videos/stream/tus-upload")
+    async def stream_tus_upload(request: Request, current: Annotated[dict, Depends(get_current_user)]):
+        """Mint a one-time TUS direct-creator-upload URL. The browser then PATCHes
+        chunks straight to Cloudflare (fast + resumable). Capped at 1GB here."""
+        account_id, token = _stream_cfg()
+        if not (account_id and token):
+            raise HTTPException(503, "Video uploads aren't configured yet (Cloudflare Stream).")
+        length = request.headers.get("Upload-Length")
+        if not length or not length.isdigit():
+            raise HTTPException(400, "Upload-Length is required")
+        size = int(length)
+        if size <= 0 or size > STREAM_MAX_BYTES_FILE:
+            raise HTTPException(413, "File is over 1GB — use the Import from link tab for larger videos.")
+        metadata = request.headers.get("Upload-Metadata", "")
+        items = [x for x in metadata.split(",") if x and not x.strip().startswith("maxDurationSeconds")]
+        items.append("maxDurationSeconds " + base64.b64encode(str(STREAM_MAX_SECONDS).encode()).decode())
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                r = await c.post(
+                    f"{_stream_base(account_id)}?direct_user=true",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Tus-Resumable": "1.0.0",
+                        "Upload-Length": str(size),
+                        "Upload-Metadata": ",".join(items),
+                        "Upload-Creator": current["id"],
+                    },
+                )
+        except Exception as e:
+            raise HTTPException(502, f"Couldn't reach the video engine: {e}")
+        if r.status_code >= 400:
+            raise HTTPException(502, f"Stream upload init failed: {r.text[:300]}")
+        resp = Response(status_code=201)
+        resp.headers["Location"] = r.headers.get("Location", "")
+        resp.headers["stream-media-id"] = r.headers.get("stream-media-id", "")
+        resp.headers["Access-Control-Expose-Headers"] = "Location, stream-media-id, Upload-Offset, Tus-Resumable"
+        return resp
+
+    @router.post("/api/videos/stream/from-url")
+    async def stream_from_url(body: StreamUrlBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Hand a public Google Drive or direct video URL to Cloudflare, which
+        downloads + re-hosts it. Up to 30GB."""
+        account_id, token = _stream_cfg()
+        if not (account_id and token):
+            raise HTTPException(503, "Link import isn't configured yet (Cloudflare Stream).")
+        src = _resolve_drive_url(body.url.strip())
+        if not _is_public_http_url(src):
+            raise HTTPException(400, "Enter a public http(s) link — a Google Drive 'Anyone with the link' URL or a direct video file URL.")
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                r = await c.post(
+                    f"{_stream_base(account_id)}/copy",
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    json={"url": src, "maxDurationSeconds": STREAM_MAX_SECONDS},
+                )
+        except Exception as e:
+            raise HTTPException(502, f"Couldn't reach the video engine: {e}")
+        if r.status_code >= 400:
+            raise HTTPException(400, "Couldn't fetch that link. Make sure it's public ('Anyone with the link') or a direct video file URL that isn't login-protected or expired.")
+        result = r.json().get("result", {})
+        return {
+            "uid": result.get("uid"),
+            "state": (result.get("status") or {}).get("state", "downloading"),
+            "ready": result.get("readyToStream", False),
+        }
+
+    @router.get("/api/videos/stream/{uid}/status")
+    async def stream_status(uid: str, current: Annotated[dict, Depends(get_current_user)]):
+        account_id, token = _stream_cfg()
+        if not (account_id and token):
+            raise HTTPException(503, "Cloudflare Stream isn't configured.")
+        try:
+            async with httpx.AsyncClient(timeout=20) as c:
+                r = await c.get(f"{_stream_base(account_id)}/{uid}", headers={"Authorization": f"Bearer {token}"})
+        except Exception as e:
+            raise HTTPException(502, f"Couldn't reach the video engine: {e}")
+        if r.status_code >= 400:
+            raise HTTPException(404, "Video not found on the engine")
+        v = r.json().get("result", {})
+        st = v.get("status") or {}
+        return {
+            "uid": uid,
+            "ready": v.get("readyToStream", False),
+            "state": st.get("state"),
+            "pct": st.get("pctComplete"),
+            "duration": v.get("duration"),
+            "thumbnail": v.get("thumbnail"),
+            "hls": (v.get("playback") or {}).get("hls"),
+            "error": st.get("errReasonText"),
+        }
 
     @router.get("/api/videos")
     async def list_videos(
@@ -158,13 +297,19 @@ def build_router(ctx) -> APIRouter:
 
     @router.post("/api/videos", status_code=201)
     async def create_video(body: CreateVideoBody, current: Annotated[dict, Depends(get_current_user)]):
+        if not body.stream_uid and not (body.video_url and body.video_url.strip()):
+            raise HTTPException(400, "A video upload or link is required")
+        provider = "stream" if body.stream_uid else "cloudinary"
         video_id = str(uuid.uuid4())
         doc = {
             "id": video_id,
             "author_id": current["id"],
             "title": body.title.strip(),
             "description": body.description.strip(),
-            "video_url": body.video_url,
+            "video_url": (body.video_url or "").strip() or None,
+            "stream_uid": body.stream_uid,
+            "hls_url": body.hls_url,
+            "provider": provider,
             "thumbnail_url": body.thumbnail_url,
             "duration": body.duration,
             "size_bytes": body.size_bytes,

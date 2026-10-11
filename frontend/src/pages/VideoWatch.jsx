@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil } from "lucide-react";
+import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil, Share2 } from "lucide-react";
+import Hls from "hls.js";
 import { api } from "@/lib/api";
+import { shareUrl, origin } from "@/lib/share";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatNumber, timeAgo, userPath, videoPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
@@ -20,6 +22,7 @@ export default function VideoWatchPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const viewFiredRef = useRef(false);
+  const videoElRef = useRef(null);
 
   // Back returns to wherever the user came from (profile/discover) at the same
   // scroll position. Falls back to Discover on a cold/direct load.
@@ -55,6 +58,29 @@ export default function VideoWatchPage() {
   useEffect(() => {
     viewFiredRef.current = false;
   }, [id]);
+
+  // Attach the right source: adaptive HLS for Cloudflare Stream videos (hls.js,
+  // with native HLS on Safari), plain MP4 for legacy Cloudinary videos.
+  useEffect(() => {
+    const el = videoElRef.current;
+    if (!el || !video) return undefined;
+    const isStream = video.provider === "stream" && video.hls_url;
+    if (isStream) {
+      if (el.canPlayType("application/vnd.apple.mpegurl")) {
+        el.src = video.hls_url;
+      } else if (Hls.isSupported()) {
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        hls.loadSource(video.hls_url);
+        hls.attachMedia(el);
+        return () => hls.destroy();
+      } else {
+        el.src = video.hls_url;
+      }
+    } else if (video.video_url) {
+      el.src = video.video_url;
+    }
+    return undefined;
+  }, [video]);
 
   const registerView = () => {
     if (viewFiredRef.current) return;
@@ -110,16 +136,24 @@ export default function VideoWatchPage() {
 
       {/* Player in a contained, rounded card that matches the site theme */}
       <div className="overflow-hidden rounded-2xl border border-border bg-black shadow-xl">
-        <video
-          key={video.id}
-          src={video.video_url}
-          controls
-          autoPlay
-          poster={video.thumbnail_url || undefined}
-          onPlay={registerView}
-          className="mx-auto max-h-[72vh] w-full bg-black object-contain"
-          data-testid={`video-player-${video.id}`}
-        />
+        {video.provider === "stream" && !video.hls_url ? (
+          <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-black text-sm text-muted-foreground" data-testid="video-processing">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            Still processing — this video will play shortly.
+          </div>
+        ) : (
+          <video
+            key={video.id}
+            ref={videoElRef}
+            controls
+            autoPlay
+            playsInline
+            poster={video.thumbnail_url || undefined}
+            onPlay={registerView}
+            className="mx-auto max-h-[72vh] w-full bg-black object-contain"
+            data-testid={`video-player-${video.id}`}
+          />
+        )}
       </div>
 
       {/* Details */}
@@ -151,6 +185,14 @@ export default function VideoWatchPage() {
               >
                 <Heart size={16} className={video.liked_by_me ? "fill-current" : ""} />
                 {formatNumber(video.likes)}
+              </Button>
+              <Button
+                onClick={() => shareUrl(`${origin()}/api/share/video/${video.id}`, video.title, "Video link copied!")}
+                variant="outline"
+                className="gap-2"
+                data-testid="video-share-btn"
+              >
+                <Share2 size={16} /> Share
               </Button>
               {user?.id && video.author?.id === user.id && (
                 <>

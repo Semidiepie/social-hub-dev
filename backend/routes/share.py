@@ -153,6 +153,49 @@ def _png(data):
     return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
 
 
+def _cover(img, w, h):
+    sw, sh = img.size
+    if not sw or not sh:
+        return img.resize((w, h), Image.LANCZOS)
+    scale = max(w / sw, h / sh)
+    nw, nh = max(w, int(sw * scale)), max(h, int(sh * scale))
+    img = img.resize((nw, nh), Image.LANCZOS)
+    left, top = (nw - w) // 2, (nh - h) // 2
+    return img.crop((left, top, left + w, top + h))
+
+
+async def _render_photo_card(image_url, kind_label, title, handle):
+    """Clean, photo-forward 1200x630 card: the content image fills the frame with
+    a bottom scrim, kind pill and wordmark. Returns None if the image can't load."""
+    media = await _fetch_image(image_url)
+    if media is None:
+        return None
+    W, H = 1200, 630
+    base = _cover(media.convert("RGB"), W, H).convert("RGBA")
+    scrim = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(scrim)
+    for y in range(H):
+        t = max(0.0, (y - H * 0.38) / (H * 0.62))
+        sd.line([(0, y), (W, y)], fill=(8, 9, 14, int(230 * t)))
+    base = Image.alpha_composite(base, scrim).convert("RGB")
+    d = ImageDraw.Draw(base)
+    pf = _font(24)
+    pw = d.textlength(kind_label, font=pf)
+    d.rounded_rectangle((44, 44, 44 + pw + 44, 94), radius=25, fill=ACCENT)
+    d.text((66, 53), kind_label, font=pf, fill=(18, 20, 28))
+    wm = "PostMePlex" + (f"   @{handle}" if handle else "")
+    d.text((50, H - 54), wm, font=_font(28), fill=ACCENT)
+    tf = _font(60)
+    lines = _wrap(d, title, tf, W - 110)[:2]
+    ty = H - 78 - len(lines) * 68
+    for ln in lines:
+        d.text((50, ty), ln, font=tf, fill=WHITE)
+        ty += 68
+    buf = io.BytesIO()
+    base.save(buf, "PNG")
+    return buf.getvalue()
+
+
 def _origin(request: Request) -> str:
     proto = request.headers.get("x-forwarded-proto", "https")
     host = request.headers.get("x-forwarded-host") or request.headers.get("host")
@@ -237,6 +280,10 @@ def build_router(ctx) -> APIRouter:
             return _png(await _render_card("REEL", "Reel not found", "", [], None, False, await _logo()))
         title = (p.get("caption") or "Watch this reel").strip()[:90]
         sub = f"@{author['username']}" if author else ""
+        handle = author["username"] if author else ""
+        photo = await _render_photo_card(p.get("thumbnail_url"), "REEL", title, handle)
+        if photo:
+            return _png(photo)
         stats = [("Likes", _fmt(p.get("likes"))), ("Comments", _fmt(p.get("comments_count"))), ("Views", _fmt(p.get("views")))]
         media = p.get("thumbnail_url") or (avatar_or_default(author.get("avatar_url")) if author else None)
         return _png(await _render_card("REEL", title, sub, stats, media, not p.get("thumbnail_url"), await _logo()))
@@ -296,5 +343,103 @@ def build_router(ctx) -> APIRouter:
         desc = f"Meet {name}, {u.get('display_name')}'s AI-generated pet on PostMePlex. Adopt your own!" if u else "Adopt an AI pet on PostMePlex."
         app_url = f"{origin}/pet?ref={h}"
         return HTMLResponse(_landing(f"Meet {name} 🐾", desc, f"{origin}/api/share/pet/{h}/card.png", f"{origin}/api/share/pet/{h}", app_url))
+
+    # ---- Post ----
+    async def _get_post(pid):
+        p = await db.posts.find_one({"id": pid}, {"_id": 0})
+        if not p:
+            return None, None
+        a = await db.users.find_one({"id": p.get("author_id")}, {"_id": 0})
+        return p, a
+
+    @router.get("/api/share/post/{post_id}/card.png")
+    async def post_card(post_id: str):
+        p, author = await _get_post(post_id)
+        if not p:
+            return _png(await _render_card("POST", "Post not found", "", [], None, False, await _logo()))
+        handle = author["username"] if author else ""
+        title = (p.get("caption") or "Check out this post").strip()[:110]
+        img = p.get("image_url") or p.get("thumbnail_url")
+        photo = await _render_photo_card(img, "POST", title, handle)
+        if photo:
+            return _png(photo)
+        stats = [("Likes", _fmt(p.get("likes"))), ("Comments", _fmt(p.get("comments_count")))]
+        avatar = avatar_or_default(author.get("avatar_url")) if author else None
+        return _png(await _render_card("POST", title, f"@{handle}" if handle else "", stats, avatar, True, await _logo()))
+
+    @router.get("/api/share/post/{post_id}")
+    async def post_page(post_id: str, request: Request):
+        origin = _origin(request)
+        p, author = await _get_post(post_id)
+        handle = author["username"] if author else ""
+        title = (p.get("caption").strip()[:110] if p and p.get("caption") else "Check out this post on PostMePlex")
+        desc = f"A post by @{handle} on PostMePlex — join the community." if handle else "See posts on PostMePlex."
+        app_url = f"{origin}/posts/{post_id}" + (f"?ref={handle}" if handle else "")
+        return HTMLResponse(_landing(title, desc, f"{origin}/api/share/post/{post_id}/card.png", f"{origin}/api/share/post/{post_id}", app_url))
+
+    # ---- Blog ----
+    async def _get_blog(bid):
+        b = await db.blogs.find_one({"id": bid}, {"_id": 0})
+        if not b:
+            return None, None
+        a = await db.users.find_one({"id": b.get("author_id")}, {"_id": 0})
+        return b, a
+
+    @router.get("/api/share/blog/{blog_id}/card.png")
+    async def blog_card(blog_id: str):
+        b, author = await _get_blog(blog_id)
+        if not b:
+            return _png(await _render_card("BLOG", "Blog not found", "", [], None, False, await _logo()))
+        handle = author["username"] if author else ""
+        title = (b.get("title") or "Read this blog").strip()[:110]
+        photo = await _render_photo_card(b.get("cover_url"), "BLOG", title, handle)
+        if photo:
+            return _png(photo)
+        sub = (b.get("subtitle") or (f"@{handle}" if handle else "")).strip()[:80]
+        stats = [("Likes", _fmt(b.get("likes"))), ("Views", _fmt(b.get("views")))]
+        avatar = avatar_or_default(author.get("avatar_url")) if author else None
+        return _png(await _render_card("BLOG", title, sub, stats, avatar, True, await _logo()))
+
+    @router.get("/api/share/blog/{blog_id}")
+    async def blog_page(blog_id: str, request: Request):
+        origin = _origin(request)
+        b, author = await _get_blog(blog_id)
+        handle = author["username"] if author else ""
+        title = (b.get("title").strip()[:110] if b and b.get("title") else "Read this blog on PostMePlex")
+        desc = (b.get("subtitle") if b and b.get("subtitle") else (f"A blog by @{handle} on PostMePlex." if handle else "Read blogs on PostMePlex."))
+        app_url = f"{origin}/blogs/{blog_id}" + (f"?ref={handle}" if handle else "")
+        return HTMLResponse(_landing(title, desc, f"{origin}/api/share/blog/{blog_id}/card.png", f"{origin}/api/share/blog/{blog_id}", app_url))
+
+    # ---- Video ----
+    async def _get_video(vid):
+        v = await db.videos.find_one({"id": vid}, {"_id": 0})
+        if not v:
+            return None, None
+        a = await db.users.find_one({"id": v.get("author_id")}, {"_id": 0})
+        return v, a
+
+    @router.get("/api/share/video/{video_id}/card.png")
+    async def video_card(video_id: str):
+        v, author = await _get_video(video_id)
+        if not v:
+            return _png(await _render_card("VIDEO", "Video not found", "", [], None, False, await _logo()))
+        handle = author["username"] if author else ""
+        title = (v.get("title") or "Watch this video").strip()[:110]
+        photo = await _render_photo_card(v.get("thumbnail_url"), "VIDEO", title, handle)
+        if photo:
+            return _png(photo)
+        stats = [("Views", _fmt(v.get("views"))), ("Likes", _fmt(v.get("likes")))]
+        avatar = avatar_or_default(author.get("avatar_url")) if author else None
+        return _png(await _render_card("VIDEO", title, f"@{handle}" if handle else "", stats, avatar, True, await _logo()))
+
+    @router.get("/api/share/video/{video_id}")
+    async def video_page(video_id: str, request: Request):
+        origin = _origin(request)
+        v, author = await _get_video(video_id)
+        handle = author["username"] if author else ""
+        title = (v.get("title").strip()[:110] if v and v.get("title") else "Watch this video on PostMePlex")
+        desc = (v.get("description").strip()[:160] if v and v.get("description") else (f"A video by @{handle} on PostMePlex." if handle else "Watch videos on PostMePlex."))
+        app_url = f"{origin}/videos/{video_id}" + (f"?ref={handle}" if handle else "")
+        return HTMLResponse(_landing(title, desc, f"{origin}/api/share/video/{video_id}/card.png", f"{origin}/api/share/video/{video_id}", app_url))
 
     return router

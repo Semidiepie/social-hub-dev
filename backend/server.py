@@ -590,6 +590,9 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
     liked_by_me = False
     if viewer_id:
         liked_by_me = await db.likes.find_one({"post_id": post["id"], "user_id": viewer_id}) is not None
+    saved_by_me = False
+    if viewer_id:
+        saved_by_me = await db.bookmarks.find_one({"user_id": viewer_id, "item_id": post["id"]}) is not None
     images = post.get("image_urls") or ([post["image_url"]] if post.get("image_url") else [])
     return {
         "id": post["id"],
@@ -607,6 +610,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
         "featured": bool(post.get("featured", False)),
         "created_at": post["created_at"].isoformat() if isinstance(post["created_at"], datetime) else post["created_at"],
         "liked_by_me": liked_by_me,
+        "saved_by_me": saved_by_me,
         "author": {
             "id": author["id"],
             "username": author["username"],
@@ -1861,6 +1865,38 @@ async def register_reel_view(reel_id: str, viewer: Annotated[Optional[dict], Dep
         {"id": reel_id}, {"$inc": {"views": 1}}, return_document=True
     )
     return {"views": result.get("views", 0)}
+
+
+class BookmarkBody(BaseModel):
+    kind: str = "post"
+    item_id: str
+
+
+@app.post("/api/bookmarks/toggle")
+async def toggle_bookmark(body: BookmarkBody, current: Annotated[dict, Depends(get_current_user)]):
+    existing = await db.bookmarks.find_one({"user_id": current["id"], "item_id": body.item_id})
+    if existing:
+        await db.bookmarks.delete_one({"user_id": current["id"], "item_id": body.item_id})
+        return {"saved": False}
+    await db.bookmarks.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": current["id"],
+        "kind": body.kind,
+        "item_id": body.item_id,
+        "created_at": now(),
+    })
+    return {"saved": True}
+
+
+@app.get("/api/me/bookmarks")
+async def my_bookmarks(current: Annotated[dict, Depends(get_current_user)]):
+    rows = await db.bookmarks.find({"user_id": current["id"]}).sort("created_at", -1).to_list(300)
+    out = []
+    for b in rows:
+        post = await db.posts.find_one({"id": b["item_id"]})
+        if post:
+            out.append(await serialize_post(post, current["id"]))
+    return out
 
 
 @app.get("/api/posts/{post_id}")

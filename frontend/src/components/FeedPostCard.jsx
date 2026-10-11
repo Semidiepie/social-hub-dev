@@ -7,6 +7,9 @@ import CommentThread from "@/components/CommentThread";
 import { PostMediaGallery } from "@/components/PostMediaGallery";
 import { FeaturedBadge, FeatureToggle } from "@/components/FeaturedControls";
 import { timeAgo, formatNumber, userPath, frameOf } from "@/lib/format";
+import { api } from "@/lib/api";
+import { shareUrl, origin } from "@/lib/share";
+import { toast } from "sonner";
 
 // Shared X-style timeline post card — used by the Home feed and the Profile Posts tab.
 export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdated }) {
@@ -14,6 +17,28 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
   const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
   const [editing, setEditing] = useState(false);
   const [featured, setFeatured] = useState(!!post.featured);
+  const [saved, setSaved] = useState(!!post.saved_by_me);
+  const isReel = post.type === "reel";
+
+  const onShare = () =>
+    shareUrl(
+      `${origin()}/api/share/${isReel ? "reel" : "post"}/${post.id}`,
+      post.caption || "Check this out on PostMePlex",
+      "Link copied!"
+    );
+
+  const onBookmark = async () => {
+    const next = !saved;
+    setSaved(next);
+    try {
+      const r = await api.post("/bookmarks/toggle", { kind: post.type || "post", item_id: post.id });
+      setSaved(r.saved);
+      toast.success(r.saved ? "Saved" : "Removed from saved");
+    } catch {
+      setSaved(!next);
+      toast.error("Couldn't update saved");
+    }
+  };
   return (
     <article className="bg-transparent pb-2" data-testid={`post-${post.id}`}>
       <div className="flex items-center gap-3 px-4 pt-4">
@@ -105,12 +130,18 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
           <MessageCircle size={16} />
           {formatNumber(commentsCount)}
         </button>
-        <button className="pmp-iconchip" title="Share" aria-label="Share" data-testid={`post-share-${post.id}`}>
+        <button onClick={onShare} className="pmp-iconchip" title="Share" aria-label="Share" data-testid={`post-share-${post.id}`}>
           <Send size={16} />
         </button>
         <div className="flex-1" />
-        <button className="pmp-iconchip" title="Save" aria-label="Save" data-testid={`post-bookmark-${post.id}`}>
-          <Bookmark size={16} />
+        <button
+          onClick={onBookmark}
+          className={`pmp-iconchip ${saved ? "text-primary" : ""}`}
+          title="Save"
+          aria-label="Save"
+          data-testid={`post-bookmark-${post.id}`}
+        >
+          <Bookmark size={16} className={saved ? "fill-primary" : ""} />
         </button>
       </footer>
 
