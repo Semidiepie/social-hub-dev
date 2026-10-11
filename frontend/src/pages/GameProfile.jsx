@@ -143,7 +143,7 @@ export default function GameProfilePage() {
     <div className="mx-auto max-w-3xl space-y-4" data-testid="game-profile-page">
       {/* Cover + identity */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card/40">
-        <div className="relative h-36 w-full bg-secondary sm:h-44">
+        <div className="h-36 w-full bg-secondary sm:h-44">
           {game.banner_url ? (
             <img src={game.banner_url} alt="" className="h-full w-full object-cover opacity-90" />
           ) : (
@@ -151,7 +151,7 @@ export default function GameProfilePage() {
           )}
         </div>
         <div className="px-4 pb-4">
-          <div className="-mt-10">
+          <div className="relative z-10 -mt-10">
             <img src={game.icon_url} alt="" className="h-20 w-20 rounded-2xl border-4 border-background object-cover shadow-lg" data-testid="game-profile-icon" />
           </div>
           <div className="mt-2.5">
