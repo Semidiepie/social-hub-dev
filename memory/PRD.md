@@ -867,3 +867,7 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 
 ### 2026-06 — Fix: profile avatar hidden behind cover banner
 - Cover banner (position:relative, positioned) painted above the static content below it, clipping the overlapping part of the avatar. Fix: added `relative z-10` to the avatar wrapper in Profile.jsx so it renders on top of the banner. Verified by testing agent iteration_54 (hit-test + dark/light screenshots), no regressions.
+
+### 2026-06 — Cover/header photo + profile Posts timeline
+- Cover photo: added `cover_url` to UserPublic + user_to_public + UpdateProfileBody (PUT /auth/me persists; GET /users/{id} & /auth/me return it). Web Settings → Profile card has a Header photo uploader (Cloudinary, same pipeline as avatar) with preview + Add/Change + Remove; Profile banner renders cover_url as background-size:cover filling the box, avatar stays on top (relative z-10). Verified: testing agent iteration_55 (both themes, round-trip, remove).
+- Profile Posts tab: converted from square grid to the X-style, fully-functional divider timeline. Extracted Home's post card into shared `components/FeedPostCard.jsx` (used by Home feed AND Profile Posts) — like/comment(CommentThread)/share/edit/delete all work; Profile wires togglePostLike/deletePost/onPostUpdated on its posts state (same /posts/{id}/like + serialize_post data as feed). Removed Home's duplicate local PostCard and Profile's PostsGrid. Self-verified (like 0→1 active, comments open, Home feed intact). Reels/Videos/Blogs tabs keep grids.

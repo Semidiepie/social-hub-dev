@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatNumber, timeAgo, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { FollowListDialog } from "@/components/FollowListDialog";
+import { FeedPostCard } from "@/components/FeedPostCard";
 import { toast } from "sonner";
 
 // Referral "Connector" tiers — honest social proof from real invited signups.
@@ -106,6 +107,36 @@ export default function ProfilePage() {
     }
   };
 
+  const togglePostLike = async (post) => {
+    const liked = post.liked_by_me;
+    setPosts((rows) =>
+      rows.map((r) => (r.id === post.id ? { ...r, liked_by_me: !liked, likes: r.likes + (liked ? -1 : 1) } : r)),
+    );
+    try {
+      if (liked) await api.del(`/posts/${post.id}/like`);
+      else await api.post(`/posts/${post.id}/like`);
+    } catch (e) {
+      setPosts((rows) => rows.map((r) => (r.id === post.id ? { ...r, liked_by_me: liked, likes: post.likes } : r)));
+      toast.error(e.message || "Failed");
+    }
+  };
+
+  const deletePost = async (post) => {
+    if (!window.confirm("Delete this post? This can't be undone.")) return;
+    const prev = posts;
+    setPosts((rows) => rows.filter((r) => r.id !== post.id));
+    try {
+      await api.del(`/posts/${post.id}`);
+      toast.success("Post deleted");
+    } catch (e) {
+      setPosts(prev);
+      toast.error(e.message || "Failed to delete");
+    }
+  };
+
+  const onPostUpdated = (updated) =>
+    setPosts((rows) => rows.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+
   const initialTab = useMemo(() => {
     if (reels.length) return "reels";
     if (blogs.length) return "blogs";
@@ -134,9 +165,19 @@ export default function ProfilePage() {
         </button>
       )}
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        {/* Cover banner — branded neutral placeholder (no cover upload in this pass) */}
-        <div className="relative h-32 w-full bg-gradient-to-br from-primary/25 via-secondary to-background sm:h-44">
-          <div className="absolute inset-0 bg-[radial-gradient(120%_120%_at_0%_0%,rgba(255,107,61,0.20),transparent_55%)]" />
+        {/* Cover banner — user's header photo fills the box, else a branded placeholder */}
+        <div
+          className="relative h-32 w-full overflow-hidden bg-gradient-to-br from-primary/25 via-secondary to-background sm:h-44"
+          data-testid="profile-cover"
+          style={
+            target.cover_url
+              ? { backgroundImage: `url(${target.cover_url})`, backgroundSize: "cover", backgroundPosition: "center" }
+              : undefined
+          }
+        >
+          {!target.cover_url && (
+            <div className="absolute inset-0 bg-[radial-gradient(120%_120%_at_0%_0%,rgba(255,107,61,0.20),transparent_55%)]" />
+          )}
         </div>
         <div className="px-4 pb-5 sm:px-6">
           <div className="flex items-end justify-between gap-3">
@@ -255,7 +296,28 @@ export default function ProfilePage() {
           <TabsTrigger value="blogs" data-testid="profile-tab-blogs">Blogs{contentLoading ? "" : ` · ${blogs.length}`}</TabsTrigger>
         </TabsList>
         <TabsContent value="posts">
-          {contentLoading ? <TileGridSkeleton aspect="square" /> : <PostsGrid posts={posts} />}
+          {contentLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground" data-testid="profile-posts-empty">
+              No posts yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-border border-t border-border" data-testid="profile-posts-timeline">
+              {posts.map((p) => (
+                <FeedPostCard
+                  key={p.id}
+                  post={p}
+                  onToggleLike={() => togglePostLike(p)}
+                  canManage={isSelf}
+                  onDelete={() => deletePost(p)}
+                  onUpdated={onPostUpdated}
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="reels">
           {contentLoading ? <TileGridSkeleton aspect="reel" /> : <ReelsGrid reels={reels} />}
@@ -302,41 +364,6 @@ function Stat({ label, value, onClick, testId }) {
     );
   }
   return <span className="text-sm" data-testid={testId}>{content}</span>;
-}
-
-function PostsGrid({ posts }) {
-  if (posts.length === 0) return <Empty msg="No posts yet." />;
-  return (
-    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-      {posts.map((p) => (
-        <Link
-          key={p.id}
-          to={`/posts/${p.id}`}
-          className="group relative aspect-square overflow-hidden rounded-xl bg-secondary"
-          data-testid={`post-tile-${p.id}`}
-        >
-          {p.image_url ? (
-            <img src={p.image_url} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
-          ) : p.video_url ? (
-            <>
-              {p.thumbnail_url ? (
-                <img src={p.thumbnail_url} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <video src={p.video_url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-              )}
-              <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60">
-                <Play size={13} className="fill-white text-white" />
-              </span>
-            </>
-          ) : (
-            <div className="flex h-full items-center justify-center p-3 text-center text-xs text-muted-foreground">
-              {p.caption || "—"}
-            </div>
-          )}
-        </Link>
-      ))}
-    </div>
-  );
 }
 
 function TikTokGrid({ videos }) {

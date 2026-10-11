@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles, Link2, Circle } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, ChevronRight, Heart, Sparkles, Link2, Circle, Image as ImageIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState({ display_name: "", bio: "", avatar_url: "", username: "" });
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
   const [savingPw, setSavingPw] = useState(false);
@@ -146,6 +147,7 @@ export default function SettingsPage() {
         display_name: user.display_name,
         bio: user.bio || "",
         avatar_url: user.avatar_url || "",
+        cover_url: user.cover_url || "",
         username: user.username || "",
       });
     }
@@ -182,6 +184,24 @@ export default function SettingsPage() {
       setUploadingAvatar(false);
     }
   };
+
+  const uploadCover = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!cloudinaryAvailable) return toast.error("Uploads aren't configured.");
+    setUploadingCover(true);
+    try {
+      const res = await uploadToCloudinary(f, { resourceType: "image" });
+      setProfile((p) => ({ ...p, cover_url: res.secure_url }));
+      toast.success("Header photo uploaded — save to apply.");
+    } catch (err) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const removeCover = () => setProfile((p) => ({ ...p, cover_url: "" }));
 
   const changePassword = async (e) => {
     e.preventDefault();
@@ -226,6 +246,55 @@ export default function SettingsPage() {
         <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={saveProfile} className="space-y-4">
+            <div>
+              <Label>Header photo</Label>
+              <p className="mb-2 mt-0.5 text-[11px] text-muted-foreground">
+                Shown as the cover banner on your profile. A wide image works best (about 3:1).
+              </p>
+              <div
+                className="relative h-28 w-full overflow-hidden rounded-xl border border-border sm:h-36"
+                data-testid="settings-cover-preview"
+                style={
+                  profile.cover_url
+                    ? { backgroundImage: `url(${profile.cover_url})`, backgroundSize: "cover", backgroundPosition: "center" }
+                    : undefined
+                }
+              >
+                {!profile.cover_url && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/25 via-secondary to-background">
+                    <div className="absolute inset-0 bg-[radial-gradient(120%_120%_at_0%_0%,rgba(255,107,61,0.20),transparent_55%)]" />
+                  </div>
+                )}
+                <div className="absolute bottom-2 right-2 flex gap-2">
+                  <input id="cover-file" type="file" accept="image/*" className="hidden" onChange={uploadCover} />
+                  <label htmlFor="cover-file">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={uploadingCover}
+                      className="pointer-events-none gap-1.5 rounded-full"
+                      data-testid="settings-upload-cover"
+                    >
+                      {uploadingCover ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+                      {profile.cover_url ? "Change" : "Add photo"}
+                    </Button>
+                  </label>
+                  {profile.cover_url && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={removeCover}
+                      className="gap-1.5 rounded-full"
+                      data-testid="settings-remove-cover"
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="flex items-center gap-4">
               <Avatar src={profile.avatar_url} size={72} />
               <div className="flex-1">
@@ -373,7 +442,7 @@ export default function SettingsPage() {
         <CardHeader><CardTitle className="flex items-center gap-2"><Circle size={14} className="fill-green-500 text-green-500" /> Active status</CardTitle></CardHeader>
         <CardContent className="flex items-center justify-between gap-4">
           <div>
-            <div className="font-semibold">Show when I'm active</div>
+            <div className="font-semibold">Show when I&apos;m active</div>
             <p className="text-xs text-muted-foreground">
               Friends you mutually follow see a green dot and an “Active now” badge when you&apos;re online. Turn this off to appear offline — you also won&apos;t see others&apos; active status.
             </p>

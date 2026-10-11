@@ -114,6 +114,7 @@ class UserPublic(BaseModel):
     email: EmailStr
     bio: str = ""
     avatar_url: str = ""
+    cover_url: str = ""
     is_verified: bool = False
     verified_color: Optional[str] = None
     is_live: bool = False
@@ -166,6 +167,7 @@ class UpdateProfileBody(BaseModel):
     display_name: Optional[str] = None
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
+    cover_url: Optional[str] = None
     username: Optional[str] = Field(default=None, min_length=3, max_length=20)
 
 
@@ -342,6 +344,7 @@ def user_to_public(u: dict) -> UserPublic:
         email=u["email"],
         bio=u.get("bio", ""),
         avatar_url=avatar_or_default(u.get("avatar_url")),
+        cover_url=u.get("cover_url", "") or "",
         is_verified=u.get("is_verified", False),
         verified_color=u.get("verified_color"),
         is_live=u.get("is_live", False),
