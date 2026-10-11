@@ -1,84 +1,87 @@
-# PostMePlex — "X"-Style Web Redesign
+# X-Style Redesign — App-Wide Rollout (Web)
 
-A full visual overhaul of the PostMePlex web experience (public website + logged-in web app) modeled on the clean, dense, monochrome feel of X — rebuilt in PostMePlex's own brand.
-It keeps every existing feature and page exactly as they work today; only the layout, styling, and motion change.
-
-## Non-negotiable: feature parity & full functionality
-This redesign must preserve **100% of the current PostMePlex tools and features** — nothing is removed, hidden, or broken. Every destination, button, and flow that works today keeps working after the restyle: posting, comments/replies, likes/shares, reels, long videos, live, music, pet, market, wallet, messages, notifications, search, profiles, settings, blogs, admin, and auth. The change is strictly visual/layout/motion. Before completion, the full app is tested end-to-end to confirm no regressions and that everything is fully functional.
+Extends the X-inspired look already applied to the shell and Home feed to every remaining web page, so the whole product reads as one cohesive, monochrome-with-orange surface.
+It changes only layout, styling, and motion — every existing page, tool, and flow stays exactly as it works today.
 
 ## Who it's for
-Everyone who uses PostMePlex in a browser — visitors landing on the public pages and signed-in creators/gamers using the full app. The goal is a sharper, more premium, instantly familiar social-app feel while staying unmistakably PostMePlex (orange on near-black). Mobile app users are unaffected (the native mobile app is out of scope for this pass).
+Everyone using PostMePlex in a browser — visitors on public pages and signed-in creators/gamers across the full app. The goal is a consistent, premium, instantly-familiar social feel on every screen, not just the home timeline. The native mobile app is out of scope for this pass.
 
 ## Core features and experience
 
-### 1. Signature three-column desktop layout
-- **Slim left icon rail** that expands on hover to show labels. Icons for the primary destinations (Home, Videos, Live, Reels, Music, Pet, Market, Wallet, Messages, Notifications, Profile, etc.), a prominent orange **Post/Create** button, and the account menu pinned at the bottom.
-- **Center feed column** — the main content, a fixed comfortable reading width, with a sticky top bar.
-- **Right sidebar** — a persistent column with a **Search** box, a **Trending** panel (trending game tags / topics), and a **Who to follow** panel (suggested creators), plus small footer links.
+### Non-negotiable: nothing breaks
+Every page keeps 100% of its current tools and behavior. This is purely a visual/layout/motion restyle; no feature is removed, hidden, moved out of reach, or re-wired. Every surface works in both the Dark (default) and Light themes already in the app, with orange (#FF6B3D) as the single accent and everything else on a monochrome gray scale.
 
-### 2. X-style feed and content
-- Sticky top bar on the feed with segmented tabs (e.g., **For you / Following**) and the page title.
-- Inline compose box at the top of the feed (avatar + "What's happening?"-style prompt) that opens the existing composer.
-- Posts presented as a clean, **divider-separated timeline** (not boxed cards): round avatar, name + handle + verified badge + timestamp on one line, content below, and a row of understated actions (comment, like, share, etc.) with hover states and counts.
-- Reels, long videos, music, and other content types keep their current behavior but adopt the same visual language.
+### Full X-style profile
+- A cover banner at the top, with a large round avatar overlapping its lower edge.
+- Display name, @handle, verified badge, bio, and following/followers counts beneath the avatar.
+- A pill-shaped primary action on the right: "Edit profile" on your own profile, "Follow"/"Following" on others.
+- A sticky tab row under the header — Posts / Replies / Media / Likes — that switches the content below without leaving the page.
+- The profile's content shows as the same divider-separated timeline used on Home.
 
-### 3. Dark + Light themes with a toggle
-- **Dark** stays the default (near-black background, the current PostMePlex dark look, refined).
-- A new **Light** theme is added.
-- A clearly accessible **theme toggle** (in the nav/account area) switches between them, and the choice is remembered across visits.
-- **Orange (#FF6B3D)** remains the single brand accent in both themes — used for the Post/Create button, active nav item, links, key highlights, and the verified/active states. Everything else uses a monochrome gray scale (X-like restraint).
+### Divider timeline everywhere content is listed
+Posts, replies, and media lists on Profile and Post detail adopt the Home feed's clean, divider-separated timeline (round avatar, name + handle + timestamp on one line, content below, an understated action row) instead of boxed cards.
 
-### 4. Consistent restyle across every page
-Applied app-wide in this pass, so the whole product feels like one redesigned surface:
-- Public **website / landing + login/register** pages get the new look (hero, auth forms, buttons).
-- Logged-in pages — Home, Profile, Post detail, Messages, Notifications, Search/Explore, Videos, Reels, Live, Music, Pet, Market, Wallet, Settings, Blogs, Admin — all adopt the shared system: pill buttons, round avatars, monochrome surfaces with orange accents, thin dividers, refined inputs, and subtle motion.
+### Post detail
+The focused post sits at the top in the timeline style, followed by its divider-separated comment thread (with the existing reply / view-replies / delete behavior intact) and the action row.
 
-### 5. Responsive behavior
-- **Desktop:** full three columns (rail + feed + right sidebar).
-- **Tablet / medium:** right sidebar drops; left rail stays as icons.
-- **Narrow / mobile-web:** collapses to a top bar plus a bottom or slide-out navigation, with a floating orange Post button — the mobile-web stays usable, not a squeezed desktop.
+### Every other page adopts the shared system
+Applied in this pass so the product feels uniform:
+- **Notifications** — a clean divider list: avatar, who did what, timestamp, orange accent on unread; tapping opens the target.
+- **Discover / Search** — a prominent search field, a trending panel, suggested people as list rows; media/explore results stay in a grid, restyled to the monochrome surface.
+- **Settings** — sectioned rows separated by hairlines, pill buttons, refined inputs and toggles.
+- **Wallet** — a monochrome balance header with the orange accent and a divider-separated transaction/history list.
+- **Market** — product listings on the monochrome surface with pill actions and orange primary buttons.
+- **Pet** — surrounding panels, stats, and buttons restyled to the system (the pet/game canvas itself is unchanged).
+- **Music** — track list as divider rows and a restyled player bar.
+- **Blogs** — article lists as divider rows; the reader view gets clean, typographic styling.
+- **Admin** — tables, rows, and controls restyled to the monochrome surface with pill controls.
+- **Messages** — conversation list as divider rows and restyled chat bubbles, keeping the current two-pane layout and all messaging behavior.
+
+### Shared visual language
+Pill-shaped controls, round avatars, thin hairline dividers instead of heavy cards, refined inputs, crisp hover/focus/active states, and subtle, fast motion (tab underline slide, gentle fade/slide on load and menus). Consistent type hierarchy: bold names, muted handles/meta.
 
 ## User flow
-1. A visitor opens the public site → sees the redesigned landing and sign-in in the new style → signs in.
-2. The signed-in app loads the three-column layout: icon rail on the left, feed in the center, search + trending + who-to-follow on the right.
-3. They switch feed tabs (For you / Following), compose a post from the inline prompt, and interact with the divider-separated timeline.
-4. They hover the left rail to reveal labels, or navigate via the rail icons; on a phone browser they use the top/bottom nav instead.
-5. They flip the theme toggle between Dark and Light at any time; the preference sticks on their next visit.
-6. Every page they open — profile, messages, wallet, settings, etc. — carries the same refreshed look, with all existing tools intact.
+1. A person opens any page — profile, a post, notifications, wallet, settings, and so on — and finds the same refreshed look and motion they already see on Home.
+2. On a profile they see the banner, overlapping avatar, bio, counts, the Follow/Edit pill, and sticky Posts / Replies / Media / Likes tabs; switching tabs swaps the timeline below.
+3. Opening a post shows it at the top with its comment thread beneath in the divider style, all existing comment actions working.
+4. Browsing Discover, Market, Wallet, Music, Blogs, Admin, or Messages, every control, list, and action behaves exactly as before but in the new style.
+5. Flipping the Dark/Light toggle restyles every page consistently, and the choice persists.
 
 ## UI/UX feel
-- **Monochrome-with-one-accent:** near-black (dark) or near-white (light) surfaces, layered grays, and a single confident orange accent — the X discipline, PostMePlex color.
-- **Dense but breathable:** tighter, information-rich columns like X, with clear type hierarchy (bold names, muted handles/meta) and thin hairline dividers instead of heavy cards.
-- **Pill-shaped controls**, round avatars, crisp focus/hover/active states, and a bold rounded Post button.
-- **Subtle, intentional motion:** rail hover-expand, tab underline slide, gentle fade/slide on feed load and menus — fast and understated, never flashy.
-- **Familiar yet branded:** anyone who has used X feels at home immediately, but the color, logo, badges, and personality read as PostMePlex.
+- Monochrome-with-one-accent discipline, like X, in PostMePlex's color: near-black (dark) or near-white (light) surfaces, layered grays, a single confident orange accent.
+- Dense but breathable, with clear hierarchy and hairline dividers rather than boxed cards.
+- Pill controls, round avatars, overlapping profile avatar on a cover banner, sticky tab rows with a sliding underline.
+- Subtle, intentional motion everywhere — never flashy.
+- Familiar to anyone who has used X, but unmistakably branded as PostMePlex.
 
 ## Implementation phases
 
 ### Phase 1 — MVP (built now)
-- New shared visual system (dark + light themes, orange accent, typography, pill buttons, inputs, avatars, dividers, motion primitives) applied across the **entire web app and public website**.
-- The three-column desktop layout: hover-expanding left icon rail, center feed, right sidebar (search + trending + who-to-follow).
-- X-style feed presentation (sticky tab bar, inline compose prompt, divider-separated timeline, understated action row).
-- Theme toggle with remembered preference.
-- Responsive collapse for tablet and mobile-web.
-- **Full feature-parity pass:** every existing tool/page verified working end-to-end after the restyle (no regressions).
+Apply the X-style art direction across all remaining web pages in one pass:
+- Full X-style Profile (cover banner, overlapping avatar, bio + counts, Follow/Edit pill, sticky Posts / Replies / Media / Likes tabs, divider timeline).
+- Post detail in the divider timeline style with its comment thread.
+- Notifications, Discover/Search, Settings, Wallet, Market, Pet, Music, Blogs, Admin, and Messages all restyled to the shared monochrome-+-orange system.
+- Full feature-parity: every page, tool, and flow verified working in both Dark and Light, with nothing removed or broken.
 
 ### Phase 2 — Depth & polish (later)
-- Richer micro-interactions (hover cards on avatars/handles, animated counts, skeleton loading states everywhere).
-- A pure-black "Lights out" variant in addition to Dark/Light.
-- Command/quick-search palette and keyboard shortcuts in the X spirit.
+- Richer micro-interactions: avatar/handle hover cards, animated counts, skeleton loading states across pages.
+- A pure-black "Lights out" theme variant alongside Dark/Light.
+- A command/quick-search palette and keyboard shortcuts in the X spirit.
 
 ### Phase 3 — Personalization (later)
-- User-selectable accent colors and font size/density options.
-- Customizable left rail (pin/reorder destinations) and layout density presets.
+- User-selectable accent colors and font-size/density options.
+- Customizable navigation (pin/reorder destinations) and layout density presets.
 
 ## Assumptions
-- **"Website and web app" both mean the single web (browser) product** — the public/marketing + auth pages and the signed-in app, all restyled. The **native mobile app is unchanged** in this pass.
-- **No feature, content, route, or behavior changes** — this is purely look, layout, motion, and theming. All existing pages, tools, and flows remain and stay fully functional (verified before completion).
-- **Themes = Dark (default) + Light**, switchable via a remembered toggle. (A pure-black "Lights out" mode is deferred to Phase 2.)
-- **Orange #FF6B3D stays the one accent** in both themes; everything else is monochrome gray.
-- **Right-sidebar content** = Search, Trending (game tags/topics), and Who-to-follow (suggested creators), sourced from existing data where available; panels that lack a data source show a tasteful placeholder rather than being omitted.
-- **Primary left-rail destinations** mirror the app's current navigation; secondary/less-used items move into the account or "more" menu to keep the rail clean — but remain reachable (nothing is dropped).
-- **Feed tabs** are "For you / Following"; if a dedicated "Following" feed isn't already available it will reuse the closest existing feed behavior without inventing new backend logic.
+- **Scope = all listed pages in Phase 1** (Profile, Post detail, Notifications, Discover/Search, Settings, Wallet, Market, Pet, Music, Blogs, Admin, Messages), per the choice to do everything at once.
+- **Profile = full X-style** (cover banner + overlapping round avatar + sticky Posts / Replies / Media / Likes tabs + Follow/Edit pill).
+- **Timeline style = match the Home feed everywhere** (divider-separated, no boxed cards) for Profile and Post detail content — the default, since this question was left open.
+- **Profile tabs** mirror what the app can already show: "Posts" and "Media" use existing profile content; "Replies" and "Likes" reuse the closest existing data the profile already exposes, and if a given tab has no existing data source it shows a tasteful empty state rather than being dropped.
+- **If a profile has no cover banner set**, a branded placeholder banner (dark/gradient-neutral) is shown; adding a cover-image uploader is not part of this pass unless one already exists.
+- **Discover/Explore keeps a grid** for media results (matching X's explore grid), restyled to the monochrome surface; people and tags render as divider list rows.
+- **Messages keeps its two-pane layout and all behavior**; only styling of the conversation list and chat bubbles changes.
+- **Pet/game canvas and any live/reels fullscreen media stay functionally unchanged**; only the surrounding UI adopts the new system.
+- **Both themes are in scope**: every restyled page must be legible and consistent in Dark and Light.
+- **No content, route, data, or behavior changes** anywhere — visual/layout/motion only, verified for parity before completion.
+- **Web only**; the native mobile app is untouched.
 - **Stories stay hidden on web** (as currently configured) unless requested otherwise.
-- **Desktop-first three columns**, gracefully collapsing on smaller widths as described.

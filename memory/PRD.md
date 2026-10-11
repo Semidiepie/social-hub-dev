@@ -857,3 +857,10 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 ### 2026-06 — Fix: can't reply to comments from the web feed
 - Root cause: Home.jsx used a local `PostComments` renderer (top-level add + delete only, NO reply/threading). The full `CommentThread` (reply/@mention/view-replies/delete) was only wired on PostDetail/ReelWatch/VideoWatch/ReelsFeed.
 - Fix: replaced the feed's inline `PostComments` with the shared `CommentThread` (type="post", id=post.id, onCountChange delta). Removed the dead local component. Now reply works in the feed on web (desktop + mobile browser). Verified: Reply + Delete actions show, inline reply composer prefills "@username". Code fix in PREVIEW — needs redeploy for production.
+
+### 2026-06 — X-style rollout (web), social surfaces
+- Profile: full X-style — cover banner (branded gradient placeholder, no upload this pass) + overlapping round avatar (ring) + name/@handle/badges/bio + inline X counts (N Posts/Followers/Following) + pill Follow/Edit/Message/Share actions. Existing tabs kept (Posts/Reels/Videos/[TikTok]/Blogs) so nothing is dropped; grids retained for media. Verified dark + light via screenshots. All testIds preserved.
+- Post detail: boxed card → divider timeline (border-b, rounded media), comment thread (CommentThread) unchanged.
+- Notifications: boxed cards → clean divider list with orange left-accent + dot on unread. testIds preserved; added notifications-list testid.
+- Theme toggle confirmed: html gains/loses `light`, persists across navigation; both themes legible.
+- Scope note (budget-constrained): utility pages (Settings/Wallet/Market/Pet/Music/Blogs/Admin/Messages/Discover) already inherit the monochrome+orange tokens and were verified in both themes in iteration_53; deeper per-page divider/pill refinement for those is DEFERRED to a follow-up. Profile tabs remain existing content tabs (not literal Posts/Replies/Media/Likes) to avoid dropping Reels/Videos/Blogs and inventing backend for replies/likes.

@@ -133,111 +133,116 @@ export default function ProfilePage() {
           {target.display_name} is live now — Watch
         </button>
       )}
-      <header className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-        <div className="flex items-start gap-4 sm:gap-6">
-          <Avatar src={target.avatar_url} size={80} frame={frameOf(target)} live={target.is_live} className="h-20 w-20 flex-shrink-0 sm:h-24 sm:w-24" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <h1 className="text-xl font-black leading-tight tracking-tight sm:text-2xl">{target.display_name}</h1>
-                  {target.is_verified && <BadgeCheck size={20} className={`flex-shrink-0 ${badgeCls(target)}`} style={badgeStyle(target)} />}
-                  {target.is_official && (
-                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary" data-testid="official-badge">
-                      Official
-                    </span>
-                  )}
-                </div>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        {/* Cover banner — branded neutral placeholder (no cover upload in this pass) */}
+        <div className="relative h-32 w-full bg-gradient-to-br from-primary/25 via-secondary to-background sm:h-44">
+          <div className="absolute inset-0 bg-[radial-gradient(120%_120%_at_0%_0%,rgba(255,107,61,0.20),transparent_55%)]" />
+        </div>
+        <div className="px-4 pb-5 sm:px-6">
+          <div className="flex items-end justify-between gap-3">
+            <div className="-mt-12 sm:-mt-16">
+              <Avatar
+                src={target.avatar_url}
+                size={112}
+                frame={frameOf(target)}
+                live={target.is_live}
+                className="h-24 w-24 flex-shrink-0 rounded-full ring-4 ring-card sm:h-28 sm:w-28"
+              />
+            </div>
+            <div className="mt-3 flex flex-shrink-0 gap-2">
+              {isSelf ? (
+                <>
+                  <Button onClick={() => navigate("/settings")} variant="outline" className="gap-2 rounded-full" data-testid="profile-settings-btn">
+                    <SettingsIcon size={16} /> Edit profile
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      shareUrl(
+                        `${origin()}/api/share/u/${target.username}`,
+                        `Join me on PostMePlex`,
+                        "Invite link copied — share it to grow your followers!",
+                      )
+                    }
+                    className="gap-2 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                    data-testid="profile-invite-btn"
+                  >
+                    <Share2 size={16} /> Invite
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    onClick={toggleFollow}
+                    disabled={busy}
+                    variant={following ? "outline" : "default"}
+                    className={
+                      following
+                        ? "rounded-full border-border bg-transparent hover:bg-secondary"
+                        : "rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                    }
+                    data-testid="profile-follow-btn"
+                  >
+                    {following ? "Following" : target?.followed_by ? "Follow back" : "Follow"}
+                  </Button>
+                  <Button variant="outline" onClick={startDM} className="gap-2 rounded-full" data-testid="profile-message-btn">
+                    <MessageCircle size={16} /> Message
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => shareUrl(`${origin()}/api/share/u/${target.username}`, `${target.display_name} on PostMePlex`, "Profile link copied!")}
+                    className="gap-2 rounded-full"
+                    data-testid="profile-share-btn"
+                  >
+                    <Share2 size={16} />
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="text-xl font-black leading-tight tracking-tight sm:text-2xl">{target.display_name}</h1>
+              {target.is_verified && <BadgeCheck size={20} className={`flex-shrink-0 ${badgeCls(target)}`} style={badgeStyle(target)} />}
+              {target.is_official && (
+                <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary" data-testid="official-badge">
+                  Official
+                </span>
+              )}
+            </div>
+            <p className="truncate text-sm text-muted-foreground">@{target.username}</p>
+            {(target.remembering || connectorTier(target.invites_count)) && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 {target.remembering && (
                   <span
-                    className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-red-400"
+                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-red-400"
                     data-testid="remembering-label"
                   >
                     Remembering
                   </span>
                 )}
-                <p className="mt-1 truncate text-sm text-muted-foreground">@{target.username}</p>
                 {connectorTier(target.invites_count) && (
                   <span
-                    className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-bold text-primary"
+                    className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-bold text-primary"
                     data-testid="profile-connector-badge"
                   >
                     {connectorTier(target.invites_count).icon} {connectorTier(target.invites_count).label}
                   </span>
                 )}
               </div>
-              <div className="flex flex-shrink-0 gap-2">
-                {isSelf ? (
-                  <>
-                    <Button onClick={() => navigate("/settings")} variant="outline" className="flex-1 gap-2 sm:flex-none" data-testid="profile-settings-btn">
-                      <SettingsIcon size={16} /> Edit profile
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        shareUrl(
-                          `${origin()}/api/share/u/${target.username}`,
-                          `Join me on PostMePlex`,
-                          "Invite link copied — share it to grow your followers!",
-                        )
-                      }
-                      className="flex-1 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 sm:flex-none"
-                      data-testid="profile-invite-btn"
-                    >
-                      <Share2 size={16} /> Invite
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      onClick={toggleFollow}
-                      disabled={busy}
-                      className={
-                        following
-                          ? "flex-1 border-border bg-transparent hover:bg-secondary sm:flex-none"
-                          : "flex-1 bg-primary text-primary-foreground hover:bg-primary/90 sm:flex-none"
-                      }
-                      variant={following ? "outline" : "default"}
-                      data-testid="profile-follow-btn"
-                    >
-                      {following ? "Following" : target?.followed_by ? "Follow back" : "Follow"}
-                    </Button>
-                    <Button variant="outline" onClick={startDM} className="flex-1 gap-2 sm:flex-none" data-testid="profile-message-btn">
-                      <MessageCircle size={16} /> Message
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => shareUrl(`${origin()}/api/share/u/${target.username}`, `${target.display_name} on PostMePlex`, "Profile link copied!")}
-                      className="gap-2"
-                      data-testid="profile-share-btn"
-                    >
-                      <Share2 size={16} />
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-            {target.bio && <p className="mt-3 max-w-lg text-sm">{target.bio}</p>}
-            <div className="mt-4 flex items-center gap-5 text-sm sm:gap-6">
-              <Stat label="Posts" value={target.posts_count} />
-              <Stat
-                label="Followers"
-                value={target.followers}
-                onClick={() => setFollowList("followers")}
-                testId="profile-followers-stat"
-              />
-              <Stat
-                label="Following"
-                value={target.following}
-                onClick={() => setFollowList("following")}
-                testId="profile-following-stat"
-              />
-              {target.invites_count > 0 && (
-                <Stat label="Invited" value={target.invites_count} testId="profile-invited-stat" />
-              )}
-            </div>
+            )}
+          </div>
+
+          {target.bio && <p className="mt-3 max-w-lg text-sm">{target.bio}</p>}
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1">
+            <Stat label="Posts" value={target.posts_count} />
+            <Stat label="Followers" value={target.followers} onClick={() => setFollowList("followers")} testId="profile-followers-stat" />
+            <Stat label="Following" value={target.following} onClick={() => setFollowList("following")} testId="profile-following-stat" />
+            {target.invites_count > 0 && <Stat label="Invited" value={target.invites_count} testId="profile-invited-stat" />}
           </div>
         </div>
-      </header>
+      </div>
 
       <Tabs defaultValue={initialTab} key={initialTab} className="mt-6">
         <TabsList>
@@ -280,8 +285,8 @@ export default function ProfilePage() {
 function Stat({ label, value, onClick, testId }) {
   const content = (
     <>
-      <div className="text-lg font-black">{formatNumber(value)}</div>
-      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <span className="font-black text-foreground">{formatNumber(value)}</span>{" "}
+      <span className="text-muted-foreground">{label}</span>
     </>
   );
   if (onClick) {
@@ -290,13 +295,13 @@ function Stat({ label, value, onClick, testId }) {
         type="button"
         onClick={onClick}
         data-testid={testId}
-        className="rounded-lg text-left transition-colors hover:text-primary focus:outline-none"
+        className="rounded text-sm transition-colors hover:underline focus:outline-none"
       >
         {content}
       </button>
     );
   }
-  return <div>{content}</div>;
+  return <span className="text-sm" data-testid={testId}>{content}</span>;
 }
 
 function PostsGrid({ posts }) {

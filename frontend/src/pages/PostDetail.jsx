@@ -77,7 +77,7 @@ export default function PostDetailPage() {
         <ArrowLeft size={16} /> Back
       </button>
 
-      <article className="overflow-hidden rounded-2xl border border-border bg-card">
+      <article className="border-b border-border pb-2" data-testid="post-detail-article">
         <div className="flex items-center gap-3 px-4 pt-4">
           {post.author && (
             <button onClick={() => navigate(userPath(post.author))}>
@@ -122,10 +122,10 @@ export default function PostDetailPage() {
         {post.caption && <p className="px-4 pt-3 text-[15px] leading-relaxed">{post.caption}</p>}
 
         {post.image_url && (
-          <img src={post.image_url} alt="" className="mt-3 max-h-[600px] w-full object-cover" />
+          <img src={post.image_url} alt="" className="mt-3 max-h-[600px] w-full rounded-2xl border border-border object-cover" />
         )}
         {post.video_url && !post.image_url && (
-          <video src={post.video_url} controls poster={post.thumbnail_url || undefined} className="mt-3 max-h-[720px] w-full bg-black" />
+          <video src={post.video_url} controls poster={post.thumbnail_url || undefined} className="mt-3 max-h-[720px] w-full rounded-2xl border border-border bg-black" />
         )}
 
         <footer className="flex items-center gap-5 px-4 py-3">

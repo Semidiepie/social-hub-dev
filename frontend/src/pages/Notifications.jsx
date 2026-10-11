@@ -76,25 +76,27 @@ export default function NotificationsPage() {
           <p className="mt-1 text-sm text-muted-foreground">New activity will show here.</p>
         </div>
       ) : (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-border border-y border-border" data-testid="notifications-list">
           {items.map((n) => {
             const Icon = ICONS[n.type] || Bell;
             return (
               <li
                 key={n.id}
                 onClick={() => openNotification(n)}
-                className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-colors hover:border-primary/50 ${
-                  n.read ? "border-border bg-card/50" : "border-primary/30 bg-primary/5"
+                className={`relative flex cursor-pointer items-center gap-3 px-3 py-3.5 transition-colors hover:bg-secondary/40 ${
+                  n.read ? "" : "bg-primary/[0.06]"
                 }`}
                 data-testid={`notif-${n.id}`}
               >
-                <Avatar src={n.actor_avatar} size={40} />
+                {!n.read && <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-primary" />}
+                <Avatar src={n.actor_avatar} size={44} />
                 <div className="min-w-0 flex-1 text-sm">
                   <span className="font-semibold">{n.actor_name}</span>{" "}
                   <span className="text-muted-foreground">{n.text}</span>
                   <div className="mt-0.5 text-[11px] text-muted-foreground">{timeAgo(n.created_at)}</div>
                 </div>
                 <Icon size={16} className={n.read ? "text-muted-foreground" : "text-primary"} />
+                {!n.read && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
               </li>
             );
           })}
