@@ -151,15 +151,15 @@ export default function GameProfilePage() {
           )}
         </div>
         <div className="px-4 pb-4">
-          <div className="-mt-10 flex items-end gap-3">
-            <img src={game.icon_url} alt="" className="h-20 w-20 flex-none rounded-2xl border-4 border-background object-cover shadow-lg" data-testid="game-profile-icon" />
-            <div className="min-w-0 flex-1 pb-1">
-              <div className="flex items-center gap-1.5">
-                <h1 className="truncate text-xl font-black" data-testid="game-profile-name">{game.name}</h1>
-                {game.is_verified && <BadgeCheck size={20} className="flex-none text-sky-500" data-testid="game-verified-badge" />}
-              </div>
-              {game.developer ? <p className="truncate text-sm text-muted-foreground">by {game.developer}</p> : null}
+          <div className="-mt-10">
+            <img src={game.icon_url} alt="" className="h-20 w-20 rounded-2xl border-4 border-background object-cover shadow-lg" data-testid="game-profile-icon" />
+          </div>
+          <div className="mt-2.5">
+            <div className="flex items-center gap-1.5">
+              <h1 className="min-w-0 truncate text-xl font-black" data-testid="game-profile-name">{game.name}</h1>
+              {game.is_verified && <BadgeCheck size={20} className="flex-none text-sky-500" data-testid="game-verified-badge" />}
             </div>
+            {game.developer ? <p className="truncate text-sm text-muted-foreground">by {game.developer}</p> : null}
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
