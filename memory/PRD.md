@@ -864,3 +864,6 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Notifications: boxed cards → clean divider list with orange left-accent + dot on unread. testIds preserved; added notifications-list testid.
 - Theme toggle confirmed: html gains/loses `light`, persists across navigation; both themes legible.
 - Scope note (budget-constrained): utility pages (Settings/Wallet/Market/Pet/Music/Blogs/Admin/Messages/Discover) already inherit the monochrome+orange tokens and were verified in both themes in iteration_53; deeper per-page divider/pill refinement for those is DEFERRED to a follow-up. Profile tabs remain existing content tabs (not literal Posts/Replies/Media/Likes) to avoid dropping Reels/Videos/Blogs and inventing backend for replies/likes.
+
+### 2026-06 — Fix: profile avatar hidden behind cover banner
+- Cover banner (position:relative, positioned) painted above the static content below it, clipping the overlapping part of the avatar. Fix: added `relative z-10` to the avatar wrapper in Profile.jsx so it renders on top of the banner. Verified by testing agent iteration_54 (hit-test + dark/light screenshots), no regressions.

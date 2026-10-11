@@ -140,7 +140,7 @@ export default function ProfilePage() {
         </div>
         <div className="px-4 pb-5 sm:px-6">
           <div className="flex items-end justify-between gap-3">
-            <div className="-mt-12 sm:-mt-16">
+            <div className="relative z-10 -mt-12 sm:-mt-16">
               <Avatar
                 src={target.avatar_url}
                 size={112}
