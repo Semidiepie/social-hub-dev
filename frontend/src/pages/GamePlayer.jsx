@@ -229,7 +229,7 @@ export default function GamePlayerPage() {
             const stageEl = (
               <div
                 ref={playAreaRef}
-                style={maximized ? { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 2147483000 } : undefined}
+                style={maximized ? { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 2147483000, paddingTop: "max(env(safe-area-inset-top), 24px)", paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
                 className={`game-stage w-full overflow-hidden bg-black ${maximized ? "rounded-none border-0" : "relative h-[62vh] min-h-[380px] rounded-2xl border border-border"}`}
               >
                 {!embedLoaded && (
