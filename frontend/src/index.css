@@ -550,3 +550,20 @@ html, body {
   60% { transform: scale(1.12); }
   100% { transform: scale(1); opacity: 1; }
 }
+
+/* Game player: make the stage fill the entire screen in native fullscreen */
+.game-stage:fullscreen,
+.game-stage:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+.game-stage:fullscreen iframe,
+.game-stage:-webkit-full-screen iframe {
+  width: 100% !important;
+  height: 100% !important;
+}
+

@@ -157,8 +157,8 @@ export default function GamePlayerPage() {
 
       <div className="grid gap-3 lg:grid-cols-3">
         {/* Left: embedded play area */}
-        <div ref={playAreaRef} className="relative lg:col-span-2">
-          <div className="relative h-[62vh] min-h-[380px] w-full overflow-hidden rounded-2xl border border-border bg-black">
+        <div className="relative lg:col-span-2">
+          <div ref={playAreaRef} className="game-stage relative h-[62vh] min-h-[380px] w-full overflow-hidden rounded-2xl border border-border bg-black">
             {!embedLoaded && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-sm text-white/70" data-testid="game-embed-loading">
                 <Loader2 className="mr-2 animate-spin" /> Loading game…
