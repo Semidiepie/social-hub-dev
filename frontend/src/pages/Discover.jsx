@@ -100,9 +100,14 @@ export default function DiscoverPage() {
             <div className="flex flex-wrap gap-2">
               {data.items.length === 0 && <EmptyRow message="No trending tags yet." />}
               {data.items.map((t) => (
-                <span key={t.tag} className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold">
+                <Link
+                  key={t.tag}
+                  to={`/discover?q=${encodeURIComponent("#" + t.tag)}`}
+                  className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold transition-colors hover:border-primary/40"
+                  data-testid={`discover-tag-${t.tag}`}
+                >
                   #{t.tag} <span className="ml-1 text-muted-foreground">{t.count}</span>
-                </span>
+                </Link>
               ))}
             </div>
           ) : (
@@ -168,8 +173,26 @@ function EmptyRow({ message }) {
 function SearchResultsView({ results, onOpenUser }) {
   const users = useMemo(() => results?.users || [], [results]);
   const posts = useMemo(() => results?.posts || [], [results]);
+  const tags = useMemo(() => results?.tags || [], [results]);
   return (
     <div className="space-y-6">
+      {tags.length > 0 && (
+        <section>
+          <h3 className="mb-3 text-sm font-black uppercase tracking-widest text-muted-foreground">Tags</h3>
+          <div className="flex flex-wrap gap-2">
+            {tags.map((t) => (
+              <Link
+                key={t.tag}
+                to={`/discover?q=${encodeURIComponent("#" + t.tag)}`}
+                className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold transition-colors hover:border-primary/40"
+                data-testid={`search-tag-${t.tag}`}
+              >
+                #{t.tag} <span className="ml-1 text-muted-foreground">{t.count}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       {users.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-black uppercase tracking-widest text-muted-foreground">People</h3>
@@ -184,15 +207,34 @@ function SearchResultsView({ results, onOpenUser }) {
         <section>
           <h3 className="mb-3 text-sm font-black uppercase tracking-widest text-muted-foreground">Posts</h3>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-            {posts.map((p) => (
-              <div key={p.id} className="rounded-xl border border-border bg-card p-3">
-                <p className="line-clamp-2 text-sm">{p.caption}</p>
-              </div>
-            ))}
+            {posts.map((p) => {
+              const img = p.image_url || (Array.isArray(p.images) ? p.images[0] : null);
+              return (
+                <Link
+                  key={p.id}
+                  to={`/posts/${p.id}`}
+                  className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40"
+                  data-testid={`search-post-${p.id}`}
+                >
+                  {img && (
+                    <div className="aspect-square bg-secondary">
+                      <img src={img} alt="" className="h-full w-full object-cover" />
+                    </div>
+                  )}
+                  <div className="p-3">
+                    {p.game_tag && <div className="mb-0.5 text-[11px] font-bold text-primary">#{p.game_tag}</div>}
+                    <p className="line-clamp-2 text-sm">{p.caption || "—"}</p>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {p.author?.display_name} · {timeAgo(p.created_at)}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </section>
       )}
-      {users.length === 0 && posts.length === 0 && (
+      {users.length === 0 && posts.length === 0 && tags.length === 0 && (
         <div className="rounded-2xl border border-border bg-card/60 p-10 text-center text-muted-foreground">
           No results. Try another query.
         </div>

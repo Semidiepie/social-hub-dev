@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -2294,8 +2295,9 @@ async def search(q: str = "", viewer: Annotated[Optional[dict], Depends(get_opti
         {"$limit": 10},
     ]).to_list(10)
     posts_raw = await db.posts.find(
-        {"caption": rx}, {"_id": 0}
-    ).sort("created_at", -1).limit(15).to_list(15)
+        {"$or": [{"caption": rx}, {"game_tag": {"$regex": f"^{re.escape(tag_q)}$", "$options": "i"}}]},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(30).to_list(30)
     viewer_id = viewer["id"] if viewer else None
     return {
         "users": await annotate_follows([user_to_public(u).model_dump() for u in users_raw], viewer_id),

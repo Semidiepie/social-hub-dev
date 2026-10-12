@@ -65,9 +65,15 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
         </div>
         <FeatureToggle type={post.type === "reel" ? "reel" : "post"} id={post.id} featured={featured} onChange={setFeatured} />
         {post.game_tag && (
-          <span className="pmp-kind" style={{ textTransform: "none" }}>
+          <Link
+            to={`/discover?q=${encodeURIComponent("#" + post.game_tag)}`}
+            className="pmp-kind transition-colors hover:text-primary"
+            style={{ textTransform: "none" }}
+            onClick={(e) => e.stopPropagation()}
+            data-testid={`post-tag-${post.id}`}
+          >
             #{post.game_tag}
-          </span>
+          </Link>
         )}
         {canManage && (
           <>
