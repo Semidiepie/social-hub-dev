@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatTokens } from "@/lib/format";
 import {
   Menu,
   Coins,
@@ -143,7 +144,7 @@ export function HamburgerMenu() {
                 <div className="leading-tight">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Balance</div>
                   <div className="text-xl font-black tabular-nums" data-testid="menu-token-balance">
-                    {balance} <span className="text-sm font-bold text-primary">tokens</span>
+                    {formatTokens(balance)} <span className="text-sm font-bold text-primary">tokens</span>
                   </div>
                 </div>
               </button>

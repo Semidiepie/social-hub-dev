@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Heart, Send, Gift, Eye, X, BadgeCheck, Share2, Hand, Check } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
-import { badgeCls, badgeStyle } from "@/lib/format";
+import { badgeCls, badgeStyle, formatTokens } from "@/lib/format";
 
 function FloatingHearts({ floaters }) {
   return (
@@ -183,7 +183,7 @@ export function LiveOverlay({
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-bold text-white/80">Send a gift</span>
               <span className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-black text-amber-300" data-testid="live-token-balance">
-                🪙 {balance} tokens
+                🪙 {formatTokens(balance)} tokens
               </span>
             </div>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">

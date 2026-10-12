@@ -20,6 +20,13 @@ DAILY_COOLDOWN_SECONDS = 20 * 60 * 60
 GAME_DAILY_CAP = 50
 GAME_EARN_KINDS = ("game", "slots")
 
+# Embedded web games pay out tokens while actively played THROUGH PostMePlex
+# (metered by a server-validated heartbeat). Kept on its own rolling-20h cap and
+# ledger kind so it never touches the scarce level-clear faucet above.
+GAME_PLAY_KIND = "game_play"
+GAME_PLAY_EARN_PER_MIN = 5
+GAME_PLAY_DAILY_CAP = 1000
+
 # Premium profile frames sold for tokens (reuse the existing frame visuals).
 STORE_FRAMES = [
     {"id": "violet", "name": "Violet Pulse", "blurb": "Mystic purple aura", "price": 120},
@@ -83,6 +90,40 @@ async def grant_capped(db, now, user_id: str, amount: int, kind: str, note: str 
         await _log(db, now, user_id, give, kind, note)
     bal = await get_balance(db, user_id)
     return {"granted": give, "balance": bal, "capped": give < amount, "remaining": max(0, remaining - give)}
+
+
+async def kind_earned_recently(db, now_dt, user_id: str, kind: str, window_s: int = DAILY_COOLDOWN_SECONDS) -> int:
+    """Total positive tokens of a single ledger `kind` earned in the last window."""
+    cutoff = now_dt - timedelta(seconds=window_s)
+    total = 0
+    cur = db.token_tx.find(
+        {"user_id": user_id, "kind": kind, "amount": {"$gt": 0}, "created_at": {"$gte": cutoff}},
+        {"_id": 0, "amount": 1},
+    )
+    async for tx in cur:
+        total += int(tx.get("amount", 0))
+    return total
+
+
+async def grant_game_play(db, now, user_id: str, amount: int, note: str = "") -> dict:
+    """Credit in-app game-play tokens, capped at GAME_PLAY_DAILY_CAP per 20h.
+    Returns {granted, balance, capped, earned_window, remaining, cap}."""
+    amount = max(0, int(amount))
+    earned = await kind_earned_recently(db, now(), user_id, GAME_PLAY_KIND)
+    remaining = max(0, GAME_PLAY_DAILY_CAP - earned)
+    give = min(amount, remaining)
+    if give > 0:
+        await db.users.update_one({"id": user_id}, {"$inc": {"tokens": give}})
+        await _log(db, now, user_id, give, GAME_PLAY_KIND, note)
+    bal = await get_balance(db, user_id)
+    return {
+        "granted": give,
+        "balance": bal,
+        "capped": amount > 0 and give < amount,
+        "earned_window": earned + give,
+        "remaining": max(0, remaining - give),
+        "cap": GAME_PLAY_DAILY_CAP,
+    }
 
 
 async def grant(db, now, user_id: str, amount: int, kind: str, note: str = "") -> int:

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Loader2, X, Maximize2, Minimize2, Bookmark, Heart, Megaphone, Eye, EyeOff,
-  MoreHorizontal, ExternalLink, Link2, Trash2, Pencil, Gamepad2, ChevronRight,
+  MoreHorizontal, ExternalLink, Link2, Trash2, Pencil, Gamepad2, ChevronRight, Coins,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -18,7 +18,7 @@ import { toast } from "sonner";
 export default function GamePlayerPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, patchUser } = useAuth();
   const isAdmin = !!(user?.is_super_admin || user?.is_admin);
 
   const [game, setGame] = useState(null);
@@ -28,6 +28,7 @@ export default function GamePlayerPage() {
   const [embedLoaded, setEmbedLoaded] = useState(false);
   const [embedFailed, setEmbedFailed] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [earn, setEarn] = useState({ session: 0, remaining: null, capped: false, rate: 5 });
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [updates, setUpdates] = useState([]);
   const playAreaRef = useRef(null);
@@ -80,6 +81,31 @@ export default function GamePlayerPage() {
     const t = setTimeout(() => { if (!loadedRef.current) setEmbedFailed(true); }, 5000);
     return () => clearTimeout(t);
   }, [game, cannotEmbed]);
+
+  // In-app play = tokens. Heartbeat the backend ~once a minute while the game is
+  // open in the PostMePlex player (embedded OR launched from our fallback). The
+  // server validates timing + a rolling daily cap. Playing on the game's own
+  // site (outside PostMePlex) never calls this, so it earns nothing.
+  useEffect(() => {
+    if (!game) return undefined;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const r = await api.post(`/games/${id}/earn`);
+        if (stopped) return;
+        setEarn((e) => ({
+          session: e.session + (r.granted || 0),
+          remaining: r.remaining,
+          capped: r.remaining === 0,
+          rate: r.rate_per_min || e.rate,
+        }));
+        if (r.granted > 0) patchUser({ tokens: r.balance });
+      } catch { /* noop */ }
+    };
+    tick();
+    const iv = setInterval(tick, 60000);
+    return () => { stopped = true; clearInterval(iv); };
+  }, [game, id, patchUser]);
 
   const openNewTab = () => window.open(game.play_url, "_blank", "noopener,noreferrer");
   const copyLink = () => {
@@ -295,6 +321,23 @@ export default function GamePlayerPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+          </div>
+
+          {/* Token earning + label */}
+          <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4" data-testid="game-earn-card">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-sm font-black"><Coins size={16} className="text-primary" /> Earn while you play</span>
+              <span className="text-xs font-black text-primary">+{earn.rate}/min</span>
+            </div>
+            {earn.session > 0 && (
+              <div className="mt-2 text-2xl font-black tabular-nums text-primary" data-testid="game-earn-session">
+                +{earn.session} <span className="text-sm font-bold text-muted-foreground">tokens this session</span>
+              </div>
+            )}
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground" data-testid="game-earn-label">
+              🎮 You earn tokens <b className="text-foreground">only by playing through PostMePlex</b>. Keep this game open here to keep earning — playing on the game&apos;s own site won&apos;t earn tokens.
+            </p>
+            {earn.capped && <p className="mt-1.5 text-xs font-semibold text-amber-500" data-testid="game-earn-capped">Daily token cap reached — come back later for more!</p>}
           </div>
 
           {recent.length > 0 && (

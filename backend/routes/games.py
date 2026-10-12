@@ -1,11 +1,13 @@
 """Admin-curated embedded Games hub: games catalog, per-user save/follow/play
 history + privacy, and admin CRUD + game updates. Web-only (Phase 1)."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
+import wallet_core
 
 
 class GameBody(BaseModel):
@@ -213,6 +215,51 @@ def build_router(ctx):
             upsert=True,
         )
         return {"ok": True}
+
+    @router.post("/api/games/{game_id}/earn")
+    async def earn_tokens(game_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        """Heartbeat from the IN-APP player: credits metered play tokens. Only the
+        embedded player calls this, so games opened in a new tab earn nothing.
+        Server validates timing (anti-idle / anti-spam) and a rolling-20h cap."""
+        game = await db.games.find_one({"id": game_id})
+        if not game:
+            raise HTTPException(404, "Game not found")
+        uid = current["id"]
+        now_dt = now()
+        play = await db.game_plays.find_one({"user_id": uid, "game_id": game_id})
+        last = play.get("last_earn_at") if play else None
+        granted, status, set_clock = 0, "started", True
+        if last is not None:
+            if getattr(last, "tzinfo", None) is None:
+                last = last.replace(tzinfo=timezone.utc)
+            elapsed = (now_dt - last).total_seconds()
+            if elapsed > 120:
+                status = "resumed"      # long gap (tab hidden/away) — reset clock, no credit
+            elif elapsed < 50:
+                status, set_clock = "throttled", False  # ticked too soon — keep the clock running
+            else:
+                status = "earned"
+                res = await wallet_core.grant_game_play(
+                    db, now, uid, wallet_core.GAME_PLAY_EARN_PER_MIN,
+                    note=f"Played {game.get('name', 'a game')}",
+                )
+                granted = res["granted"]
+                if granted == 0 and res["remaining"] == 0:
+                    status = "capped"
+        update = {"$set": {"last_played_at": now_dt}, "$setOnInsert": {"id": str(uuid.uuid4()), "visible": True}}
+        if set_clock:
+            update["$set"]["last_earn_at"] = now_dt
+        await db.game_plays.update_one({"user_id": uid, "game_id": game_id}, update, upsert=True)
+        earned_window = await wallet_core.kind_earned_recently(db, now_dt, uid, wallet_core.GAME_PLAY_KIND)
+        return {
+            "granted": granted,
+            "status": status,
+            "balance": await wallet_core.get_balance(db, uid),
+            "rate_per_min": wallet_core.GAME_PLAY_EARN_PER_MIN,
+            "earned_today": earned_window,
+            "daily_cap": wallet_core.GAME_PLAY_DAILY_CAP,
+            "remaining": max(0, wallet_core.GAME_PLAY_DAILY_CAP - earned_window),
+        }
 
     @router.post("/api/games/{game_id}/privacy")
     async def set_privacy(game_id: str, body: GamePrivacyBody, current: Annotated[dict, Depends(get_current_user)]):

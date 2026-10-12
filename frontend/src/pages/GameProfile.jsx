@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Loader2, Play, Bookmark, Heart, Megaphone, Eye, EyeOff, MoreHorizontal,
-  ExternalLink, Link2, Trash2, Pencil, Gamepad2, BadgeCheck, Users, Clock, MessageSquare,
+  ExternalLink, Link2, Trash2, Pencil, Gamepad2, BadgeCheck, Users, Clock, MessageSquare, Coins,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -169,6 +169,13 @@ export default function GameProfilePage() {
           </div>
 
           {game.description ? <p className="mt-3 text-sm text-foreground/90" data-testid="game-profile-desc">{game.description}</p> : null}
+
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5" data-testid="game-earn-label">
+            <Coins size={16} className="mt-0.5 flex-none text-primary" />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              <b className="text-foreground">Earn tokens by playing!</b> You only earn tokens when you play through PostMePlex — launch from here and keep it open. Playing on the game&apos;s own site won&apos;t earn tokens.
+            </p>
+          </div>
 
           {/* Actions */}
           <div className="mt-4 flex flex-wrap items-center gap-2">

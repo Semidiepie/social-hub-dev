@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { formatTokens } from "@/lib/format";
 import {
   Home,
   BookText,
@@ -202,7 +203,7 @@ export function AppShell({ children }) {
                 <div className="hidden min-w-0 leading-tight group-hover:block group-focus-within:block">
                   <div className="truncate text-sm font-semibold">{user.display_name}</div>
                   <div className="flex items-center gap-1 text-xs font-bold text-primary" data-testid="sidebar-token-balance">
-                    <Coins size={12} /> {user.tokens ?? 0}
+                    <Coins size={12} /> {formatTokens(user.tokens ?? 0)}
                   </div>
                 </div>
               </NavLink>

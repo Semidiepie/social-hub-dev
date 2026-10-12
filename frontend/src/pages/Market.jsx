@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ShoppingBag, Check, Sparkles, Palette, Coins, Lock, Loader2, Wand2, ImagePlus, Frame } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatTokens } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -132,7 +133,7 @@ export default function MarketPage() {
             data-testid="market-balance-pill"
             className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-2 text-sm font-black text-primary"
           >
-            <Coins size={16} /> {balance}
+            <Coins size={16} /> {formatTokens(balance)}
           </Link>
         }
       />

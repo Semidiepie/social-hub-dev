@@ -28,6 +28,24 @@ export function formatNumber(n) {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+// Compact token/balance formatting: 999 → "999", 1300 → "1.3K",
+// 134600 → "134.6K", 1000000 → "1M", 1200000 → "1.2M", 2500000000 → "2.5B".
+export function formatTokens(n) {
+  const num = Number(n) || 0;
+  const neg = num < 0;
+  const abs = Math.abs(num);
+  const trim = (x) => {
+    const s = x.toFixed(1);
+    return s.endsWith(".0") ? s.slice(0, -2) : s;
+  };
+  let out;
+  if (abs < 1000) out = String(Math.round(abs));
+  else if (abs < 1_000_000) out = `${trim(abs / 1000)}K`;
+  else if (abs < 1_000_000_000) out = `${trim(abs / 1_000_000)}M`;
+  else out = `${trim(abs / 1_000_000_000)}B`;
+  return (neg ? "-" : "") + out;
+}
+
 export function formatDuration(seconds) {
   if (!seconds || seconds < 0) return "";
   const s = Math.floor(seconds);

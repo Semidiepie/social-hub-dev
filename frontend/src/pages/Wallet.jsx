@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Coins, Gift, Send, ArrowDownLeft, ArrowUpRight, Gamepad2, ShoppingBag, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatTokens } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +11,8 @@ import { toast } from "sonner";
 const KIND_META = {
   daily: { label: "Daily reward", icon: Gift },
   game: { label: "Game reward", icon: Gamepad2 },
+  game_play: { label: "Game play", icon: Gamepad2 },
+  slots: { label: "Slots win", icon: Gamepad2 },
   admin_grant: { label: "Admin grant", icon: Sparkles },
   purchase: { label: "Store purchase", icon: ShoppingBag },
   gift_sent: { label: "Gift sent", icon: ArrowUpRight },
@@ -102,7 +105,7 @@ export default function WalletPage() {
           <div className="relative overflow-hidden rounded-3xl border border-primary/25 bg-gradient-to-br from-primary/20 via-primary/10 to-transparent p-6" data-testid="wallet-balance-card">
             <div className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">Your balance</div>
             <div className="mt-1 flex items-end gap-2">
-              <span className="text-5xl font-black tabular-nums text-foreground" data-testid="wallet-balance">{wallet.balance}</span>
+              <span className="text-5xl font-black tabular-nums text-foreground" data-testid="wallet-balance">{formatTokens(wallet.balance)}</span>
               <span className="mb-1.5 text-lg font-black text-primary">tokens</span>
             </div>
             <Button
@@ -118,9 +121,10 @@ export default function WalletPage() {
           </div>
 
           {/* How to earn */}
-          <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
             {[
               { icon: Gift, t: "Daily", d: `+${wallet.daily_reward}/day` },
+              { icon: Gamepad2, t: "Games", d: "Play to earn" },
               { icon: ArrowDownLeft, t: "Gifts", d: "Receive live" },
             ].map((x) => (
               <div key={x.t} className="rounded-2xl border border-border bg-card/60 p-3">
@@ -188,7 +192,7 @@ export default function WalletPage() {
                         <div className="truncate text-xs text-muted-foreground">{t.note || timeAgo(t.created_at)}</div>
                       </div>
                       <div className={`text-sm font-black tabular-nums ${pos ? "text-emerald-400" : "text-rose-400"}`}>
-                        {pos ? "+" : ""}{t.amount}
+                        {pos ? "+" : "-"}{formatTokens(Math.abs(t.amount))}
                       </div>
                     </div>
                   );
