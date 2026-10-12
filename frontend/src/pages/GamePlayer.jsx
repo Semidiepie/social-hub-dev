@@ -55,16 +55,31 @@ export default function GamePlayerPage() {
 
   const insecure = !!game && /^http:\/\//i.test(game.play_url || "");
 
+  // Major game portals forbid embedding via X-Frame-Options / CSP
+  // frame-ancestors (browser-enforced — impossible to iframe). Detect them up
+  // front so we show the clean "open in new tab" launch screen, never a black box.
+  const blockedHost = (() => {
+    if (!game?.play_url) return false;
+    try {
+      const h = new URL(game.play_url).hostname.replace(/^www\./, "");
+      return ["poki.com", "crazygames.com", "y8.com", "miniclip.com", "kongregate.com", "addictinggames.com", "armorgames.com", "coolmathgames.com", "friv.com", "agame.com"]
+        .some((d) => h === d || h.endsWith("." + d));
+    } catch {
+      return false;
+    }
+  })();
+  const cannotEmbed = insecure || blockedHost;
+
   // We can't read a cross-origin iframe, so detect obvious failures: insecure
-  // (mixed-content) URLs are blocked outright, and if nothing loads within a
-  // few seconds we surface the "open in new tab" fallback. A persistent escape
-  // chip also covers sites that fire a fake load event while staying blank.
+  // (mixed-content) URLs and known non-embeddable portals are surfaced
+  // immediately; otherwise, if nothing loads within a few seconds, we surface
+  // the "open in new tab" fallback.
   useEffect(() => {
     if (!game) return undefined;
-    if (insecure) { setEmbedFailed(true); return undefined; }
+    if (cannotEmbed) { setEmbedFailed(true); return undefined; }
     const t = setTimeout(() => { if (!loadedRef.current) setEmbedFailed(true); }, 5000);
     return () => clearTimeout(t);
-  }, [game, insecure]);
+  }, [game, cannotEmbed]);
 
   const openNewTab = () => window.open(game.play_url, "_blank", "noopener,noreferrer");
   const copyLink = () => {
@@ -196,7 +211,7 @@ export default function GamePlayerPage() {
                     <Loader2 className="mr-2 animate-spin" /> Loading game…
                   </div>
                 )}
-                {!insecure && (
+                {!cannotEmbed && (
                   <iframe
                     key={game.id}
                     src={game.play_url}

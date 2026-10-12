@@ -61,6 +61,12 @@ function GameFields({ data, setData }) {
       <div>
         <Label>Play / website URL *</Label>
         <Input value={data.play_url} onChange={set("play_url")} className="mt-1.5 h-11" placeholder="https://example.com/game" data-testid="game-url-input" />
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Must be an <b>embeddable</b> game URL (allows loading in an iframe). Big portals like
+          Poki, CrazyGames, Y8 and Miniclip block embedding — those will open in a new tab instead of
+          playing inside PostMePlex. Good sources: itch.io embed links, GitHub Pages games, and sites
+          that don&apos;t set X-Frame-Options / CSP frame-ancestors.
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
