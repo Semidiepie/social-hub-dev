@@ -246,6 +246,7 @@ export default function GamePlayerPage() {
                     onError={() => setEmbedFailed(true)}
                     className="h-full w-full"
                     allow="autoplay; fullscreen; gamepad; microphone; camera; clipboard-write; accelerometer; gyroscope"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-pointer-lock allow-orientation-lock allow-presentation allow-fullscreen allow-downloads"
                     allowFullScreen
                     referrerPolicy="no-referrer"
                     data-testid="game-iframe"
