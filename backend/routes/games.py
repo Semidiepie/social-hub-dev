@@ -1,5 +1,6 @@
 """Admin-curated embedded Games hub: games catalog, per-user save/follow/play
 history + privacy, and admin CRUD + game updates. Web-only (Phase 1)."""
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -40,6 +41,7 @@ def build_router(ctx):
     now = ctx.now
     get_current_user = ctx.get_current_user
     get_optional_user = ctx.get_optional_user
+    send_web_push = getattr(ctx, "send_web_push", None)
     router = APIRouter()
 
     def _require_admin(u):
@@ -251,10 +253,19 @@ def build_router(ctx):
             update["$set"]["last_earn_at"] = now_dt
         await db.game_plays.update_one({"user_id": uid, "game_id": game_id}, update, upsert=True)
         earned_window = await wallet_core.kind_earned_recently(db, now_dt, uid, wallet_core.GAME_PLAY_KIND)
+        balance = await wallet_core.get_balance(db, uid)
+        # Real-time web push on every token grant (no-op if the user hasn't enabled push).
+        if granted > 0 and send_web_push:
+            asyncio.create_task(send_web_push(
+                uid,
+                f"+{granted} tokens earned! 🎮",
+                f"You earned {granted} tokens playing {game.get('name', 'a game')}. Balance: {balance}",
+                url="/wallet",
+            ))
         return {
             "granted": granted,
             "status": status,
-            "balance": await wallet_core.get_balance(db, uid),
+            "balance": balance,
             "rate_per_min": wallet_core.GAME_PLAY_EARN_PER_MIN,
             "earned_today": earned_window,
             "daily_cap": wallet_core.GAME_PLAY_DAILY_CAP,
