@@ -7,7 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { useLiveSocket } from "@/lib/useLiveSocket";
 import { LiveOverlay } from "@/components/LiveOverlay";
 import { LiveStage } from "@/components/LiveStage";
-import { whipPublish, endSession } from "@/lib/webrtc";
+import { whipPublish, withPlaceholderVideo, endSession } from "@/lib/webrtc";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
@@ -25,6 +25,7 @@ export default function GoLivePage() {
   const videoRef = useRef(null);
   const mediaRef = useRef(null);
   const rtcRef = useRef(null);
+  const placeholderRef = useRef(null);
 
   const live = useLiveSocket(stream?.id);
 
@@ -41,7 +42,13 @@ export default function GoLivePage() {
       });
       setDemo(!s.provider_configured);
       if (s.whip_url) {
-        rtcRef.current = await whipPublish(s.whip_url, media);
+        let publishStream = media;
+        if (audioOnly) {
+          const ph = withPlaceholderVideo(media);
+          publishStream = ph.stream;
+          placeholderRef.current = ph.stop;
+        }
+        rtcRef.current = await whipPublish(s.whip_url, publishStream);
       }
       setStream(s); // mounts the broadcasting screen; the effect below binds the preview
     } catch (e) {
@@ -80,6 +87,7 @@ export default function GoLivePage() {
     try { if (stream?.id) await api.post(`/live/${stream.id}/stop`); } catch { /* noop */ }
     await endSession(rtcRef.current?.session);
     rtcRef.current?.pc?.close();
+    placeholderRef.current?.();
     mediaRef.current?.getTracks().forEach((t) => t.stop());
     navigate("/live");
   };
@@ -88,6 +96,7 @@ export default function GoLivePage() {
     return () => {
       endSession(rtcRef.current?.session);
       rtcRef.current?.pc?.close();
+      placeholderRef.current?.();
       mediaRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);

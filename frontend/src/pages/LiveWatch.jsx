@@ -8,7 +8,7 @@ import { Avatar } from "@/components/Avatar";
 import { useLiveSocket } from "@/lib/useLiveSocket";
 import { LiveOverlay } from "@/components/LiveOverlay";
 import { useAuth } from "@/context/AuthContext";
-import { whepPlay, whipPublish, endSession } from "@/lib/webrtc";
+import { whepPlay, whipPublish, withPlaceholderVideo, endSession } from "@/lib/webrtc";
 import { LiveStage } from "@/components/LiveStage";
 import { toast } from "sonner";
 
@@ -25,6 +25,7 @@ export default function LiveWatchPage() {
   const [localStream, setLocalStream] = useState(null);
   const [stageRequested, setStageRequested] = useState(false);
   const stageRtcRef = useRef(null);
+  const stagePlaceholderRef = useRef(null);
 
   const live = useLiveSocket(id);
 
@@ -41,7 +42,15 @@ export default function LiveWatchPage() {
         );
         if (cancelled) { media.getTracks().forEach((t) => t.stop()); return; }
         setLocalStream(media);
-        if (live.stageGrant.whip_url) stageRtcRef.current = await whipPublish(live.stageGrant.whip_url, media);
+        if (live.stageGrant.whip_url) {
+          let publishStream = media;
+          if (stream.audio_only) {
+            const ph = withPlaceholderVideo(media);
+            publishStream = ph.stream;
+            stagePlaceholderRef.current = ph.stop;
+          }
+          stageRtcRef.current = await whipPublish(live.stageGrant.whip_url, publishStream);
+        }
       } catch {
         toast.error("Couldn't start your camera/microphone for the stage.");
       }
@@ -54,6 +63,8 @@ export default function LiveWatchPage() {
     endSession(stageRtcRef.current?.session);
     stageRtcRef.current?.pc?.close();
     stageRtcRef.current = null;
+    stagePlaceholderRef.current?.();
+    stagePlaceholderRef.current = null;
     setLocalStream((s) => { s?.getTracks().forEach((t) => t.stop()); return null; });
   };
   useEffect(() => {
