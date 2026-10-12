@@ -206,10 +206,6 @@ export default function GamePlayerPage() {
                 <Minimize2 size={14} /> Exit fullscreen
               </button>
             )}
-            {/* Always-available escape hatch for blank/blocked embeds */}
-            <button onClick={openNewTab} className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" data-testid="game-embed-newtab-chip">
-              <ExternalLink size={13} /> New tab
-            </button>
             {embedFailed && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/90 p-6 text-center" data-testid="game-embed-fallback">
                 {game.banner_url ? <img src={game.banner_url} alt="" className="mb-1 max-h-32 rounded-xl object-cover" /> : <Gamepad2 size={40} className="text-primary" />}
