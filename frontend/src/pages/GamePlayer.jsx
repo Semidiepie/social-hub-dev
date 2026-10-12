@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  Loader2, X, Maximize2, Bookmark, Heart, Megaphone, Eye, EyeOff,
+  Loader2, X, Maximize2, Minimize2, Bookmark, Heart, Megaphone, Eye, EyeOff,
   MoreHorizontal, ExternalLink, Link2, Trash2, Pencil, Gamepad2, ChevronRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -26,6 +26,7 @@ export default function GamePlayerPage() {
   const [recent, setRecent] = useState([]);
   const [embedLoaded, setEmbedLoaded] = useState(false);
   const [embedFailed, setEmbedFailed] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [updates, setUpdates] = useState([]);
   const playAreaRef = useRef(null);
@@ -69,15 +70,36 @@ export default function GamePlayerPage() {
     navigator.clipboard?.writeText(`${window.location.origin}/games/${id}`);
     toast.success("Link copied!");
   };
-  const goFullscreen = () => {
+  // In-app fullscreen: a viewport-filling overlay that works everywhere
+  // (incl. iOS Safari / installed PWA, where the Fullscreen API is unavailable),
+  // plus true chrome-less fullscreen where the browser supports it. Never opens
+  // a new tab — the whole point is to stay inside the app.
+  const enterFullscreen = () => {
+    setMaximized(true);
     const el = playAreaRef.current;
-    if (!el || !document.fullscreenEnabled || !el.requestFullscreen) {
-      toast.message("Full screen isn't available here — opening in a new tab");
-      openNewTab();
-      return;
+    if (el && document.fullscreenEnabled && el.requestFullscreen) {
+      el.requestFullscreen().catch(() => {});
     }
-    el.requestFullscreen().catch(() => openNewTab());
   };
+  const exitFullscreen = () => {
+    setMaximized(false);
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+  const toggleFullscreen = () => (maximized ? exitFullscreen() : enterFullscreen());
+
+  useEffect(() => {
+    if (!maximized) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") exitFullscreen(); };
+    const onFsChange = () => { if (!document.fullscreenElement) setMaximized(false); };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("fullscreenchange", onFsChange);
+    };
+  }, [maximized]);
 
   const toggleSave = async () => {
     setGame((g) => ({ ...g, saved: !g.saved }));
@@ -151,14 +173,14 @@ export default function GamePlayerPage() {
         <img src={game.icon_url} alt="" className="h-7 w-7 rounded-full object-cover" />
         <span className="truncate font-bold">{game.name}</span>
         <div className="flex-1" />
-        <button onClick={goFullscreen} className="pmp-iconchip" title="Fullscreen" data-testid="game-fullscreen-btn"><Maximize2 size={16} /></button>
+        <button onClick={toggleFullscreen} className="pmp-iconchip" title="Fullscreen" data-testid="game-fullscreen-btn"><Maximize2 size={16} /></button>
         <button onClick={() => navigate(`/games/${id}`)} className="pmp-iconchip" title="Close" data-testid="game-close-btn"><X size={16} /></button>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
         {/* Left: embedded play area */}
         <div className="relative lg:col-span-2">
-          <div ref={playAreaRef} className="game-stage relative h-[62vh] min-h-[380px] w-full overflow-hidden rounded-2xl border border-border bg-black">
+          <div ref={playAreaRef} className={`game-stage relative w-full overflow-hidden bg-black ${maximized ? "fixed inset-0 z-[9999] h-[100dvh] rounded-none border-0" : "h-[62vh] min-h-[380px] rounded-2xl border border-border"}`}>
             {!embedLoaded && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-sm text-white/70" data-testid="game-embed-loading">
                 <Loader2 className="mr-2 animate-spin" /> Loading game…
@@ -177,6 +199,12 @@ export default function GamePlayerPage() {
                 referrerPolicy="no-referrer"
                 data-testid="game-iframe"
               />
+            )}
+            {/* Exit button for the in-app fullscreen overlay */}
+            {maximized && (
+              <button onClick={exitFullscreen} className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" data-testid="game-exit-fullscreen">
+                <Minimize2 size={14} /> Exit fullscreen
+              </button>
             )}
             {/* Always-available escape hatch for blank/blocked embeds */}
             <button onClick={openNewTab} className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" data-testid="game-embed-newtab-chip">
