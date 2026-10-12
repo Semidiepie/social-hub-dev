@@ -253,7 +253,7 @@ export default function GamePlayerPage() {
                   />
                 )}
                 {maximized && (
-                  <button onClick={exitFullscreen} className="absolute right-3 z-20 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" style={{ top: "max(env(safe-area-inset-top), 12px)" }} data-testid="game-exit-fullscreen">
+                  <button onClick={exitFullscreen} className="absolute left-3 z-20 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" style={{ top: "max(env(safe-area-inset-top), 12px)" }} data-testid="game-exit-fullscreen">
                     <Minimize2 size={14} /> Exit fullscreen
                   </button>
                 )}
