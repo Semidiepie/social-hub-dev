@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Loader2, X, Maximize2, Minimize2, Bookmark, Heart, Megaphone, Eye, EyeOff,
@@ -95,9 +96,12 @@ export default function GamePlayerPage() {
     const onFsChange = () => { if (!document.fullscreenElement) setMaximized(false); };
     window.addEventListener("keydown", onKey);
     document.addEventListener("fullscreenchange", onFsChange);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("fullscreenchange", onFsChange);
+      document.body.style.overflow = prevOverflow;
     };
   }, [maximized]);
 
@@ -180,43 +184,51 @@ export default function GamePlayerPage() {
       <div className="grid gap-3 lg:grid-cols-3">
         {/* Left: embedded play area */}
         <div className="relative lg:col-span-2">
-          <div ref={playAreaRef} className={`game-stage relative w-full overflow-hidden bg-black ${maximized ? "fixed inset-0 z-[9999] h-[100dvh] rounded-none border-0" : "h-[62vh] min-h-[380px] rounded-2xl border border-border"}`}>
-            {!embedLoaded && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-sm text-white/70" data-testid="game-embed-loading">
-                <Loader2 className="mr-2 animate-spin" /> Loading game…
+          {(() => {
+            const stageEl = (
+              <div
+                ref={playAreaRef}
+                style={maximized ? { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 2147483000 } : undefined}
+                className={`game-stage w-full overflow-hidden bg-black ${maximized ? "rounded-none border-0" : "relative h-[62vh] min-h-[380px] rounded-2xl border border-border"}`}
+              >
+                {!embedLoaded && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-sm text-white/70" data-testid="game-embed-loading">
+                    <Loader2 className="mr-2 animate-spin" /> Loading game…
+                  </div>
+                )}
+                {!insecure && (
+                  <iframe
+                    key={game.id}
+                    src={game.play_url}
+                    title={game.name}
+                    onLoad={() => { loadedRef.current = true; setEmbedLoaded(true); }}
+                    onError={() => setEmbedFailed(true)}
+                    className="h-full w-full"
+                    allow="autoplay; fullscreen; gamepad; microphone; camera; clipboard-write; accelerometer; gyroscope"
+                    allowFullScreen
+                    referrerPolicy="no-referrer"
+                    data-testid="game-iframe"
+                  />
+                )}
+                {maximized && (
+                  <button onClick={exitFullscreen} className="absolute right-3 z-20 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" style={{ top: "max(env(safe-area-inset-top), 12px)" }} data-testid="game-exit-fullscreen">
+                    <Minimize2 size={14} /> Exit fullscreen
+                  </button>
+                )}
+                {embedFailed && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/90 p-6 text-center" data-testid="game-embed-fallback">
+                    {game.banner_url ? <img src={game.banner_url} alt="" className="mb-1 max-h-32 rounded-xl object-cover" /> : <Gamepad2 size={40} className="text-primary" />}
+                    <p className="font-semibold text-white">This game can&apos;t be embedded here</p>
+                    <p className="max-w-sm text-sm text-white/60">This game&apos;s site blocks loading inside other apps. Open it in a new tab to play — your Save, Follow and updates stay here.</p>
+                    <Button onClick={openNewTab} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90" data-testid="game-fallback-newtab">
+                      <ExternalLink size={16} /> Open in new tab
+                    </Button>
+                  </div>
+                )}
               </div>
-            )}
-            {!insecure && (
-              <iframe
-                key={game.id}
-                src={game.play_url}
-                title={game.name}
-                onLoad={() => { loadedRef.current = true; setEmbedLoaded(true); }}
-                onError={() => setEmbedFailed(true)}
-                className="h-full w-full"
-                allow="autoplay; fullscreen; gamepad; microphone; camera; clipboard-write; accelerometer; gyroscope"
-                allowFullScreen
-                referrerPolicy="no-referrer"
-                data-testid="game-iframe"
-              />
-            )}
-            {/* Exit button for the in-app fullscreen overlay */}
-            {maximized && (
-              <button onClick={exitFullscreen} className="absolute right-2 top-2 z-20 flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/90" data-testid="game-exit-fullscreen">
-                <Minimize2 size={14} /> Exit fullscreen
-              </button>
-            )}
-            {embedFailed && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/90 p-6 text-center" data-testid="game-embed-fallback">
-                {game.banner_url ? <img src={game.banner_url} alt="" className="mb-1 max-h-32 rounded-xl object-cover" /> : <Gamepad2 size={40} className="text-primary" />}
-                <p className="font-semibold text-white">This game can&apos;t be embedded here</p>
-                <p className="max-w-sm text-sm text-white/60">This game&apos;s site blocks loading inside other apps. Open it in a new tab to play — your Save, Follow and updates stay here.</p>
-                <Button onClick={openNewTab} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90" data-testid="game-fallback-newtab">
-                  <ExternalLink size={16} /> Open in new tab
-                </Button>
-              </div>
-            )}
-          </div>
+            );
+            return maximized ? createPortal(stageEl, document.body) : stageEl;
+          })()}
         </div>
 
         {/* Right: action panel */}
