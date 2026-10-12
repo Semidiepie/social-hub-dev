@@ -28,6 +28,7 @@ export default function GamePlayerPage() {
   const [embedLoaded, setEmbedLoaded] = useState(false);
   const [embedFailed, setEmbedFailed] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [nativeFs, setNativeFs] = useState(false);
   const [earn, setEarn] = useState({ session: 0, remaining: null, capped: false, rate: 5 });
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [updates, setUpdates] = useState([]);
@@ -116,15 +117,10 @@ export default function GamePlayerPage() {
   // (incl. iOS Safari / installed PWA, where the Fullscreen API is unavailable),
   // plus true chrome-less fullscreen where the browser supports it. Never opens
   // a new tab — the whole point is to stay inside the app.
-  const enterFullscreen = () => {
-    setMaximized(true);
-    const el = playAreaRef.current;
-    if (el && document.fullscreenEnabled && el.requestFullscreen) {
-      el.requestFullscreen().catch(() => {});
-    }
-  };
+  const enterFullscreen = () => setMaximized(true);
   const exitFullscreen = () => {
     setMaximized(false);
+    setNativeFs(false);
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(() => {});
     }
@@ -133,8 +129,19 @@ export default function GamePlayerPage() {
 
   useEffect(() => {
     if (!maximized) return undefined;
+    // Request true fullscreen AFTER the portal has mounted the stage, so we
+    // target the live node (desktop → chrome-less fullscreen; mobile Safari/PWA
+    // → API unavailable, our fixed overlay already fills the viewport).
+    const el = playAreaRef.current;
+    if (el && document.fullscreenEnabled && el.requestFullscreen) {
+      el.requestFullscreen().then(() => setNativeFs(true)).catch(() => {});
+    }
     const onKey = (e) => { if (e.key === "Escape") exitFullscreen(); };
-    const onFsChange = () => { if (!document.fullscreenElement) setMaximized(false); };
+    const onFsChange = () => {
+      const active = !!document.fullscreenElement;
+      setNativeFs(active);
+      if (!active) setMaximized(false);
+    };
     window.addEventListener("keydown", onKey);
     document.addEventListener("fullscreenchange", onFsChange);
     const prevOverflow = document.body.style.overflow;
@@ -229,7 +236,7 @@ export default function GamePlayerPage() {
             const stageEl = (
               <div
                 ref={playAreaRef}
-                style={maximized ? { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 2147483000, paddingTop: "max(env(safe-area-inset-top), 24px)", paddingBottom: "env(safe-area-inset-bottom)" } : undefined}
+                style={maximized ? { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 2147483000, paddingTop: nativeFs ? 0 : "max(env(safe-area-inset-top), 24px)", paddingBottom: nativeFs ? 0 : "env(safe-area-inset-bottom)" } : undefined}
                 className={`game-stage w-full overflow-hidden bg-black ${maximized ? "rounded-none border-0" : "relative h-[62vh] min-h-[380px] rounded-2xl border border-border"}`}
               >
                 {!embedLoaded && (
