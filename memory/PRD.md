@@ -1,3 +1,17 @@
+## Enhancement + fix — AI character typing delay + silent-text reliability (2026-06, web, admin-only)
+- **Human typing delay:** `AiCharacterChat.send()` now adds a variable, believable delay before the reply shows — a short "noticing" pause (0.3–1.8s, ~15% chance of a longer AFK pause +2–6s) run in parallel with the LLM call, then a length-proportional typing delay (≤~5s). The typing bubble is now animated dots.
+- **"Error + message deletes" on texting:** root cause was the OLD `/send` generating ElevenLabs voice for text replies (fixed earlier in #3 — text now never calls TTS, so a voice hiccup can't fail the text send). Frontend `send()` hardened: the user's message always stays on error + clearer toast. This fix is in preview; production needs a redeploy.
+- **Unread badge suppressed for the open thread:** `Messages.jsx` hides the AI unread badge when `convId === ai_{id}` so the thread you're reading doesn't show a count.
+- AGENT-TESTED: typing dots appear then reply arrives after delay with no error (screenshot); unread/mark-read verified earlier. Cleaned up test messages. Preview only — Publish/Redeploy for production.
+
+
+## Fix — AI proactive texting cadence + Messages unread badge (2026-06, web, admin-only)
+- **No more simultaneous texts:** `_proactive_once` now flattens all (character, admin) threads, shuffles them, and sends AT MOST ONE proactive text per admin per 15-min pass → a user never gets several characters at once.
+- **Sparse, irregular, believable cadence:** min idle raised to 3h; after each check a thread's `next_eval_at` is set a random 8–72h out (some characters stay silent for days); a 45% "not in the mood" mood-skip (no LLM call); stop after 2 ignored check-ins until the user replies; the LLM still decides per-personality whether to text at all. Controlled by `PROACTIVE_MIN_IDLE_MIN / NEXT_MIN_H / NEXT_MAX_H / MOOD_SKIP / MAX_UNANSWERED`.
+- **Unread badge on Messages list:** `/api/ai-characters` now returns per-thread `unread` (count of AI messages since `last_read_at`) + `last_message` {role,text,created_at}, sorted by recent activity. Opening the thread (`GET /thread`) sets `last_read_at` → clears the badge. `Messages.jsx` AI rows show bold name + count badge + "last message" preview + time; list refetches on thread switch and polls every 10s.
+- AGENT-TESTED: list returns unread=6 + preview, badge renders ("6"), opening thread clears to 0 (curl + screenshot). Cleaned up test-induced proactive messages. NOT user-confirmed. Preview only — Publish/Redeploy for production.
+
+
 ## Feature — AI characters: push-to-talk calls, silent texting, no-accent voice, proactive human-like texting (2026-06, web, admin-only)
 - **#1 Push-to-talk calls (like Sage):** rewrote `AiCharacterChat.jsx` `CharacterCall` from hands-free VAD auto-listen to Sage-style tap-mic-to-talk / tap-to-send (status: connecting→idle→recording→thinking→speaking). Kept the Web-Audio volume slider + speaker toggle. Admin still fully customizes the character. AGENT-TESTED (screenshot: call screen renders, greeting voice plays, "Tap the mic to talk, tap again to send").
 - **#3 Silent texting:** `/api/ai-characters/{id}/send` no longer runs TTS — returns `audio_url: null`; the UI no longer auto-plays. Voice ONLY during a call (`/voice-turn`). Also cuts ElevenLabs cost. AGENT-TESTED (curl: audio_url null, reply returned).

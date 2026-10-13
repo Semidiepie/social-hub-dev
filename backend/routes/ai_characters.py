@@ -11,9 +11,10 @@ annotations break closure-local `Depends` in these routers).
 """
 import asyncio
 import base64
+import random
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Annotated, Optional
 
 import httpx
@@ -25,12 +26,14 @@ import settings_store
 TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
 TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for the account/voice
 
-# Proactive "human-like" texting: characters reach out on their own based on their
-# personality + the conversation. Guards keep it believable (not spammy).
-PROACTIVE_TICK_SEC = 900        # evaluate every 15 min
-PROACTIVE_MIN_IDLE_MIN = 90     # only consider reaching out after this much silence
-PROACTIVE_MIN_GAP_MIN = 180     # re-evaluate a thread at most once per 3h (caps LLM cost + spam)
-PROACTIVE_MAX_UNANSWERED = 3    # stop texting after this many ignored check-ins (until they reply)
+# Proactive "human-like" texting: characters reach out on their own, rarely and
+# irregularly — like a real person. Most of the time they DON'T text; some go days.
+PROACTIVE_TICK_SEC = 900          # scheduler wakes every 15 min
+PROACTIVE_MIN_IDLE_MIN = 180      # at least 3h of quiet before a character even considers reaching out
+PROACTIVE_NEXT_MIN_H = 8          # after each check, next consideration is a random 8h..72h away
+PROACTIVE_NEXT_MAX_H = 72         # → irregular cadence; some characters stay silent for days
+PROACTIVE_MOOD_SKIP = 0.45        # even when due, this chance they just "don't feel like it" (no LLM call)
+PROACTIVE_MAX_UNANSWERED = 2      # stop texting after this many ignored check-ins (until they reply)
 
 # Emotion / non-verbal cues the character may embed in replies; performed by eleven_v3
 # and stripped from the text shown on screen.
@@ -313,7 +316,22 @@ def build_router(ctx) -> APIRouter:
     async def list_characters(current: Annotated[dict, Depends(get_current_user)]):
         _require_admin(current)
         rows = await db.ai_characters.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
-        return [_char_public(c) for c in rows]
+        out = []
+        for c in rows:
+            pub = _char_public(c)
+            last = await db.ai_char_messages.find_one(
+                {"character_id": c["id"], "admin_id": current["id"]}, sort=[("created_at", -1)])
+            pub["last_message"] = _msg_out(last) if last else None
+            state = await db.ai_char_state.find_one({"character_id": c["id"], "admin_id": current["id"]}) or {}
+            last_read = await _coerce_dt(state.get("last_read_at"))
+            q = {"character_id": c["id"], "admin_id": current["id"], "role": "ai"}
+            if last_read:
+                q["created_at"] = {"$gt": last_read}
+            pub["unread"] = await db.ai_char_messages.count_documents(q)
+            out.append(pub)
+        # surface threads with the most recent activity first
+        out.sort(key=lambda p: (p.get("last_message") or {}).get("created_at") or "", reverse=True)
+        return out
 
     @router.post("/api/ai-characters")
     async def create_character(body: CreateCharacterBody, current: Annotated[dict, Depends(get_current_user)]):
@@ -387,6 +405,10 @@ def build_router(ctx) -> APIRouter:
         rows = await db.ai_char_messages.find(
             {"character_id": char_id, "admin_id": current["id"]}, {"_id": 0}
         ).sort("created_at", 1).to_list(500)
+        # opening the thread marks it read (clears the unread badge)
+        await db.ai_char_state.update_one(
+            {"character_id": char_id, "admin_id": current["id"]},
+            {"$set": {"last_read_at": _now()}}, upsert=True)
         return {"character": _char_public(c), "messages": [_msg_out(r) for r in rows]}
 
     @router.delete("/api/ai-characters/{char_id}/thread")
@@ -511,59 +533,81 @@ def build_router(ctx) -> APIRouter:
     async def _proactive_once():
         now = datetime.now(timezone.utc)
         chars = await db.ai_characters.find({}).to_list(500)
+        # Flatten to (character, admin) pairs, shuffle so the same character isn't
+        # always first, and send AT MOST ONE proactive text per admin per pass — so a
+        # user never gets several characters texting at the same moment. Passes are
+        # 15 min apart and each thread's next check is randomly spread over hours.
+        pairs = []
         for c in chars:
-            admin_ids = await db.ai_char_messages.distinct("admin_id", {"character_id": c["id"]})
-            for admin_id in admin_ids:
-                try:
-                    last = await db.ai_char_messages.find_one(
-                        {"character_id": c["id"], "admin_id": admin_id}, sort=[("created_at", -1)])
-                    if not last:
-                        continue
-                    state = await db.ai_char_state.find_one({"character_id": c["id"], "admin_id": admin_id}) or {}
-                    unanswered = int(state.get("unanswered", 0) or 0)
-                    # user replied since our last check-in → reset the ignore counter
-                    if last.get("role") == "user" and unanswered:
-                        await db.ai_char_state.update_one(
-                            {"character_id": c["id"], "admin_id": admin_id},
-                            {"$set": {"unanswered": 0}}, upsert=True)
-                        unanswered = 0
-                    last_at = await _coerce_dt(last.get("created_at"))
-                    if not last_at:
-                        continue
-                    idle_min = (now - last_at).total_seconds() / 60
-                    if idle_min < PROACTIVE_MIN_IDLE_MIN:
-                        continue
-                    # evaluate a thread at most once per gap (caps LLM cost whether or not we send)
-                    last_eval = await _coerce_dt(state.get("last_checked_at") or state.get("last_proactive_at"))
-                    if last_eval and (now - last_eval).total_seconds() / 60 < PROACTIVE_MIN_GAP_MIN:
-                        continue
-                    if unanswered >= PROACTIVE_MAX_UNANSWERED:
-                        await db.ai_char_state.update_one(
-                            {"character_id": c["id"], "admin_id": admin_id},
-                            {"$set": {"last_checked_at": now}}, upsert=True)
-                        continue
-                    hist = await db.ai_char_messages.find(
-                        {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
-                    ).sort("created_at", -1).limit(30).to_list(30)
-                    hist.reverse()
-                    transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
-                    should, message = await _proactive_decide(c, transcript, int(idle_min), unanswered)
-                    if not should or not message:
-                        await db.ai_char_state.update_one(
-                            {"character_id": c["id"], "admin_id": admin_id},
-                            {"$set": {"last_checked_at": now}}, upsert=True)
-                        continue
-                    await _store(c["id"], admin_id, "ai", message)
+            for admin_id in await db.ai_char_messages.distinct("admin_id", {"character_id": c["id"]}):
+                pairs.append((c, admin_id))
+        random.shuffle(pairs)
+        sent_admins = set()
+        for c, admin_id in pairs:
+            if admin_id in sent_admins:
+                continue
+            try:
+                last = await db.ai_char_messages.find_one(
+                    {"character_id": c["id"], "admin_id": admin_id}, sort=[("created_at", -1)])
+                if not last:
+                    continue
+                state = await db.ai_char_state.find_one({"character_id": c["id"], "admin_id": admin_id}) or {}
+                unanswered = int(state.get("unanswered", 0) or 0)
+                # user replied since our last check-in → reset the ignore counter
+                if last.get("role") == "user" and unanswered:
                     await db.ai_char_state.update_one(
                         {"character_id": c["id"], "admin_id": admin_id},
-                        {"$set": {"last_proactive_at": now, "last_checked_at": now}, "$inc": {"unanswered": 1}},
-                        upsert=True)
-                    try:
-                        await send_web_push(admin_id, c["name"], message, url=f"/messages/ai_{c['id']}")
-                    except Exception:
-                        pass
-                except Exception as e:
-                    logger.warning(f"ai-char proactive error {c.get('id')}/{admin_id}: {e}")
+                        {"$set": {"unanswered": 0}}, upsert=True)
+                    unanswered = 0
+                last_at = await _coerce_dt(last.get("created_at"))
+                if not last_at:
+                    continue
+                idle_min = (now - last_at).total_seconds() / 60
+                if idle_min < PROACTIVE_MIN_IDLE_MIN:
+                    continue
+                # Each thread has its own randomized next-eval time so characters don't
+                # re-align and fire together. Not due yet → skip.
+                next_eval = await _coerce_dt(state.get("next_eval_at"))
+                if next_eval and now < next_eval:
+                    continue
+
+                def _schedule_next():
+                    return {"last_checked_at": now,
+                            "next_eval_at": now + timedelta(minutes=random.randint(PROACTIVE_NEXT_MIN_H * 60, PROACTIVE_NEXT_MAX_H * 60))}
+
+                if unanswered >= PROACTIVE_MAX_UNANSWERED:
+                    await db.ai_char_state.update_one(
+                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule_next()}, upsert=True)
+                    continue
+                # Mood: a real person often just doesn't text. Sometimes skip entirely
+                # (no LLM call) and try again much later — keeps it sparse + believable.
+                if random.random() < PROACTIVE_MOOD_SKIP:
+                    await db.ai_char_state.update_one(
+                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule_next()}, upsert=True)
+                    continue
+                hist = await db.ai_char_messages.find(
+                    {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
+                ).sort("created_at", -1).limit(30).to_list(30)
+                hist.reverse()
+                transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
+                should, message = await _proactive_decide(c, transcript, int(idle_min), unanswered)
+                if not should or not message:
+                    await db.ai_char_state.update_one(
+                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule_next()}, upsert=True)
+                    continue
+                await _store(c["id"], admin_id, "ai", message)
+                upd = _schedule_next()
+                upd["last_proactive_at"] = now
+                await db.ai_char_state.update_one(
+                    {"character_id": c["id"], "admin_id": admin_id},
+                    {"$set": upd, "$inc": {"unanswered": 1}}, upsert=True)
+                sent_admins.add(admin_id)
+                try:
+                    await send_web_push(admin_id, c["name"], message, url=f"/messages/ai_{c['id']}")
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.warning(f"ai-char proactive error {c.get('id')}/{admin_id}: {e}")
 
     async def proactive_loop():
         await asyncio.sleep(60)  # let the app finish booting

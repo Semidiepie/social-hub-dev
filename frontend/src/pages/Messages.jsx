@@ -36,7 +36,11 @@ export default function MessagesPage() {
     try { setAiChars(await api.get("/ai-characters")); } catch { /* ignore */ }
   }, [user]);
 
-  useEffect(() => { loadChars(); }, [loadChars]);
+  useEffect(() => {
+    loadChars();
+    const t = setInterval(loadChars, 10000);
+    return () => clearInterval(t);
+  }, [loadChars, convId]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -179,14 +183,28 @@ export default function MessagesPage() {
                   <div key={ch.id} className="group/char relative">
                     <button
                       onClick={() => navigate(`/messages/ai_${ch.id}`)}
-                      className={`flex w-full items-center gap-3 px-4 py-2.5 pr-10 text-left hover:bg-secondary/50 ${convId === `ai_${ch.id}` ? "bg-secondary/70" : ""}`}
+                      className={`flex w-full items-center gap-3 px-4 py-2.5 pr-16 text-left hover:bg-secondary/50 ${convId === `ai_${ch.id}` ? "bg-secondary/70" : ""}`}
                       data-testid={`conv-aichar-${ch.id}`}
                     >
                       <Avatar src={ch.avatar_url} size={40} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold">{ch.name}</div>
-                        <div className="truncate text-xs text-muted-foreground">{ch.persona ? ch.persona.slice(0, 42) : `@${ch.username}`}</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`truncate text-sm ${ch.unread > 0 ? "font-black" : "font-semibold"}`}>{ch.name}</span>
+                          {ch.last_message?.created_at && (
+                            <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(ch.last_message.created_at)}</span>
+                          )}
+                        </div>
+                        <div className={`truncate text-xs ${ch.unread > 0 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                          {ch.last_message
+                            ? `${ch.last_message.role === "ai" ? "" : "You: "}${ch.last_message.text}`
+                            : (ch.persona ? ch.persona.slice(0, 42) : `@${ch.username}`)}
+                        </div>
                       </div>
+                      {ch.unread > 0 && convId !== `ai_${ch.id}` && (
+                        <span className="absolute right-9 top-1/2 -translate-y-1/2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-black text-primary-foreground" data-testid={`aichar-unread-${ch.id}`}>
+                          {ch.unread}
+                        </span>
+                      )}
                     </button>
                     <button onClick={() => setCharForm(ch)} title="Edit" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary group-hover/char:opacity-100" data-testid={`edit-aichar-${ch.id}`}>
                       <SettingsIcon size={14} />

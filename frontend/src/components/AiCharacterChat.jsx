@@ -72,12 +72,23 @@ export function AiCharacterChat({ characterId, onBack }) {
     setText("");
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", text: draft, created_at: new Date().toISOString() }]);
     setSending(true);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     try {
-      const r = await api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() });
+      // Feel human: a short "noticing" pause (sometimes they're AFK), then a typing
+      // delay roughly proportional to how long the reply is — so it never snaps back instantly.
+      let seenPause = 300 + Math.random() * 1500;          // 0.3–1.8s before typing starts
+      if (Math.random() < 0.15) seenPause += 2000 + Math.random() * 4000; // ~15% of the time they were away
+      const [r] = await Promise.all([
+        api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() }),
+        sleep(seenPause),
+      ]);
+      const replyLen = (r.message?.text || "").length;
+      await sleep(Math.min(5000, 800 + replyLen * 30) + Math.random() * 600); // typing time
       setMessages((m) => [...m, r.message]);
       // Texting is silent — voice only plays during a call.
     } catch (err) {
-      toast.error(err.message || "Character couldn't respond");
+      // Keep the user's message on screen; just surface the failure so nothing "disappears".
+      toast.error(err.message || `${character.name} couldn't respond — try again`);
     } finally {
       setSending(false);
     }
@@ -144,9 +155,13 @@ export function AiCharacterChat({ characterId, onBack }) {
           })
         )}
         {sending && (
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2" data-testid="aichar-typing">
             <Avatar src={character.avatar_url} size={28} />
-            <div className="rounded-2xl bg-secondary px-3 py-2 text-sm text-muted-foreground">{character.name} is typing…</div>
+            <div className="flex items-center gap-1 rounded-2xl bg-secondary px-3.5 py-3">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
+            </div>
           </div>
         )}
       </div>
