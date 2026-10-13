@@ -25,6 +25,13 @@ import settings_store
 TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
 TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for the account/voice
 
+# Proactive "human-like" texting: characters reach out on their own based on their
+# personality + the conversation. Guards keep it believable (not spammy).
+PROACTIVE_TICK_SEC = 900        # evaluate every 15 min
+PROACTIVE_MIN_IDLE_MIN = 90     # only consider reaching out after this much silence
+PROACTIVE_MIN_GAP_MIN = 180     # re-evaluate a thread at most once per 3h (caps LLM cost + spam)
+PROACTIVE_MAX_UNANSWERED = 3    # stop texting after this many ignored check-ins (until they reply)
+
 # Emotion / non-verbal cues the character may embed in replies; performed by eleven_v3
 # and stripped from the text shown on screen.
 AUDIO_TAG_RE = re.compile(r"\[[a-zA-Z][a-zA-Z '\-]{0,24}\]")
@@ -271,9 +278,11 @@ def build_router(ctx) -> APIRouter:
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
             # Lower stability + higher style = more emotional, spontaneous delivery (laughs/breathing).
+            # Faithful to the pasted voice, NO added accent/theatrical drift:
+            # max similarity to the source voice + zero style keeps delivery neutral.
             stream = client.text_to_speech.convert(
                 text=text, voice_id=voice_id, model_id=model_id, output_format="mp3_44100_128",
-                voice_settings=VoiceSettings(stability=0.4, similarity_boost=0.8, style=0.5, use_speaker_boost=True),
+                voice_settings=VoiceSettings(stability=0.5, similarity_boost=1.0, style=0.0, use_speaker_boost=True),
             )
             return b"".join(stream)
 
@@ -398,8 +407,8 @@ def build_router(ctx) -> APIRouter:
             logger.warning(f"ai-char reply error: {e}")
             raise HTTPException(502, f"{c['name']} is having trouble responding right now")
         msg = await _store(char_id, current["id"], "ai", _strip_tags(reply))
-        audio = await _tts(c, reply)
-        return {"message": _msg_out(msg), "audio_url": audio}
+        # Texting is silent by design — voice only plays during a call (/voice-turn).
+        return {"message": _msg_out(msg), "audio_url": None}
 
     @router.post("/api/ai-characters/{char_id}/voice-turn")
     async def voice_turn(char_id: str, body: VoiceTurnBody, current: Annotated[dict, Depends(get_current_user)]):
@@ -451,4 +460,120 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(502, "Couldn't understand the audio")
         return {"text": (text or "").strip()}
 
+    # ---------- Proactive human-like texting (#4) ----------
+    async def _coerce_dt(v):
+        if isinstance(v, str):
+            try:
+                v = datetime.fromisoformat(v)
+            except Exception:
+                return None
+        if isinstance(v, datetime) and v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v if isinstance(v, datetime) else None
+
+    async def _proactive_decide(c: dict, transcript: str, idle_min: int, unanswered: int):
+        """Ask the character (in-character) whether a real person with their personality
+        would text right now, and if so what they'd say. Returns (should_send, message)."""
+        import json
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        sys = _system(c, spoken=False)
+        sys += (
+            "\n\nRIGHT NOW you are deciding whether to TEXT this person on your own — unprompted — because "
+            "time has passed since you last talked. Behave EXACTLY like a real person with YOUR personality and "
+            "YOUR genuine feelings about them would:\n"
+            "- Warm / affectionate / attached: you reach out sooner — check in, say you were thinking of them, "
+            "ask how they're doing, maybe reference something from your chats.\n"
+            "- Cold / distant / annoyed / hostile: you rarely text first, and if you do it's short, blunt, or "
+            "aloof — or you simply don't reach out at all.\n"
+            "- Decide from the ACTUAL conversation and how you feel about them, never a fixed schedule. If nothing "
+            "genuine prompts you, don't text.\n"
+            f"- It's been about {idle_min} minutes of silence. You've already sent {unanswered} check-in(s) they "
+            "haven't answered — if that's a few and they keep ignoring you, a real person would give them space "
+            "and NOT keep texting (unless being clingy is truly your character).\n"
+            "Reply with STRICT JSON and nothing else: {\"text\": true|false, \"message\": \"...\"}. "
+            "If you wouldn't reach out, return {\"text\": false, \"message\": \"\"}. The message is a single, "
+            "natural text of 1-2 sentences — no markdown, no surrounding quotes, in your voice."
+        )
+        chat = LlmChat(
+            api_key=settings_store.get("EMERGENT_LLM_KEY"),
+            session_id=f"aichar-proactive-{c['id']}",
+            system_message=sys,
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "You two haven't talked in a while.\n\n") + "Decide now."
+        resp = await chat.send_message(UserMessage(text=prompt))
+        raw = (resp or "").strip()
+        try:
+            data = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
+            return bool(data.get("text")), _strip_tags(str(data.get("message") or "")).strip()
+        except Exception:
+            return False, ""
+
+    async def _proactive_once():
+        now = datetime.now(timezone.utc)
+        chars = await db.ai_characters.find({}).to_list(500)
+        for c in chars:
+            admin_ids = await db.ai_char_messages.distinct("admin_id", {"character_id": c["id"]})
+            for admin_id in admin_ids:
+                try:
+                    last = await db.ai_char_messages.find_one(
+                        {"character_id": c["id"], "admin_id": admin_id}, sort=[("created_at", -1)])
+                    if not last:
+                        continue
+                    state = await db.ai_char_state.find_one({"character_id": c["id"], "admin_id": admin_id}) or {}
+                    unanswered = int(state.get("unanswered", 0) or 0)
+                    # user replied since our last check-in → reset the ignore counter
+                    if last.get("role") == "user" and unanswered:
+                        await db.ai_char_state.update_one(
+                            {"character_id": c["id"], "admin_id": admin_id},
+                            {"$set": {"unanswered": 0}}, upsert=True)
+                        unanswered = 0
+                    last_at = await _coerce_dt(last.get("created_at"))
+                    if not last_at:
+                        continue
+                    idle_min = (now - last_at).total_seconds() / 60
+                    if idle_min < PROACTIVE_MIN_IDLE_MIN:
+                        continue
+                    # evaluate a thread at most once per gap (caps LLM cost whether or not we send)
+                    last_eval = await _coerce_dt(state.get("last_checked_at") or state.get("last_proactive_at"))
+                    if last_eval and (now - last_eval).total_seconds() / 60 < PROACTIVE_MIN_GAP_MIN:
+                        continue
+                    if unanswered >= PROACTIVE_MAX_UNANSWERED:
+                        await db.ai_char_state.update_one(
+                            {"character_id": c["id"], "admin_id": admin_id},
+                            {"$set": {"last_checked_at": now}}, upsert=True)
+                        continue
+                    hist = await db.ai_char_messages.find(
+                        {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
+                    ).sort("created_at", -1).limit(30).to_list(30)
+                    hist.reverse()
+                    transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
+                    should, message = await _proactive_decide(c, transcript, int(idle_min), unanswered)
+                    if not should or not message:
+                        await db.ai_char_state.update_one(
+                            {"character_id": c["id"], "admin_id": admin_id},
+                            {"$set": {"last_checked_at": now}}, upsert=True)
+                        continue
+                    await _store(c["id"], admin_id, "ai", message)
+                    await db.ai_char_state.update_one(
+                        {"character_id": c["id"], "admin_id": admin_id},
+                        {"$set": {"last_proactive_at": now, "last_checked_at": now}, "$inc": {"unanswered": 1}},
+                        upsert=True)
+                    try:
+                        await send_web_push(admin_id, c["name"], message, url=f"/messages/ai_{c['id']}")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    logger.warning(f"ai-char proactive error {c.get('id')}/{admin_id}: {e}")
+
+    async def proactive_loop():
+        await asyncio.sleep(60)  # let the app finish booting
+        while True:
+            try:
+                if settings_store.get("EMERGENT_LLM_KEY"):
+                    await _proactive_once()
+            except Exception as e:
+                logger.warning(f"ai-char proactive_loop error: {e}")
+            await asyncio.sleep(PROACTIVE_TICK_SEC)
+
+    router.proactive_loop = proactive_loop
     return router

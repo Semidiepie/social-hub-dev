@@ -3350,7 +3350,8 @@ from routes.wallet import build_router as _build_wallet  # noqa: E402
 app.include_router(_build_wallet(route_ctx))
 
 from routes.ai_characters import build_router as _build_ai_characters  # noqa: E402
-app.include_router(_build_ai_characters(route_ctx))
+_ai_char_router = _build_ai_characters(route_ctx)
+app.include_router(_ai_char_router)
 
 from routes.social import build_router as _build_social  # noqa: E402
 app.include_router(_build_social(route_ctx))
@@ -3371,6 +3372,12 @@ async def _load_api_key_overrides():
 async def _start_pet_reminders():
     import asyncio
     asyncio.create_task(_pets_router.pet_reminder_loop())
+
+
+@app.on_event("startup")
+async def _start_ai_char_proactive():
+    import asyncio
+    asyncio.create_task(_ai_char_router.proactive_loop())
 
 
 @app.on_event("startup")

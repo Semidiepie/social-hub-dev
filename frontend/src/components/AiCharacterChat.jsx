@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Volume2, VolumeX, Trash2, Brain } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Square, Volume2, VolumeX, Trash2, Brain } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -65,17 +65,6 @@ export function AiCharacterChat({ characterId, onBack }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages, sending]);
 
-  const playReply = (url) => {
-    if (!url) return;
-    try {
-      if (!window.__aiAudioEl) window.__aiAudioEl = new Audio();
-      const a = window.__aiAudioEl;
-      a.src = url;
-      a.muted = false;
-      a.play().catch(() => {});
-    } catch { /* noop */ }
-  };
-
   const send = async (e) => {
     e.preventDefault();
     if (!text.trim() || sending) return;
@@ -86,7 +75,7 @@ export function AiCharacterChat({ characterId, onBack }) {
     try {
       const r = await api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() });
       setMessages((m) => [...m, r.message]);
-      playReply(r.audio_url);
+      // Texting is silent — voice only plays during a call.
     } catch (err) {
       toast.error(err.message || "Character couldn't respond");
     } finally {
@@ -175,10 +164,11 @@ export function AiCharacterChat({ characterId, onBack }) {
   );
 }
 
-// Hands-free voice call: greeting → auto-listen with silence detection (VAD) →
-// transcribe → character replies with voice → auto-listen again.
+// Push-to-talk voice call (same UX as Sage): greeting → tap mic to talk → tap to
+// send → character replies with voice. No auto-listen (VAD). Plays via Web Audio
+// so the in-call volume slider works on iOS too.
 function CharacterCall({ character, onEnd }) {
-  const [status, setStatus] = useState("connecting"); // connecting | listening | thinking | speaking
+  const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
   const [caption, setCaption] = useState("");
   const [speaker, setSpeaker] = useState(true);
   const [volume, setVolume] = useState(() => {
@@ -197,41 +187,25 @@ function CharacterCall({ character, onEnd }) {
   const speakerRef = useRef(true);
   speakerRef.current = speaker;
   const acRef = useRef(null);
-  const analyserRef = useRef(null);
-  const srcRef = useRef(null);
-  const vadRef = useRef(null);
-
-  const cleanupMic = () => {
-    try { if (vadRef.current) cancelAnimationFrame(vadRef.current); } catch { /* noop */ }
-    vadRef.current = null;
-    try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
-    recorderRef.current = null;
-    try { srcRef.current?.disconnect(); } catch { /* noop */ }
-    srcRef.current = null;
-    analyserRef.current = null;
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    try { acRef.current?.close(); } catch { /* noop */ }
-    acRef.current = null;
-  };
 
   const ensureAC = () => {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!acRef.current || acRef.current.state === "closed") { acRef.current = new AC(); analyserRef.current = null; srcRef.current = null; }
+    if (!acRef.current || acRef.current.state === "closed") acRef.current = new AC();
     return acRef.current;
   };
+  const stopTracks = () => {
+    try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch { /* noop */ }
+    streamRef.current = null;
+  };
 
-  // Play her voice through the Web Audio API with a GainNode. iOS Safari ignores
-  // <audio>.volume (so it always blasts), but it DOES respect Web Audio gain — so the
-  // in-call volume slider actually controls loudness on every device. The mic track is
-  // muted (not released) during playback, so there's no repeat permission prompt.
+  // Play the reply through a GainNode so the volume slider actually controls
+  // loudness on iOS Safari (which ignores <audio>.volume).
   const playAudio = useCallback((url) => new Promise((resolve) => {
     if (!url) return resolve();
     let done = false; let watchdog;
     const finish = () => { if (done) return; done = true; clearTimeout(watchdog); resolve(); };
     (async () => {
       try {
-        try { streamRef.current?.getAudioTracks().forEach((t) => { t.enabled = false; }); } catch { /* noop */ }
         const ac = ensureAC();
         if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
         const buf = await (await fetch(url)).arrayBuffer();
@@ -247,19 +221,15 @@ function CharacterCall({ character, onEnd }) {
         src.onended = finish;
         watchdog = setTimeout(finish, 20000);
         src.start();
-      } catch {
-        finish();
-      }
+      } catch { finish(); }
     })();
   }), []);
 
-  // Record with voice-activity detection: auto-stop ~1.1s after the user stops speaking.
-  const listen = useCallback(async () => {
+  const startRecording = async () => {
     if (endedRef.current) return;
     try {
-      const stream = streamRef.current || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       streamRef.current = stream;
-      try { stream.getAudioTracks().forEach((t) => { t.enabled = true; }); } catch { /* noop */ }
       let mime = "";
       for (const m of ["audio/webm", "audio/mp4", "audio/ogg"]) {
         if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
@@ -269,58 +239,22 @@ function CharacterCall({ character, onEnd }) {
       chunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
       rec.start();
-      setStatus("listening");
-
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!acRef.current || acRef.current.state === "closed") { acRef.current = new AC(); analyserRef.current = null; srcRef.current = null; }
-      const ac = acRef.current;
-      if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
-      if (!analyserRef.current) {
-        const src = ac.createMediaStreamSource(stream);
-        const analyser = ac.createAnalyser();
-        analyser.fftSize = 2048;
-        src.connect(analyser);
-        srcRef.current = src;
-        analyserRef.current = analyser;
-      }
-      const analyser = analyserRef.current;
-      const buf = new Uint8Array(analyser.fftSize);
-      const started = Date.now();
-      let hasSpoken = false, silenceStart = 0, frames = 0, noiseFloor = 0.01;
-      const SILENCE_MS = 1000, MAX_MS = 15000;
-
-      const tick = () => {
-        if (endedRef.current || recorderRef.current !== rec) return;
-        analyser.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
-        const rms = Math.sqrt(sum / buf.length);
-        const now = Date.now();
-        frames++;
-        if (frames <= 10) { noiseFloor = Math.max(noiseFloor, rms); vadRef.current = requestAnimationFrame(tick); return; }
-        const thresh = Math.min(0.06, noiseFloor * 2.2 + 0.012);
-        if (rms > thresh) { hasSpoken = true; silenceStart = 0; }
-        else if (hasSpoken && !silenceStart) { silenceStart = now; }
-        const doneSpeaking = hasSpoken && silenceStart && now - silenceStart > SILENCE_MS;
-        if (doneSpeaking || now - started > MAX_MS) { stopAndSend(); return; }
-        vadRef.current = requestAnimationFrame(tick);
-      };
-      vadRef.current = requestAnimationFrame(tick);
+      setStatus("recording");
     } catch {
-      if (!endedRef.current) { toast.error("Mic blocked — allow microphone access. If you're in the embedded preview, open the preview in its own browser tab."); onEnd(); }
+      toast.error("Mic blocked — allow microphone access. If you're in the embedded preview, open the preview in its own browser tab.");
     }
-  }, [onEnd]);
+  };
 
-  const stopAndSend = useCallback(async () => {
+  const stopRecordingAndSend = async () => {
     const rec = recorderRef.current;
     if (!rec) return;
     recorderRef.current = null;
-    if (vadRef.current) { cancelAnimationFrame(vadRef.current); vadRef.current = null; }
     setStatus("thinking");
     const done = new Promise((res) => { rec.onstop = res; });
     try { rec.stop(); } catch { /* noop */ }
     await done;
     const type = rec.mimeType || "audio/webm";
+    stopTracks();
     const blob = new Blob(chunksRef.current, { type });
     try {
       const fd = new FormData();
@@ -332,17 +266,17 @@ function CharacterCall({ character, onEnd }) {
       if (!sttRes.ok) throw new Error("stt");
       const { text } = await sttRes.json();
       if (endedRef.current) return;
-      if (!text) { listen(); return; } // heard nothing — keep listening
+      if (!text) { toast("I didn't catch that — tap the mic and try again"); setStatus("idle"); return; }
       setCaption(text);
       const r = await api.post(`/ai-characters/${character.id}/voice-turn`, { text, ...gatherContext() });
       if (endedRef.current) return;
       setCaption(r.reply);
       await playAudio(r.audio_url);
-      if (!endedRef.current) listen(); // loop
+      if (!endedRef.current) setStatus("idle");
     } catch {
-      if (!endedRef.current) { toast.error("Trouble hearing you — let's try again"); listen(); }
+      if (!endedRef.current) { toast.error("Trouble hearing you — let's try again"); setStatus("idle"); }
     }
-  }, [character.id, listen, playAudio]);
+  };
 
   useEffect(() => {
     endedRef.current = false;
@@ -353,15 +287,28 @@ function CharacterCall({ character, onEnd }) {
         if (endedRef.current) return;
         setCaption(r.reply);
         await playAudio(r.audio_url);
-        if (!endedRef.current) listen();
+        if (!endedRef.current) setStatus("idle");
       } catch {
         if (!endedRef.current) { toast.error("Couldn't start the voice call"); onEnd(); }
       }
     })();
-    return () => { endedRef.current = true; try { srcNodeRef.current?.stop(); } catch { /* noop */ } cleanupMic(); };
+    return () => {
+      endedRef.current = true;
+      try { srcNodeRef.current?.stop(); } catch { /* noop */ }
+      try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
+      stopTracks();
+      try { acRef.current?.close(); } catch { /* noop */ }
+    };
   }, []);
 
-  const hangUp = () => { endedRef.current = true; try { srcNodeRef.current?.stop(); } catch { /* noop */ } cleanupMic(); onEnd(); };
+  const hangUp = () => {
+    endedRef.current = true;
+    try { srcNodeRef.current?.stop(); } catch { /* noop */ }
+    try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
+    stopTracks();
+    try { acRef.current?.close(); } catch { /* noop */ }
+    onEnd();
+  };
   const toggleSpeaker = () => { const next = !speaker; setSpeaker(next); if (gainRef.current) gainRef.current.gain.value = next ? volumeRef.current : 0; };
   const changeVolume = (v) => {
     setVolume(v);
@@ -369,12 +316,17 @@ function CharacterCall({ character, onEnd }) {
     if (gainRef.current) gainRef.current.gain.value = speakerRef.current ? v : 0;
   };
 
-  const statusText = { connecting: "Connecting…", listening: "Listening… just talk", thinking: `${character.name} is thinking…`, speaking: `${character.name} is speaking…` }[status];
+  const recording = status === "recording";
+  const busy = status === "connecting" || status === "thinking" || status === "speaking";
+  const statusText = {
+    connecting: "Connecting…", idle: "Tap the mic and talk",
+    recording: "Listening… tap to send", thinking: `${character.name} is thinking…`, speaking: `${character.name} is speaking…`,
+  }[status];
 
   return (
     <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-neutral-950 px-6 text-center" style={{ height: "100dvh" }} data-testid="aichar-call-screen">
-      <div className={`relative flex h-44 w-44 items-center justify-center rounded-full ${status === "speaking" || status === "listening" ? "animate-pulse" : ""}`}>
-        <div className={`absolute inset-0 rounded-full blur-xl transition-colors ${status === "speaking" ? "bg-green-400/30" : status === "listening" ? "bg-primary/40" : "bg-white/10"}`} />
+      <div className={`relative flex h-44 w-44 items-center justify-center rounded-full ${status === "speaking" ? "animate-pulse" : ""}`}>
+        <div className={`absolute inset-0 rounded-full blur-xl transition-colors ${status === "speaking" ? "bg-green-400/30" : recording ? "bg-primary/40" : "bg-white/10"}`} />
         <Avatar src={character.avatar_url} size={150} />
       </div>
       <div className="mt-6 flex items-center justify-center gap-1 text-2xl font-black text-white">{character.name}</div>
@@ -383,13 +335,12 @@ function CharacterCall({ character, onEnd }) {
 
       <div className="mt-10 flex items-center gap-6">
         <button
-          onClick={() => { if (status === "listening") stopAndSend(); }}
-          disabled={status !== "listening"}
-          className={`flex h-20 w-20 items-center justify-center rounded-full ${status === "listening" ? "bg-primary text-white" : "bg-white/10 text-white/70"}`}
-          title="Tap when you're done talking"
-          data-testid="aichar-send-turn"
+          onClick={recording ? stopRecordingAndSend : startRecording}
+          disabled={busy}
+          className={`flex h-20 w-20 items-center justify-center rounded-full transition-colors ${recording ? "bg-white text-black" : "bg-primary text-white"} disabled:opacity-40`}
+          data-testid="aichar-mic-btn"
         >
-          <Mic size={30} />
+          {recording ? <Square size={26} /> : <Mic size={30} />}
         </button>
         <button onClick={toggleSpeaker} className={`flex h-14 w-14 items-center justify-center rounded-full ${speaker ? "bg-green-500 text-white" : "bg-white/15 text-white"}`} title={speaker ? "Speaker on" : "Speaker off"} data-testid="aichar-speaker-toggle">
           {speaker ? <Volume2 size={22} /> : <VolumeX size={22} />}
@@ -411,7 +362,7 @@ function CharacterCall({ character, onEnd }) {
       <button onClick={hangUp} className="mt-10 flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white" data-testid="aichar-hangup">
         <PhoneOff size={24} />
       </button>
-      <p className="mt-6 max-w-xs text-[11px] text-white/40">Just talk — it replies when you pause. If it does not catch you, tap the mic when finished.</p>
+      <p className="mt-6 max-w-xs text-[11px] text-white/40">Tap the mic to talk, tap again to send.</p>
     </div>
   );
 }
