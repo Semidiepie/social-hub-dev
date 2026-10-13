@@ -46,7 +46,8 @@ export function AiCharacterChat({ characterId, onBack }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
+  const [phase, setPhase] = useState("idle"); // idle | thinking | typing
+  const busy = phase !== "idle";
   const [inCall, setInCall] = useState(false);
   const listRef = useRef(null);
 
@@ -63,34 +64,35 @@ export function AiCharacterChat({ characterId, onBack }) {
   }, [characterId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages, sending]);
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages, phase]);
 
   const send = async (e) => {
     e.preventDefault();
-    if (!text.trim() || sending) return;
+    if (!text.trim() || busy) return;
     const draft = text.trim();
     setText("");
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", text: draft, created_at: new Date().toISOString() }]);
-    setSending(true);
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // Phase 1 "thinking": NO typing indicator yet — breathing room while they read &
+    // decide, like a real person. Sometimes they're AFK and take a while.
+    setPhase("thinking");
     try {
-      // Feel human: a short "noticing" pause (sometimes they're AFK), then a typing
-      // delay roughly proportional to how long the reply is — so it never snaps back instantly.
-      let seenPause = 300 + Math.random() * 1500;          // 0.3–1.8s before typing starts
-      if (Math.random() < 0.15) seenPause += 2000 + Math.random() * 4000; // ~15% of the time they were away
-      const [r] = await Promise.all([
-        api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() }),
-        sleep(seenPause),
-      ]);
+      let think = 1300 + Math.random() * 2400;             // 1.3–3.7s of silence before typing
+      if (Math.random() < 0.18) think += 2500 + Math.random() * 5000; // ~18% they were away
+      const apiPromise = api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() });
+      await sleep(think);
+      // Phase 2 "typing": now the dots appear, for a length-proportional duration.
+      setPhase("typing");
+      const r = await apiPromise;
       const replyLen = (r.message?.text || "").length;
-      await sleep(Math.min(5000, 800 + replyLen * 30) + Math.random() * 600); // typing time
+      await sleep(Math.min(5000, 700 + replyLen * 28) + Math.random() * 500);
       setMessages((m) => [...m, r.message]);
       // Texting is silent — voice only plays during a call.
     } catch (err) {
       // Keep the user's message on screen; just surface the failure so nothing "disappears".
       toast.error(err.message || `${character.name} couldn't respond — try again`);
     } finally {
-      setSending(false);
+      setPhase("idle");
     }
   };
 
@@ -154,7 +156,7 @@ export function AiCharacterChat({ characterId, onBack }) {
             );
           })
         )}
-        {sending && (
+        {phase === "typing" && (
           <div className="flex items-end gap-2" data-testid="aichar-typing">
             <Avatar src={character.avatar_url} size={28} />
             <div className="flex items-center gap-1 rounded-2xl bg-secondary px-3.5 py-3">
@@ -169,8 +171,8 @@ export function AiCharacterChat({ characterId, onBack }) {
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${character.name}…`}
           className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="aichar-input" />
-        <Button type="submit" disabled={sending || !text.trim()} className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="aichar-send">
-          {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+        <Button type="submit" disabled={busy || !text.trim()} className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="aichar-send">
+          {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </Button>
       </form>
 
