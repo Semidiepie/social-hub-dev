@@ -430,6 +430,14 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(502, f"{c['name']} is having trouble responding right now")
         msg = await _store(char_id, current["id"], "ai", _strip_tags(reply))
         # Texting is silent by design — voice only plays during a call (/voice-turn).
+        # Fire a push so you're notified the character messaged even if you've closed
+        # the app. The service worker suppresses the banner when you're already in this
+        # chat (so active texting isn't spammed). No-op if push isn't enabled.
+        if send_web_push:
+            asyncio.create_task(send_web_push(
+                current["id"], c["name"], _strip_tags(reply)[:140],
+                url=f"/messages/ai_{char_id}", extra={"suppressIfFocused": True},
+            ))
         return {"message": _msg_out(msg), "audio_url": None}
 
     @router.post("/api/ai-characters/{char_id}/voice-turn")

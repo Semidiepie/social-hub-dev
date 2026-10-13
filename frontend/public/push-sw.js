@@ -16,7 +16,15 @@ self.addEventListener("push", (event) => {
     data: { url: data.url || "/notifications" },
     renotify: false,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    // Don't spam a banner when you're already looking at this exact chat.
+    if (data.suppressIfFocused && data.url) {
+      const wins = await clients.matchAll({ type: "window", includeUncontrolled: true });
+      const focusedHere = wins.some((w) => w.focused && w.url.indexOf(data.url) !== -1);
+      if (focusedHere) return;
+    }
+    await self.registration.showNotification(title, options);
+  })());
 });
 
 self.addEventListener("notificationclick", (event) => {

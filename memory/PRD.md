@@ -1,3 +1,11 @@
+## Enhancement — AI character reply push ("notified even if you close the app") (2026-06, web, admin-only)
+- **Reply completes server-side regardless of the client:** the reply is generated + stored inside `/api/ai-characters/{id}/send` before it returns (the typing delay is purely client-side), so closing the app never loses the reply — it's there on next open.
+- **Push on reply:** `/send` now fires a Web Push (`asyncio.create_task(send_web_push(..., extra={"suppressIfFocused": True}))`) so the admin is notified the character messaged even with the app closed. No-op if push isn't enabled.
+- **No spam while chatting:** extended `send_web_push` with an optional `extra` payload; `push-sw.js` now checks focused windows and SKIPS the banner when the admin is already focused on that exact chat (`/messages/ai_{id}`). Shows it otherwise (app closed/backgrounded/other page).
+- AGENT-TESTED: `/send` → 200, silent (audio_url null), reply generated, push task fired with no backend error. Push DELIVERY + SW focus-suppression not auto-verifiable (needs a real subscribed browser + focus states). The `push-sw.js` update reaches users on next load; production needs redeploy. NOT user-confirmed.
+- Note: a stale `TypeError: can't subtract offset-naive...` in logs is from the older games `/earn` path (pre-existing, earn verified working earlier this session) — unrelated to this change.
+
+
 ## Enhancement + fix — AI character typing delay + silent-text reliability (2026-06, web, admin-only)
 - **Human typing delay:** `AiCharacterChat.send()` now adds a variable, believable delay before the reply shows — a short "noticing" pause (0.3–1.8s, ~15% chance of a longer AFK pause +2–6s) run in parallel with the LLM call, then a length-proportional typing delay (≤~5s). The typing bubble is now animated dots.
 - **"Error + message deletes" on texting:** root cause was the OLD `/send` generating ElevenLabs voice for text replies (fixed earlier in #3 — text now never calls TTS, so a voice hiccup can't fail the text send). Frontend `send()` hardened: the user's message always stays on error + clearer toast. This fix is in preview; production needs a redeploy.

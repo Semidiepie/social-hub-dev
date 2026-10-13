@@ -477,7 +477,7 @@ def _web_push_send_sync(sub: dict, payload: str) -> Optional[int]:
         return getattr(getattr(exc, "response", None), "status_code", None) or 0
 
 
-async def send_web_push(user_id: str, title: str, body: str, url: str = "/notifications") -> None:
+async def send_web_push(user_id: str, title: str, body: str, url: str = "/notifications", extra: Optional[dict] = None) -> None:
     """Send a browser Web Push to every subscription the user registered. No-op when
     VAPID isn't configured. Prunes dead subscriptions (404/410). Never raises."""
     if not (_vapid_pem_path() and settings_store.get("VAPID_PUBLIC_KEY")):
@@ -489,7 +489,10 @@ async def send_web_push(user_id: str, title: str, body: str, url: str = "/notifi
         return
     if not subs:
         return
-    payload = _json.dumps({"title": title, "body": body, "url": url})
+    payload_obj = {"title": title, "body": body, "url": url}
+    if extra:
+        payload_obj.update(extra)
+    payload = _json.dumps(payload_obj)
     for sub in subs:
         try:
             status_code = await _asyncio.to_thread(_web_push_send_sync, sub, payload)
