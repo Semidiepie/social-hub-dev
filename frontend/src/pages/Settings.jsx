@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { uploadToCloudinary, cloudinaryAvailable } from "@/lib/cloudinary";
-import { enableBrowserPush, disableBrowserPush, isBrowserPushEnabled, pushSupported } from "@/lib/webpush";
+import { enableBrowserPush, disableBrowserPush, isBrowserPushEnabled } from "@/lib/webpush";
 import { Bell } from "lucide-react";
 
 export default function SettingsPage() {
@@ -417,15 +417,13 @@ export default function SettingsPage() {
           <div>
             <div className="font-semibold">Get notified of new activity</div>
             <p className="text-xs text-muted-foreground">
-              {pushSupported()
-                ? "Alerts show even when PostMePlex is closed. On iPhone, add PostMePlex to your Home Screen first."
-                : "This browser doesn't support push notifications."}
+              Alerts show even when PostMePlex is closed. On iPhone/iPad you must first add PostMePlex to your Home Screen (Share → Add to Home Screen) and open it from that icon.
             </p>
           </div>
           <Button
             type="button"
             variant={pushOn ? "outline" : "default"}
-            disabled={pushBusy || !pushSupported()}
+            disabled={pushBusy}
             onClick={toggleBrowserPush}
             className={`gap-2 ${pushOn ? "" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
             data-testid="settings-toggle-push"

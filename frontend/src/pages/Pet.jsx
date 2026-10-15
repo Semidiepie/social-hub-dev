@@ -165,9 +165,13 @@ export default function PetPage() {
   }, []);
 
   const enableReminders = async () => {
-    const ok = await enableBrowserPush();
-    setPushEnabled(ok);
-    toast[ok ? "success" : "error"](ok ? "Pet reminders on! 🔔" : "Enable notifications in your browser to get reminders.");
+    try {
+      const ok = await enableBrowserPush();
+      setPushEnabled(ok);
+      if (ok) toast.success("Pet reminders on! 🔔");
+    } catch (e) {
+      toast.error(e.message || "Couldn't enable notifications");
+    }
   };
 
   const petTap = (e) => {

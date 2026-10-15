@@ -40,20 +40,38 @@ export function isStandalone() {
 export function pushUnavailableReason() {
   if (typeof window === "undefined") return "unsupported";
   if (isIOS() && !isStandalone()) return "ios-install";
-  if (!pushSupported()) return "unsupported";
+  if (!pushSupported()) return isIOS() ? "ios-version" : "unsupported";
   return null;
+}
+
+function reasonMessage(reason) {
+  switch (reason) {
+    case "ios-install":
+      return "On iPhone/iPad, first add PostMePlex to your Home Screen (tap Share → Add to Home Screen), then open it from that icon and try again.";
+    case "ios-version":
+      return "Web notifications need iOS 16.4 or newer. Update your iPhone/iPad, then try again. (If you recently added it, remove the icon, re-add it, and reopen.)";
+    case "unsupported":
+      return "This browser doesn't support web notifications. Try Chrome, Edge, or Safari 16.4+.";
+    default:
+      return "Couldn't enable notifications — please try again.";
+  }
 }
 
 // Subscribe this browser to Web Push. Must be triggered from a user gesture on
 // first run (for the permission prompt). Returns true when subscribed.
 export async function enableBrowserPush() {
   const reason = pushUnavailableReason();
-  if (reason === "ios-install") {
-    throw new Error("On iPhone/iPad, first add PostMePlex to your Home Screen, then open it from that icon to turn on notifications.");
+  if (reason) throw new Error(reasonMessage(reason));
+  // iOS only prompts once; if it's stuck blocked, tapping again does nothing — guide a reset.
+  if (Notification.permission === "denied") {
+    throw new Error(
+      isIOS()
+        ? "Notifications are blocked. Remove PostMePlex from your Home Screen, re-add it (Share → Add to Home Screen), open it from that icon, then try again."
+        : "Notifications are blocked in your browser — enable them for this site in your browser settings, then retry."
+    );
   }
-  if (!pushSupported()) return false;
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return false;
+  const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+  if (permission !== "granted") throw new Error("Notification permission wasn't granted. Tap again and choose Allow.");
 
   // Never hang if the service worker never takes control (common on iOS Safari tabs).
   const registration = await Promise.race([
