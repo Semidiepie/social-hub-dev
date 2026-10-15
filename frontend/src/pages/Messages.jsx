@@ -313,6 +313,10 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
   const [yourName, setYourName] = useState(character?.your_name || "");
   const [nickname, setNickname] = useState(character?.nickname || "");
   const [relationship, setRelationship] = useState(character?.relationship || "");
+  const [age, setAge] = useState(character?.age ?? "");
+  const [affection, setAffection] = useState(character?.affection || "warm");
+  const [sleepStart, setSleepStart] = useState(character?.sleep_start ?? "");
+  const [sleepEnd, setSleepEnd] = useState(character?.sleep_end ?? "");
   const [memories, setMemories] = useState(character?.memories || []);
   const [newMem, setNewMem] = useState("");
   const [voice, setVoice] = useState(character?.voice_id || "");
@@ -350,7 +354,11 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
     if (!name.trim() || !username.trim() || !persona.trim()) return toast.error("Name, username and personality are required");
     setSaving(true);
     try {
-      const body = { name: name.trim(), username: username.trim(), persona: persona.trim(), voice: voice.trim(), avatar_url: avatarUrl, your_name: yourName.trim(), nickname: nickname.trim(), relationship: relationship.trim() };
+      const body = { name: name.trim(), username: username.trim(), persona: persona.trim(), voice: voice.trim(), avatar_url: avatarUrl, your_name: yourName.trim(), nickname: nickname.trim(), relationship: relationship.trim(),
+        age: age === "" ? null : parseInt(age, 10),
+        affection,
+        sleep_start: sleepStart === "" ? null : parseInt(sleepStart, 10),
+        sleep_end: sleepEnd === "" ? null : parseInt(sleepEnd, 10) };
       if (editing) await api.put(`/ai-characters/${character.id}`, body);
       else await api.post("/ai-characters", body);
       toast.success(editing ? "Character updated" : "Character created");
@@ -413,6 +421,37 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
 
         <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">How they know you</label>
         <textarea value={relationship} onChange={(e) => setRelationship(e.target.value)} maxLength={500} rows={2} placeholder="e.g. We've been best friends since college and talk every day." className="mt-1 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary" data-testid="aichar-relationship" />
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-muted-foreground">Age</label>
+            <input type="number" min={1} max={120} value={age} onChange={(e) => setAge(e.target.value)} placeholder="e.g. 9" className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-age" />
+            <p className="mt-1 text-[10px] text-muted-foreground">Shapes how they talk &amp; when they sleep.</p>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-muted-foreground">How they feel about you</label>
+            <select value={affection} onChange={(e) => setAffection(e.target.value)} className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-affection">
+              <option value="adores">Adores you (texts often)</option>
+              <option value="warm">Warm &amp; friendly</option>
+              <option value="neutral">Neutral</option>
+              <option value="distant">Distant</option>
+              <option value="dislikes">Dislikes you (rarely texts)</option>
+            </select>
+          </div>
+        </div>
+
+        <label className="mt-3 block text-[11px] font-bold uppercase text-muted-foreground">Sleep schedule (optional — leave blank for age-appropriate)</label>
+        <div className="mt-1 grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">Bed</span>
+            <input type="number" min={0} max={23} value={sleepStart} onChange={(e) => setSleepStart(e.target.value)} placeholder="e.g. 20" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-sleep-start" />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">Wake</span>
+            <input type="number" min={0} max={23} value={sleepEnd} onChange={(e) => setSleepEnd(e.target.value)} placeholder="e.g. 7" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" data-testid="aichar-sleep-end" />
+          </div>
+        </div>
+        <p className="mt-1 text-[10px] text-muted-foreground">24h hours. They won&apos;t text you while they&apos;re &quot;asleep&quot; — a 9-year-old who loves you will say goodnight before bed instead.</p>
 
         {editing ? (
           <div className="mt-3 rounded-xl border border-border p-2.5">

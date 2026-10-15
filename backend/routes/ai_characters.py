@@ -21,6 +21,29 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+try:
+    from zoneinfo import ZoneInfo
+except Exception:  # pragma: no cover
+    ZoneInfo = None
+
+
+def _local_now(tz: str):
+    """Current time in the user's IANA timezone, or None if unknown/invalid."""
+    if tz and ZoneInfo:
+        try:
+            return datetime.now(ZoneInfo(tz))
+        except Exception:
+            return None
+    return None
+
+
+def _next_local_hour_utc(local_now, target_hour: int):
+    """UTC datetime of the next time the user's local clock hits target_hour."""
+    target = local_now.replace(hour=target_hour, minute=random.randint(0, 30), second=0, microsecond=0)
+    if target <= local_now:
+        target += timedelta(days=1)
+    return target.astimezone(timezone.utc)
+
 import settings_store
 
 TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
@@ -91,6 +114,15 @@ def parse_voice_id(raw: str) -> str:
     return raw[:40]
 
 
+AFFECTION_LEVELS = {
+    "adores": "You adore them and are deeply attached — warm, affectionate and attentive. You hate going long without talking.",
+    "warm": "You like them and are friendly and warm. You enjoy talking with them.",
+    "neutral": "You're cordial but not especially warm — polite, measured.",
+    "distant": "You're somewhat distant and reserved with them. You rarely reach out first.",
+    "dislikes": "You don't particularly like them — curt, keep your distance, and almost never reach out first.",
+}
+
+
 class CreateCharacterBody(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     username: str = Field(min_length=1, max_length=30)
@@ -100,6 +132,42 @@ class CreateCharacterBody(BaseModel):
     your_name: str = Field(default="", max_length=60)      # the person's real name
     nickname: str = Field(default="", max_length=60)       # what the character calls them
     relationship: str = Field(default="", max_length=500)  # how they know each other
+    age: Optional[int] = Field(default=None, ge=1, le=120)  # drives age-appropriate talk + bedtime
+    affection: str = Field(default="warm", max_length=20)   # how much they like the user
+    sleep_start: Optional[int] = Field(default=None, ge=0, le=23)  # bedtime hour override (0-23)
+    sleep_end: Optional[int] = Field(default=None, ge=0, le=23)    # wake hour override (0-23)
+
+
+def _age_sleep_default(age: Optional[int]):
+    """A realistic (bedtime_hour, wake_hour) in local time for a given age."""
+    if age is None:
+        return (23, 7)
+    if age <= 5:
+        return (19, 7)
+    if age <= 12:
+        return (20, 7)
+    if age <= 17:
+        return (22, 7)
+    if age <= 25:
+        return (0, 8)
+    if age <= 64:
+        return (23, 7)
+    return (22, 6)
+
+
+def _sleep_window(c: dict):
+    start = c.get("sleep_start")
+    end = c.get("sleep_end")
+    d_start, d_end = _age_sleep_default(c.get("age"))
+    return (d_start if start is None else int(start), d_end if end is None else int(end))
+
+
+def _is_asleep(hour: int, start: int, end: int) -> bool:
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end  # window wraps past midnight
 
 
 class MemoryBody(BaseModel):
@@ -151,6 +219,10 @@ def build_router(ctx) -> APIRouter:
             "your_name": c.get("your_name", ""),
             "nickname": c.get("nickname", ""),
             "relationship": c.get("relationship", ""),
+            "age": c.get("age"),
+            "affection": c.get("affection", "warm"),
+            "sleep_start": c.get("sleep_start"),
+            "sleep_end": c.get("sleep_end"),
             "memories": c.get("memories", []),
             "voice_id": c.get("voice_id", ""),
             "voice_enabled": bool(c.get("voice_id") and settings_store.get("ELEVENLABS_API_KEY")),
@@ -201,6 +273,13 @@ def build_router(ctx) -> APIRouter:
             who.append(f'You affectionately call them "{c["nickname"]}" — use it naturally now and then.')
         if c.get("relationship"):
             who.append(f"How you two know each other: {c['relationship']}")
+        if c.get("age"):
+            age = int(c["age"])
+            who.append(f"You are {age} years old — talk, think, react and reference your daily life exactly like "
+                       f"someone that age would (vocabulary, interests, school/work, energy, bedtime).")
+        aff = AFFECTION_LEVELS.get(c.get("affection", "warm"))
+        if aff:
+            who.append(f"How you genuinely feel about them: {aff}")
         if who:
             base += "\nAbout the person you're talking to:\n" + "\n".join(who) + "\n"
         mems = [m.get("text", "") for m in c.get("memories", []) if m.get("text")]
@@ -357,6 +436,10 @@ def build_router(ctx) -> APIRouter:
             "your_name": body.your_name.strip(),
             "nickname": body.nickname.strip(),
             "relationship": body.relationship.strip(),
+            "age": body.age,
+            "affection": (body.affection or "warm").strip().lower(),
+            "sleep_start": body.sleep_start,
+            "sleep_end": body.sleep_end,
             "memories": [],
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
@@ -379,6 +462,10 @@ def build_router(ctx) -> APIRouter:
             "your_name": body.your_name.strip(),
             "nickname": body.nickname.strip(),
             "relationship": body.relationship.strip(),
+            "age": body.age,
+            "affection": (body.affection or "warm").strip().lower(),
+            "sleep_start": body.sleep_start,
+            "sleep_end": body.sleep_end,
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
         }
@@ -433,6 +520,10 @@ def build_router(ctx) -> APIRouter:
         _require_admin(current)
         c = await _get_char(char_id)
         await _store(char_id, current["id"], "user", body.text)
+        if body.tz:
+            await db.ai_char_state.update_one(
+                {"character_id": char_id, "admin_id": current["id"]},
+                {"$set": {"tz": body.tz}}, upsert=True)
         context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
         try:
             reply = await _reply(c, current["id"], body.text, spoken=False, context=context)
@@ -462,6 +553,10 @@ def build_router(ctx) -> APIRouter:
             if not body.text.strip():
                 raise HTTPException(400, "Nothing to respond to")
             await _store(char_id, current["id"], "user", body.text)
+            if body.tz:
+                await db.ai_char_state.update_one(
+                    {"character_id": char_id, "admin_id": current["id"]},
+                    {"$set": {"tz": body.tz}}, upsert=True)
             context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
             try:
                 spoken = await _reply(c, current["id"], body.text, spoken=True, context=context)
@@ -509,7 +604,7 @@ def build_router(ctx) -> APIRouter:
             v = v.replace(tzinfo=timezone.utc)
         return v if isinstance(v, datetime) else None
 
-    async def _proactive_decide(c: dict, transcript: str, idle_min: int, unanswered: int):
+    async def _proactive_decide(c: dict, transcript: str, idle_min: int, unanswered: int, time_ctx: str = ""):
         """Ask the character (in-character) whether a real person with their personality
         would text right now, what they'd say, AND when they'd naturally reach out next.
         Returns (should_send, message, next_hours)."""
@@ -518,18 +613,23 @@ def build_router(ctx) -> APIRouter:
         sys = _system(c, spoken=False)
         sys += (
             "\n\nRIGHT NOW you are deciding whether to TEXT this person on your own — unprompted — because "
-            "time has passed since you last talked. Behave EXACTLY like a real person with YOUR personality and "
-            "YOUR genuine feelings about them would:\n"
+            "time has passed since you last talked. Behave EXACTLY like a real person with YOUR personality, "
+            "YOUR age, and YOUR genuine feelings about them would. Weigh ALL of these together: your personality, "
+            "how much you like them, your age and daily routine, the current time of day for them, and what you "
+            "last talked about.\n"
             "- Deeply attached (a devoted parent, child, partner, best friend who adores them): you reach out "
             "OFTEN — you'd hate going a day without a word; check in, say you miss them, ask about their day, "
-            "reference your chats.\n"
+            "reference your chats. A child who loves them says goodnight before bed and good morning.\n"
             "- Friendly / normal: you reach out within a day or so.\n"
             "- Cold / distant / annoyed / dislikes them: you rarely text first, keep it short if you do — or you "
             "don't reach out at all.\n"
-            f"- It's been about {idle_min} minutes of silence. You've sent {unanswered} unanswered check-in(s); "
+            "- Respect your age's routine: a young kid is in bed early and texts around after-school/evening; a "
+            "teen or adult stays up later. NEVER text in the middle of your own sleeping hours.\n"
+            + (time_ctx + "\n" if time_ctx else "")
+            + f"- It's been about {idle_min} minutes of silence. You've sent {unanswered} unanswered check-in(s); "
             "if they keep ignoring you and that's not your nature, give them space.\n"
-            "ALSO decide when you'd naturally message again next, as a NUMBER OF HOURS: deeply attached ~2-8 "
-            "(even a few times a day), friendly ~12-24, distant ~24-72, cold/upset ~72-120.\n"
+            "ALSO decide when you'd naturally message again next, as a NUMBER OF HOURS from now: deeply attached "
+            "~2-8 (even a few times a day), friendly ~12-24, distant ~24-72, cold/upset ~72-120.\n"
             "Reply with STRICT JSON and nothing else: {\"text\": true|false, \"message\": \"...\", \"next_hours\": <number>}. "
             "If you wouldn't reach out now, still set text=false but give next_hours. The message is a single, "
             "natural text of 1-2 sentences — no markdown, no stage directions, no surrounding quotes, in your voice."
@@ -600,6 +700,23 @@ def build_router(ctx) -> APIRouter:
                     h *= 0.85 + random.random() * 0.3
                     return {"last_checked_at": now, "next_eval_at": now + timedelta(hours=h)}
 
+                # Age-appropriate realism: if it's currently the character's SLEEPING
+                # hours in the user's timezone, they're asleep — don't text. Recheck
+                # shortly after they'd wake up (so a kid never texts at 3am).
+                local_now = _local_now(state.get("tz"))
+                sleep_start, sleep_end = _sleep_window(c)
+                time_ctx = ""
+                if local_now is not None:
+                    lh = local_now.hour
+                    time_ctx = (f"- It is currently {local_now.strftime('%A %I:%M %p')} where they are. "
+                                f"Your usual bedtime is about {sleep_start:02d}:00 and you wake around {sleep_end:02d}:00.")
+                    if _is_asleep(lh, sleep_start, sleep_end):
+                        wake_utc = _next_local_hour_utc(local_now, sleep_end)
+                        await db.ai_char_state.update_one(
+                            {"character_id": c["id"], "admin_id": admin_id},
+                            {"$set": {"last_checked_at": now, "next_eval_at": wake_utc}}, upsert=True)
+                        continue
+
                 if unanswered >= PROACTIVE_MAX_UNANSWERED:
                     await db.ai_char_state.update_one(
                         {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule(72)}, upsert=True)
@@ -609,7 +726,7 @@ def build_router(ctx) -> APIRouter:
                 ).sort("created_at", -1).limit(30).to_list(30)
                 hist.reverse()
                 transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
-                should, message, next_hours = await _proactive_decide(c, transcript, int(idle_min), unanswered)
+                should, message, next_hours = await _proactive_decide(c, transcript, int(idle_min), unanswered, time_ctx)
                 if not should or not message:
                     # character chose not to reach out now — recheck at their own pace
                     await db.ai_char_state.update_one(
