@@ -539,6 +539,8 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   const [typingUsers, setTypingUsers] = useState([]);
   const lastTypingPing = useRef(0);
   const listRef = useRef(null);
+  const dmFileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
     if (!conv) return;
@@ -592,6 +594,29 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
       setText(draft);
     } finally {
       setSending(false);
+    }
+  };
+
+  const sendMedia = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !conv) return;
+    const isVideo = file.type.startsWith("video");
+    const maxMb = isVideo ? 1024 : 250;
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(`${isVideo ? "Video" : "Photo"} too large (max ${isVideo ? "1 GB" : "250 MB"}).`);
+      return;
+    }
+    setUploading(true);
+    try {
+      const up = await uploadToCloudinary(file, { resourceType: isVideo ? "video" : "image" });
+      const payload = isVideo ? { video_url: up.secure_url } : { image_url: up.secure_url };
+      const m = await api.post(`/conversations/${conv.id}/messages`, payload);
+      setMessages((prev) => [...prev, m]);
+    } catch (err) {
+      toast.error(err.message || "Couldn't send that");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -676,7 +701,9 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
                       {m.sender_verified && <BadgeCheck size={11} className={badgeCls({ remembering: m.sender_remembering }, "shrink-0")} style={badgeStyle({ verified_color: m.sender_verified_color })} />}
                     </div>
                   )}
-                  <div className="whitespace-pre-wrap">{m.text}</div>
+                  {m.image_url && <img src={m.image_url} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" data-testid="dm-msg-image" />}
+                  {m.video_url && <video src={m.video_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="dm-msg-video" />}
+                  {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
                   <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
                 </div>
               </div>
@@ -695,6 +722,11 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
+        <input ref={dmFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={sendMedia} data-testid="chat-file-input" />
+        <button type="button" onClick={() => dmFileRef.current?.click()} disabled={uploading} title="Send a photo or video"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="chat-attach">
+          {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={18} />}
+        </button>
         <input value={text} onChange={onType} placeholder="Type a message…"
           className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="chat-input" />
         <Button type="submit" disabled={sending || !text.trim()}

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Square, Volume2, VolumeX, Trash2, Brain } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Square, Volume2, VolumeX, Trash2, Brain, ImagePlus } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/lib/format";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import { toast } from "sonner";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -48,9 +49,11 @@ export function AiCharacterChat({ characterId, onBack }) {
   const [loading, setLoading] = useState(true);
   const [phase, setPhase] = useState("idle"); // idle | typing (brief flourish when a reply lands)
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const busy = sending;
   const [inCall, setInCall] = useState(false);
   const listRef = useRef(null);
+  const fileRef = useRef(null);
   const seenIds = useRef(new Set());
 
   const load = useCallback(async () => {
@@ -116,6 +119,33 @@ export function AiCharacterChat({ characterId, onBack }) {
     setTimeout(poll, 6000);
   };
 
+  const sendMedia = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const isVideo = file.type.startsWith("video");
+    const maxMb = isVideo ? 1024 : 250;
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(`${isVideo ? "Video" : "Photo"} too large (max ${isVideo ? "1 GB" : "250 MB"}).`);
+      return;
+    }
+    setUploading(true);
+    const localPreview = URL.createObjectURL(file);
+    const tmpId = `tmp-${Date.now()}`;
+    setMessages((m) => [...m, { id: tmpId, role: "user", text: "", media_url: localPreview, media_type: isVideo ? "video" : "image", created_at: new Date().toISOString() }]);
+    try {
+      const up = await uploadToCloudinary(file, { resourceType: isVideo ? "video" : "image" });
+      await api.post(`/ai-characters/${characterId}/send`, { text: "", media_url: up.secure_url, media_type: isVideo ? "video" : "image", ...gatherContext() });
+      setTimeout(poll, 2500);
+      setTimeout(poll, 6000);
+    } catch (err) {
+      setMessages((m) => m.filter((x) => x.id !== tmpId));
+      toast.error(err.message || "Couldn't send that — try again");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const clearThread = async () => {
     if (!window.confirm("Clear this conversation?")) return;
     try { await api.del(`/ai-characters/${characterId}/thread`); setMessages([]); toast.success("Cleared"); }
@@ -169,7 +199,13 @@ export function AiCharacterChat({ characterId, onBack }) {
               <div key={m.id} className={`flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
                 {!mine && <Avatar src={character.avatar_url} size={28} className="mb-4" />}
                 <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"}`} data-testid={`aichar-msg-${m.role}`}>
-                  <div className="whitespace-pre-wrap">{m.text}</div>
+                  {m.media_url && m.media_type === "image" && (
+                    <img src={m.media_url} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" data-testid="aichar-msg-image" />
+                  )}
+                  {m.media_url && m.media_type === "video" && (
+                    <video src={m.media_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="aichar-msg-video" />
+                  )}
+                  {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
                   <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
                 </div>
               </div>
@@ -189,6 +225,11 @@ export function AiCharacterChat({ characterId, onBack }) {
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
+        <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={sendMedia} data-testid="aichar-file-input" />
+        <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} title="Send a photo or video"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="aichar-attach">
+          {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={19} />}
+        </button>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${character.name}…`}
           className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="aichar-input" />
         <Button type="submit" disabled={busy || !text.trim()} className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="aichar-send">

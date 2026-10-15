@@ -28,6 +28,7 @@ class CreateConversationBody(BaseModel):
 class SendMessageBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     image_url: Optional[str] = None
+    video_url: Optional[str] = None
 
 
 class ReactionBody(BaseModel):
@@ -175,6 +176,7 @@ def build_router(ctx) -> APIRouter:
             if isinstance(m.get("created_at"), datetime):
                 m["created_at"] = m["created_at"].isoformat()
             m.setdefault("image_url", None)
+            m.setdefault("video_url", None)
             m.setdefault("reactions", [])
             m.setdefault("read_by", [])
             u = senders.get(m.get("sender_id"), {})
@@ -204,8 +206,8 @@ def build_router(ctx) -> APIRouter:
         c = await db.conversations.find_one({"id": conv_id})
         if not c or current["id"] not in c["member_ids"]:
             raise HTTPException(404, "Conversation not found")
-        if not body.text.strip() and not body.image_url:
-            raise HTTPException(400, "Message must have text or image")
+        if not body.text.strip() and not body.image_url and not body.video_url:
+            raise HTTPException(400, "Message must have text, a photo or a video")
         msg = {
             "id": str(uuid.uuid4()),
             "conversation_id": conv_id,
@@ -219,6 +221,7 @@ def build_router(ctx) -> APIRouter:
             "sender_frame": current.get("equipped_frame") if current.get("frame_enabled", True) else None,
             "text": body.text,
             "image_url": body.image_url,
+            "video_url": body.video_url,
             "reactions": [],
             "read_by": [current["id"]],
             "created_at": now(),
@@ -226,7 +229,7 @@ def build_router(ctx) -> APIRouter:
         await db.messages.insert_one(msg)
         msg.pop("_id", None)
         incs = {f"unread.{m}": 1 for m in c["member_ids"] if m != current["id"]}
-        preview = body.text[:200] if body.text.strip() else "📷 Photo"
+        preview = body.text[:200] if body.text.strip() else ("🎥 Video" if body.video_url else "📷 Photo")
         update_doc: dict = {
             "$set": {
                 "updated_at": now(),

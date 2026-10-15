@@ -1048,3 +1048,26 @@ NOT verified (needs prod/device): real iOS PWA push receipt; actual minutes-long
 - Fix: index.js registers the SW immediately when document.readyState==='complete' (else on load). enableBrowserPush now explicitly (re)registers via getActivePushRegistration(): getRegistration||register('/push-sw.js'), then waits for activation via statechange + navigator.serviceWorker.ready + a bounded 10s fallback, then subscribes with that registration. Clearer error if it truly never activates ("fully close & reopen from Home Screen").
 - Verified: /push-sw.js serves 200 application/javascript; Playwright confirmed SW registers & activates (active=true, pushManager=true, scope=/). lint clean.
 - Needs Publish/Redeploy. After redeploy on iOS, tapping Enable should register the SW and subscribe (push row then shows "Turn off").
+
+### 2026-10 — Photos & videos in chat (regular DMs + AI) with AI media analysis (preview)
+Backend:
+- ai_characters SendBody now accepts media_url + media_type ("image"|"video"); text optional (media-only allowed). _store/_msg_out carry media_url+media_type. /send stores media and defers reply as usual.
+- New _media_reply(): on a deferred reply, if the latest user message has media, analyze it with Gemini (gemini-2.5-flash) and reply in-character. Images fetched via _cloudinary_resized() (w_1280,q_auto,f_jpg) → ImageContent(base64); videos downloaded to a temp file → FileContentWithMimeType(mime via _video_mime) then removed. Wired into _replies_once (falls back to _reply for text-only).
+- messages.py SendMessageBody adds video_url; send_message accepts text/image/video, preview "🎥 Video"/"📷 Photo"; list_messages setdefaults video_url.
+Frontend:
+- AiCharacterChat: attach button (ImagePlus) + hidden file input (image/*,video/*), sendMedia() uploads via uploadToCloudinary (image/video resourceType) then POSTs media_url+media_type; optimistic bubble with local preview; renders <img>/<video> in bubbles. Limits 250MB image / 1GB video enforced client-side.
+- Messages.jsx DM thread: same attach button + sendMedia() posting image_url/video_url; renders <img>/<video> in bubbles.
+Verified: image analysis END-TO-END via live reply loop — sent Cloudinary sample.jpg, Nova (9yo) accurately replied "pink flowers... fuzzy little bumblebee" (real Gemini vision). Backend+frontend lint clean; webpack compiled. Test msgs cleaned.
+NOT live-tested: large video analysis (code path identical to image via Gemini FileContentWithMimeType; big clips are slow/costly). DM media UI not screenshot-verified (lint+compile only). Requires Publish/Redeploy. Cost: each AI media analysis is one Gemini call (video pricier).
+
+### 2026-06 — Media chat feature VERIFIED (testing agent iteration 56) + loop-safety fix
+- Testing agent (iteration 56) ran full web+backend coverage. ALL PASS:
+  - AI chat photo → image-aware Gemini reply ✅
+  - AI chat VIDEO → video-aware in-character reply ✅ (previously unverified; 574KB mp4 analyzed by gemini-2.5-flash)
+  - Regular DM image_url + video_url persist & render (dm-msg-image / dm-msg-video) ✅
+  - Oversize rejection toasts: 300MB photo → "max 250 MB"; 1.5GB video → "max 1 GB" ✅
+  - Empty send → 400 ✅
+  - pytest: /app/backend/tests/test_media_chat.py 5/5 passing. Nothing mocked (real Gemini+Claude).
+- BUG FIXED: _replies_once left pending_reply_at set when _media_reply raised (e.g. 403/expired media URL) → reply_loop re-matched the same state every 15s forever, burning Gemini quota. Now the except branch $unsets pending_reply_at+pending_from so a bad media URL can't infinite-loop (user just resends). lint clean.
+- STATUS: live in preview, testing-agent verified. Requires Publish/Redeploy for production.
+- Known deferred (non-blocking): ai_characters.py ~1250 lines (split recommended); AiCharacterChat.jsx temp-message dedupe compares exact text (duplicate sends may visually dedupe — minor UX). Mobile (Expo) does NOT have this media/AI-vision feature yet — web-only.

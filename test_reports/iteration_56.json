@@ -1,0 +1,41 @@
+{
+  "summary": "Verified AI-character media chat + regular-DM media + oversize rejection on web. 5/5 backend pytest cases pass (image-aware reply, video-aware reply, empty-send 400, DM image/video persist, DM empty 400). Frontend web verified: /messages lists AI chars, thread loads, composer renders all testids (aichar-attach, aichar-file-input, aichar-input, aichar-send), 300MB image → 'Photo too large (max 250 MB).' toast, 1.5GB video → 'Video too large (max 1 GB).' toast. Image AI reply correctly described the test photo (mentioned cat/feline features). Video AI reply via Gemini generated a non-trivial in-character response for a 574KB mp4.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai-characters/{id}/send (reply_loop)", "issue": "If _media_reply raises during async delivery (e.g. media_url returns 4xx/5xx or is unreachable), the state.pending_reply_at is NEVER unset — reply_loop retries every 15s FOREVER and burns Gemini quota. Observed in logs: repeated 'Client error 403 Forbidden for url ...' every 15s. Reproduced by posting /send with media_url=https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4 (egress-blocked here) → reply_loop looped indefinitely. Reference: /app/backend/routes/ai_characters.py:1177-1224 (_replies_once). Fix: in the except block, $unset pending_reply_at (or push it out several minutes) so it won't retry on every tick."}
+    ]
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_media_chat.py",
+    "/app/test_reports/pytest/iteration56_media_chat.xml"
+  ],
+  "action_items": [
+    "Harden routes/ai_characters.py::_replies_once: on exception during _media_reply (or _reply), $unset pending_reply_at or reschedule, so a bad media_url can't cause an infinite 15s retry loop."
+  ],
+  "critical_code_review_comments": [
+    "ai_characters.py:1177 _replies_once — exception path doesn't clear pending_reply_at, enabling infinite retry on any media/LLM failure. HIGH impact on quota and logs.",
+    "ai_characters.py is ~1240 lines — well over the 700-line guideline. Consider splitting into submodules (prompts, scheduling/anchors, proactive_loop, reply_loop, routes).",
+    "AiCharacterChat.jsx:88 — temp-message dedupe only compares exact text; a user who sends two identical messages while the first is pending may see one bubble disappear. Minor UX.",
+    "messages.py has no media-size validation on image_url/video_url (relies on frontend). Fine for Cloudinary URLs but should bound length."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_media_chat.py"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (composer + both oversize toasts)"},
+  "test_credentials": "Admin: semidiepie@gmail.com / Semi123! (also PIN 7455). Test users auto-purged on backend restart.",
+  "seed_data_creation": "Fixture-scoped: TEST_Pixie AI character created+deleted per test; two test_dm<ts>_<i> mutual-follow accounts (auto-purged by test_* prefix policy).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_media_chat.py uses httpx-blocked GCS URL avoided; use https://filesamples.com/samples/video/mp4/sample_640x360.mp4 for video (574KB, no redirect, egress OK) and the Unsplash cat photo for images. On image-aware reply assertion, Gemini sometimes answers with just 'cute' — keep the keyword list permissive. For the reply loop RCA fix verification, retry test_send_video_triggers_video_aware_reply with an intentionally-404 media_url and assert pending_reply_at is unset within ~30s.",
+  "rca of the issue": "Repro: POST /api/ai-characters/{id}/send with media_url pointing to a URL that returns non-200 (e.g. 403). _media_reply raises inside _replies_once, the surrounding try/except logs the warning but never un-sets pending_reply_at. Next tick (15s later) matches the same state again → infinite loop. Mitigation: in the except branch of _replies_once, add await db.ai_char_state.update_one({'_id': state['_id']}, {'$unset': {'pending_reply_at': '', 'pending_from': ''}})  OR push it forward (set pending_reply_at = now + 5 min) with a retry counter capped at ~3."
+}

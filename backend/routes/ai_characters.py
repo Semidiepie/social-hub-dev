@@ -360,12 +360,30 @@ def _reply_delay_seconds(affection):
     return random.randint(300, 600)
 
 
+def _cloudinary_resized(url: str) -> str:
+    """Cap an uploaded image to a sane size as JPEG for vision analysis (smaller payload)."""
+    if url and "/image/upload/" in url:
+        return url.replace("/image/upload/", "/image/upload/w_1280,h_1280,c_limit,q_auto,f_jpg/")
+    return url
+
+
+def _video_mime(url: str) -> str:
+    u = (url or "").lower()
+    for ext, mime in ((".webm", "video/webm"), (".mov", "video/quicktime"),
+                      (".m4v", "video/mp4"), (".avi", "video/x-msvideo"), (".mkv", "video/x-matroska")):
+        if ext in u:
+            return mime
+    return "video/mp4"
+
+
 class MemoryBody(BaseModel):
     text: str = Field(min_length=1, max_length=400)
 
 
 class SendBody(BaseModel):
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(default="", max_length=2000)
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None  # "image" | "video"
     local_time: str = Field(default="", max_length=80)   # time as shown on the user's device
     tz: str = Field(default="", max_length=60)
     lat: Optional[float] = None
@@ -557,6 +575,53 @@ def build_router(ctx) -> APIRouter:
         resp = await chat.send_message(UserMessage(text=prompt))
         return (resp or "").strip()
 
+    async def _media_reply(c: dict, admin_id: str, user_text: str, media_url: str,
+                           media_type: str, context: str = "") -> str:
+        """Look at a photo/video the user sent and reply in-character about it. Uses Gemini
+        (handles both images and video). Images are fetched resized; video to a temp file."""
+        import base64
+        import os
+        import tempfile
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent, FileContentWithMimeType
+        history = await db.ai_char_messages.find(
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
+        ).sort("created_at", -1).limit(20).to_list(20)
+        history.reverse()
+        transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in history if m.get("text"))
+        chat = LlmChat(
+            api_key=settings_store.get("EMERGENT_LLM_KEY"),
+            session_id=f"aichar-media-{c['id']}-{admin_id}",
+            system_message=_system(c, spoken=False, context=context),
+        ).with_model("gemini", "gemini-2.5-flash")
+        kind = "video" if media_type == "video" else "photo"
+        prompt = ((f"Recent conversation:\n{transcript}\n\n" if transcript else "")
+                  + (f'They just sent you a {kind} and said: "{user_text}"\n\n' if user_text.strip()
+                     else f"They just sent you a {kind} (no caption).\n\n")
+                  + f"Actually look at the {kind} and react naturally, warmly and in-character as {c['name']} — "
+                  + "comment on what you genuinely see in it. Keep it to a text message, no stage directions.")
+        tmp = None
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                if media_type == "video":
+                    rr = await client.get(media_url)
+                    rr.raise_for_status()
+                    fd, tmp = tempfile.mkstemp(suffix=os.path.splitext(media_url.split("?")[0])[1] or ".mp4")
+                    os.write(fd, rr.content)
+                    os.close(fd)
+                    files = [FileContentWithMimeType(file_path=tmp, mime_type=_video_mime(media_url))]
+                else:
+                    rr = await client.get(_cloudinary_resized(media_url))
+                    rr.raise_for_status()
+                    files = [ImageContent(image_base64=base64.b64encode(rr.content).decode())]
+            resp = await chat.send_message(UserMessage(text=prompt, file_contents=files))
+            return _strip_actions(_strip_tags((resp or "").strip()))
+        finally:
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+
     async def _tts(c: dict, text: str) -> Optional[str]:
         eleven_key = settings_store.get("ELEVENLABS_API_KEY")
         voice_id = c.get("voice_id")
@@ -588,14 +653,19 @@ def build_router(ctx) -> APIRouter:
                 return None
         return "data:audio/mpeg;base64," + base64.b64encode(audio).decode()
 
-    async def _store(char_id: str, admin_id: str, role: str, text: str) -> dict:
+    async def _store(char_id: str, admin_id: str, role: str, text: str,
+                     media_url: str = None, media_type: str = None) -> dict:
         doc = {"id": str(uuid.uuid4()), "character_id": char_id, "admin_id": admin_id,
                "role": role, "text": text, "created_at": _now()}
+        if media_url:
+            doc["media_url"] = media_url
+            doc["media_type"] = media_type
         await db.ai_char_messages.insert_one(doc)
         return doc
 
     def _msg_out(doc: dict) -> dict:
         return {"id": doc["id"], "role": doc["role"], "text": doc["text"],
+                "media_url": doc.get("media_url"), "media_type": doc.get("media_type"),
                 "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at")}
 
     # ---------- Character CRUD (admin) ----------
@@ -741,7 +811,10 @@ def build_router(ctx) -> APIRouter:
     async def send(char_id: str, body: SendBody, current: Annotated[dict, Depends(get_current_user)]):
         _require_admin(current)
         c = await _get_char(char_id)
-        await _store(char_id, current["id"], "user", body.text)
+        if not body.text.strip() and not body.media_url:
+            raise HTTPException(400, "Message must have text or a photo/video")
+        media_type = body.media_type if body.media_type in ("image", "video") else None
+        await _store(char_id, current["id"], "user", body.text, body.media_url, media_type)
         # Decide WHEN the character replies — like a real person: sometimes within seconds,
         # sometimes a few minutes. If they're busy on their schedule, they reply only once
         # free. The reply itself is generated + delivered later by the reply loop, which
@@ -1134,7 +1207,11 @@ def build_router(ctx) -> APIRouter:
                 context = ""
                 if schedule and local_now is not None:
                     context = _schedule_now_ctx(schedule, local_now)
-                reply = await _reply(c, admin_id, last.get("text", ""), spoken=False, context=context)
+                if last.get("media_url"):
+                    reply = await _media_reply(c, admin_id, last.get("text", ""),
+                                               last["media_url"], last.get("media_type"), context)
+                else:
+                    reply = await _reply(c, admin_id, last.get("text", ""), spoken=False, context=context)
                 clean = _strip_actions(_strip_tags(reply))
                 await _store(char_id, admin_id, "ai", clean)
                 await db.ai_char_state.update_one({"_id": state["_id"]}, {"$unset": {"pending_reply_at": "", "pending_from": ""}})
@@ -1145,6 +1222,15 @@ def build_router(ctx) -> APIRouter:
                     pass
             except Exception as e:
                 logger.warning(f"ai-char reply delivery error {char_id}/{admin_id}: {e}")
+                # Never leave pending_reply_at set on failure (e.g. a bad/expired media
+                # URL) — otherwise the loop re-matches this state every 15s forever and
+                # burns Gemini quota. Drop it so the user can simply resend.
+                try:
+                    await db.ai_char_state.update_one(
+                        {"_id": state["_id"]},
+                        {"$unset": {"pending_reply_at": "", "pending_from": ""}})
+                except Exception:
+                    pass
 
     async def reply_loop():
         await asyncio.sleep(15)
