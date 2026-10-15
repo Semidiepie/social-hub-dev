@@ -4,9 +4,9 @@ import "@/index.css";
 import App from "@/App";
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/push-sw.js").catch(() => {});
-  });
+  const registerSW = () => navigator.serviceWorker.register("/push-sw.js").catch(() => {});
+  if (document.readyState === "complete") registerSW();
+  else window.addEventListener("load", registerSW);
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));

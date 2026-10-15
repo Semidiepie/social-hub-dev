@@ -73,15 +73,15 @@ export async function enableBrowserPush() {
   const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Notification permission wasn't granted. Tap again and choose Allow.");
 
-  // Never hang if the service worker never takes control (common on iOS Safari tabs).
-  const registration = await Promise.race([
-    navigator.serviceWorker.ready,
-    new Promise((_, rej) => setTimeout(() => rej(new Error("Service worker didn't start — reload the page and try again.")), 8000)),
-  ]);
+  // Explicitly (re)register the push SW — on an installed iOS PWA the 'load'-time
+  // registration may have been missed, so serviceWorker.ready can hang forever. We
+  // register here and wait for it to actually activate.
+  const registration = await getActivePushRegistration();
+  if (!registration) throw new Error("Couldn't start the notifications service. Fully close the app, reopen it from the Home Screen, and try again.");
   let sub = await registration.pushManager.getSubscription();
   if (!sub) {
     const { publicKey } = await api.get("/push/vapid-public-key");
-    if (!publicKey) return false;
+    if (!publicKey) throw new Error("Notifications aren't configured on the server. Please try again later.");
     sub = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(publicKey),
@@ -89,6 +89,31 @@ export async function enableBrowserPush() {
   }
   await api.post("/push/web-subscribe", sub.toJSON());
   return true;
+}
+
+// Register /push-sw.js and resolve once it's active (with a bounded wait). Returns the
+// registration, or null if it never activates.
+async function getActivePushRegistration() {
+  let registration;
+  try {
+    registration =
+      (await navigator.serviceWorker.getRegistration("/push-sw.js")) ||
+      (await navigator.serviceWorker.register("/push-sw.js"));
+  } catch {
+    return null;
+  }
+  if (registration.active) return registration;
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, 10000);
+    const sw = registration.installing || registration.waiting;
+    if (sw) {
+      sw.addEventListener("statechange", () => {
+        if (sw.state === "activated") { clearTimeout(timer); resolve(); }
+      });
+    }
+    navigator.serviceWorker.ready.then(() => { clearTimeout(timer); resolve(); }).catch(() => {});
+  });
+  return (await navigator.serviceWorker.getRegistration("/push-sw.js")) || registration;
 }
 
 export async function disableBrowserPush() {

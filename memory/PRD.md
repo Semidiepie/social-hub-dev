@@ -1042,3 +1042,9 @@ NOT verified (needs prod/device): real iOS PWA push receipt; actual minutes-long
 - Settings card help text updated to iOS add-to-Home-Screen guidance.
 - After-school promise VERIFIED end-to-end in preview: with School 08:00-15:15 (busy) + affection adores + tz set + promised_at due, at 3:36pm NY the proactive loop sent "DAD I said I'd tell you the joke right about now…" and invoked push. "after school" parses to 3:15pm. So the behavior is correct in code — prior production failure was almost certainly pre-redeploy (or tz not yet captured on prod state).
 - These are preview-only; require Publish/Redeploy. After redeploy on iOS: tapping Enable will either work or show the exact reason (report it); user may need to remove+re-add the Home Screen icon if permission was previously denied.
+
+### 2026-10 — Fix "Service worker didn't start" on enable (iOS PWA) (preview)
+- The push SW (/push-sw.js) was registered only inside window 'load' in index.js; on an installed iOS PWA that event can fire before React mounts (or be missed), so navigator.serviceWorker.ready never resolved and enableBrowserPush timed out with "Service worker didn't start".
+- Fix: index.js registers the SW immediately when document.readyState==='complete' (else on load). enableBrowserPush now explicitly (re)registers via getActivePushRegistration(): getRegistration||register('/push-sw.js'), then waits for activation via statechange + navigator.serviceWorker.ready + a bounded 10s fallback, then subscribes with that registration. Clearer error if it truly never activates ("fully close & reopen from Home Screen").
+- Verified: /push-sw.js serves 200 application/javascript; Playwright confirmed SW registers & activates (active=true, pushManager=true, scope=/). lint clean.
+- Needs Publish/Redeploy. After redeploy on iOS, tapping Enable should register the SW and subscribe (push row then shows "Turn off").
