@@ -30,6 +30,19 @@ function primeGeo() {
   } catch { /* noop */ }
 }
 
+// If the user switched away (tab hidden) while the character was "typing", let them
+// know the reply landed. No banner while they're actually watching the chat.
+async function notifyReplyReady(name, body) {
+  try {
+    if (!("serviceWorker" in navigator) || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification(name || "PostMePlex", {
+      body: (body || "").slice(0, 140),
+      icon: "/logo-512.png", badge: "/favicon.png", tag: "postmeplex-activity",
+    });
+  } catch { /* noop */ }
+}
+
 function unlockAudio() {
   try {
     if (!window.__aiAudioEl) window.__aiAudioEl = new Audio();
@@ -87,6 +100,7 @@ export function AiCharacterChat({ characterId, onBack }) {
       const replyLen = (r.message?.text || "").length;
       await sleep(Math.min(5000, 700 + replyLen * 28) + Math.random() * 500);
       setMessages((m) => [...m, r.message]);
+      if (document.hidden) notifyReplyReady(character.name, r.message?.text);
       // Texting is silent — voice only plays during a call.
     } catch (err) {
       // Keep the user's message on screen; just surface the failure so nothing "disappears".

@@ -26,14 +26,14 @@ import settings_store
 TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
 TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for the account/voice
 
-# Proactive "human-like" texting: characters reach out on their own, rarely and
-# irregularly — like a real person. Most of the time they DON'T text; some go days.
+# Proactive "human-like" texting. Cadence is PERSONALITY-PACED: each character picks
+# its own next check-in time — someone attached texts within hours (even daily), a
+# distant/upset one waits days or doesn't reach out at all.
 PROACTIVE_TICK_SEC = 900          # scheduler wakes every 15 min
-PROACTIVE_MIN_IDLE_MIN = 180      # at least 3h of quiet before a character even considers reaching out
-PROACTIVE_NEXT_MIN_H = 8          # after each check, next consideration is a random 8h..72h away
-PROACTIVE_NEXT_MAX_H = 72         # → irregular cadence; some characters stay silent for days
-PROACTIVE_MOOD_SKIP = 0.45        # even when due, this chance they just "don't feel like it" (no LLM call)
-PROACTIVE_MAX_UNANSWERED = 2      # stop texting after this many ignored check-ins (until they reply)
+PROACTIVE_MIN_IDLE_MIN = 60       # at least 1h of quiet before a character considers reaching out
+PROACTIVE_NEXT_MIN_H = 1          # clamp the character's self-chosen next check-in (hours)
+PROACTIVE_NEXT_MAX_H = 120        # distant characters can go up to ~5 days
+PROACTIVE_MAX_UNANSWERED = 3      # stop texting after this many ignored check-ins (until they reply)
 
 # Emotion / non-verbal cues the character may embed in replies; performed by eleven_v3
 # and stripped from the text shown on screen.
@@ -61,6 +61,17 @@ def _strip_tags(text: str) -> str:
     """Remove ElevenLabs audio tags like [laughs] from text shown on screen / stored."""
     cleaned = AUDIO_TAG_RE.sub("", text or "")
     return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+ACTION_RE = re.compile(r"\*+[^*\n]{1,100}?\*+")  # *laughs softly* / **grins** roleplay actions
+
+
+def _strip_actions(text: str) -> str:
+    """Remove *roleplay actions* from TEXT messages (kept during calls). Also tidies
+    leftover spacing/punctuation."""
+    cleaned = ACTION_RE.sub("", text or "")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return re.sub(r"\s+([,.!?])", r"\1", cleaned).strip()
 
 
 def parse_voice_id(raw: str) -> str:
@@ -428,16 +439,13 @@ def build_router(ctx) -> APIRouter:
         except Exception as e:
             logger.warning(f"ai-char reply error: {e}")
             raise HTTPException(502, f"{c['name']} is having trouble responding right now")
-        msg = await _store(char_id, current["id"], "ai", _strip_tags(reply))
+        msg = await _store(char_id, current["id"], "ai", _strip_actions(_strip_tags(reply)))
         # Texting is silent by design — voice only plays during a call (/voice-turn).
-        # Fire a push so you're notified the character messaged even if you've closed
-        # the app. The service worker suppresses the banner when you're already in this
-        # chat (so active texting isn't spammed). No-op if push isn't enabled.
-        if send_web_push:
-            asyncio.create_task(send_web_push(
-                current["id"], c["name"], _strip_tags(reply)[:140],
-                url=f"/messages/ai_{char_id}", extra={"suppressIfFocused": True},
-            ))
+        # NOTE: we intentionally do NOT push here. This reply is a response to a message
+        # the user JUST sent while looking at the chat, and the client reveals it with a
+        # realistic "thinking + typing" delay. Pushing now would fire a banner BEFORE the
+        # typing finishes. The client shows a notification itself only if the tab is hidden
+        # when the reply actually renders. (Proactive, unprompted texts still push.)
         return {"message": _msg_out(msg), "audio_url": None}
 
     @router.post("/api/ai-characters/{char_id}/voice-turn")
@@ -503,7 +511,8 @@ def build_router(ctx) -> APIRouter:
 
     async def _proactive_decide(c: dict, transcript: str, idle_min: int, unanswered: int):
         """Ask the character (in-character) whether a real person with their personality
-        would text right now, and if so what they'd say. Returns (should_send, message)."""
+        would text right now, what they'd say, AND when they'd naturally reach out next.
+        Returns (should_send, message, next_hours)."""
         import json
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         sys = _system(c, spoken=False)
@@ -511,18 +520,19 @@ def build_router(ctx) -> APIRouter:
             "\n\nRIGHT NOW you are deciding whether to TEXT this person on your own — unprompted — because "
             "time has passed since you last talked. Behave EXACTLY like a real person with YOUR personality and "
             "YOUR genuine feelings about them would:\n"
-            "- Warm / affectionate / attached: you reach out sooner — check in, say you were thinking of them, "
-            "ask how they're doing, maybe reference something from your chats.\n"
-            "- Cold / distant / annoyed / hostile: you rarely text first, and if you do it's short, blunt, or "
-            "aloof — or you simply don't reach out at all.\n"
-            "- Decide from the ACTUAL conversation and how you feel about them, never a fixed schedule. If nothing "
-            "genuine prompts you, don't text.\n"
-            f"- It's been about {idle_min} minutes of silence. You've already sent {unanswered} check-in(s) they "
-            "haven't answered — if that's a few and they keep ignoring you, a real person would give them space "
-            "and NOT keep texting (unless being clingy is truly your character).\n"
-            "Reply with STRICT JSON and nothing else: {\"text\": true|false, \"message\": \"...\"}. "
-            "If you wouldn't reach out, return {\"text\": false, \"message\": \"\"}. The message is a single, "
-            "natural text of 1-2 sentences — no markdown, no surrounding quotes, in your voice."
+            "- Deeply attached (a devoted parent, child, partner, best friend who adores them): you reach out "
+            "OFTEN — you'd hate going a day without a word; check in, say you miss them, ask about their day, "
+            "reference your chats.\n"
+            "- Friendly / normal: you reach out within a day or so.\n"
+            "- Cold / distant / annoyed / dislikes them: you rarely text first, keep it short if you do — or you "
+            "don't reach out at all.\n"
+            f"- It's been about {idle_min} minutes of silence. You've sent {unanswered} unanswered check-in(s); "
+            "if they keep ignoring you and that's not your nature, give them space.\n"
+            "ALSO decide when you'd naturally message again next, as a NUMBER OF HOURS: deeply attached ~2-8 "
+            "(even a few times a day), friendly ~12-24, distant ~24-72, cold/upset ~72-120.\n"
+            "Reply with STRICT JSON and nothing else: {\"text\": true|false, \"message\": \"...\", \"next_hours\": <number>}. "
+            "If you wouldn't reach out now, still set text=false but give next_hours. The message is a single, "
+            "natural text of 1-2 sentences — no markdown, no stage directions, no surrounding quotes, in your voice."
         )
         chat = LlmChat(
             api_key=settings_store.get("EMERGENT_LLM_KEY"),
@@ -534,9 +544,15 @@ def build_router(ctx) -> APIRouter:
         raw = (resp or "").strip()
         try:
             data = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
-            return bool(data.get("text")), _strip_tags(str(data.get("message") or "")).strip()
+            try:
+                nh = float(data.get("next_hours"))
+            except (TypeError, ValueError):
+                nh = 24.0
+            return (bool(data.get("text")),
+                    _strip_actions(_strip_tags(str(data.get("message") or ""))).strip(),
+                    nh)
         except Exception:
-            return False, ""
+            return False, "", 24.0
 
     async def _proactive_once():
         now = datetime.now(timezone.utc)
@@ -573,45 +589,41 @@ def build_router(ctx) -> APIRouter:
                 idle_min = (now - last_at).total_seconds() / 60
                 if idle_min < PROACTIVE_MIN_IDLE_MIN:
                     continue
-                # Each thread has its own randomized next-eval time so characters don't
-                # re-align and fire together. Not due yet → skip.
+                # Each thread re-checks at its own personality-paced time. Not due yet → skip.
                 next_eval = await _coerce_dt(state.get("next_eval_at"))
                 if next_eval and now < next_eval:
                     continue
 
-                def _schedule_next():
-                    return {"last_checked_at": now,
-                            "next_eval_at": now + timedelta(minutes=random.randint(PROACTIVE_NEXT_MIN_H * 60, PROACTIVE_NEXT_MAX_H * 60))}
+                def _schedule(next_hours):
+                    # clamp + ±15% jitter so it's not clockwork
+                    h = max(PROACTIVE_NEXT_MIN_H, min(PROACTIVE_NEXT_MAX_H, next_hours or 24))
+                    h *= 0.85 + random.random() * 0.3
+                    return {"last_checked_at": now, "next_eval_at": now + timedelta(hours=h)}
 
                 if unanswered >= PROACTIVE_MAX_UNANSWERED:
                     await db.ai_char_state.update_one(
-                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule_next()}, upsert=True)
-                    continue
-                # Mood: a real person often just doesn't text. Sometimes skip entirely
-                # (no LLM call) and try again much later — keeps it sparse + believable.
-                if random.random() < PROACTIVE_MOOD_SKIP:
-                    await db.ai_char_state.update_one(
-                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule_next()}, upsert=True)
+                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule(72)}, upsert=True)
                     continue
                 hist = await db.ai_char_messages.find(
                     {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
                 ).sort("created_at", -1).limit(30).to_list(30)
                 hist.reverse()
                 transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
-                should, message = await _proactive_decide(c, transcript, int(idle_min), unanswered)
+                should, message, next_hours = await _proactive_decide(c, transcript, int(idle_min), unanswered)
                 if not should or not message:
+                    # character chose not to reach out now — recheck at their own pace
                     await db.ai_char_state.update_one(
-                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule_next()}, upsert=True)
+                        {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule(next_hours)}, upsert=True)
                     continue
                 await _store(c["id"], admin_id, "ai", message)
-                upd = _schedule_next()
+                upd = _schedule(next_hours)
                 upd["last_proactive_at"] = now
                 await db.ai_char_state.update_one(
                     {"character_id": c["id"], "admin_id": admin_id},
                     {"$set": upd, "$inc": {"unanswered": 1}}, upsert=True)
                 sent_admins.add(admin_id)
                 try:
-                    await send_web_push(admin_id, c["name"], message, url=f"/messages/ai_{c['id']}")
+                    await send_web_push(admin_id, c["name"], message, url=f"/messages/ai_{c['id']}", extra={"suppressIfFocused": True})
                 except Exception:
                     pass
             except Exception as e:

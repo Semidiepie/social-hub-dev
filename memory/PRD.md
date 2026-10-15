@@ -1,3 +1,11 @@
+## Fix — AI proactive cadence is now personality-paced + strip roleplay actions from text (2026-06, web, admin-only)
+- **Problem:** uniform cadence throttled a loving "daughter" character the same as a cold one → she went silent for over a day (unrealistic).
+- **Fix:** each character now sets its OWN next check-in. `_proactive_decide` returns `next_hours` and the scheduler schedules the next evaluation from it (clamped 1–120h, ±15% jitter). Prompt guides: deeply attached ~2–8h (even multiple times/day), friendly ~12–24h, distant ~24–72h, cold/upset ~72–120h. Removed the fixed 8–72h window + blanket 45% mood-skip. Min idle lowered 180→60 min. Kept one-per-admin-per-pass + shuffle (no simultaneous) and stop-after-3-ignored.
+- **Asterisk actions:** new `_strip_actions()` removes `*laughs softly*` / `**grins**` roleplay from TEXT messages (send + proactive) and the push body; CALLS (`/voice-turn`) keep them. Proactive push now also uses `suppressIfFocused`.
+- AGENT-TESTED: attached character scheduled next check-in ~2.8h (vs days before), 3-tuple decision/schedule wrote with no error; asterisk strip verified on samples. NOT user-confirmed. Preview only — Publish/Redeploy for production.
+- **PENDING (awaiting user decision):** calendar-awareness feature — characters texting near calendar events that relate to them. Asked user: in-app calendar vs Google Calendar, name-match vs explicit tag, timing. Not yet built.
+
+
 ## Enhancement — AI character reply push ("notified even if you close the app") (2026-06, web, admin-only)
 - **Reply completes server-side regardless of the client:** the reply is generated + stored inside `/api/ai-characters/{id}/send` before it returns (the typing delay is purely client-side), so closing the app never loses the reply — it's there on next open.
 - **Push on reply:** `/send` now fires a Web Push (`asyncio.create_task(send_web_push(..., extra={"suppressIfFocused": True}))`) so the admin is notified the character messaged even with the app closed. No-op if push isn't enabled.
