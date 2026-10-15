@@ -237,7 +237,7 @@ export function AiCharacterChat({ characterId, onBack }) {
         </Button>
       </form>
 
-      {inCall && <CharacterCall character={character} onEnd={() => { setInCall(false); load(); }} />}
+      {inCall && <CharacterCall character={character} autoListen onEnd={() => { setInCall(false); load(); }} />}
     </section>
   );
 }
@@ -338,6 +338,11 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
           src.connect(analyser);
           micSrcRef.current = src;
           const data = new Uint8Array(analyser.frequencyBinCount);
+          // Wait for a real, settled pause before deciding you're done — so breathing
+          // or a mid-thought beat won't cut you off. Only end the turn after ~2.2s of
+          // continuous quiet following actual speech.
+          const SILENCE_MS = 2200;      // continuous quiet that counts as "done talking"
+          const MAX_TURN_MS = 60000;    // hard safety cap on a single turn
           let spoke = false; let silenceStart = 0; const started = Date.now();
           vadTimerRef.current = setInterval(() => {
             analyser.getByteTimeDomainData(data);
@@ -348,9 +353,9 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
             if (rms > 0.055) { spoke = true; silenceStart = 0; }
             else if (spoke) {
               if (!silenceStart) silenceStart = t;
-              else if (t - silenceStart > 1200) { stopVad(); stopSendRef.current && stopSendRef.current(); }
+              else if (t - silenceStart > SILENCE_MS) { stopVad(); stopSendRef.current && stopSendRef.current(); }
             }
-            if (t - started > 20000) { stopVad(); stopSendRef.current && stopSendRef.current(); } // safety cap
+            if (t - started > MAX_TURN_MS) { stopVad(); stopSendRef.current && stopSendRef.current(); } // safety cap
           }, 120);
         } catch { /* noop — manual mic still works */ }
       }
