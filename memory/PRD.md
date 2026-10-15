@@ -1108,3 +1108,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 ### 2026-10 — Voice model reverted to eleven_v3 (per user)
 - User disliked the flash_v2_5 change ("keep old model for better emotions and expressions"). Fully reverted: TTS_MODEL=eleven_v3, fallback eleven_multilingual_v2, voice-call prompt restored to instruct [laughs]/[sighs]/etc. audio cues, _tts language_code + bracket-strip removed.
 - NET: accent fix abandoned by user choice; expressiveness prioritized. Accent (if any) is inherent to v3 drift / the chosen voice.
+
+### 2026-10 — Live-join reliability + web-push self-test
+- User (post-redeploy): daughter still didn't join a live; and no web push when she replied with app CLOSED.
+- LIVE-JOIN FIX (routes/ai_characters.py): removed the "busy" schedule gate from live joining — a character now drops into their parent's live unless they're asleep, cold (distant/dislikes), or allow_live=False. Also first comment now 5-20s after being seen (was 15-60s) so she appears early in the stream. Stream is status="live" at creation so the loop sees it immediately. test_live_ai_comments.py still 8/8 PASS.
+- WEB-PUSH SELF-TEST: new POST /api/push/web-test (authed) returns {subscriptions, vapid_ready, sent} and fires a real test push (no suppressIfFocused). Settings.jsx adds a "Send test notification" button (shown when push is on, data-testid settings-test-push). Diagnoses the recurring iOS issue: if it reports "device isn't subscribed" the iOS PWA subscribe silently failed despite the success toast; if subscriptions>0 but nothing arrives, it's APNs/device delivery (outside our control). Verified in preview: founder has 0 subs → {subscriptions:0, vapid_ready:true, sent:false}.
+- STATUS: preview, agent-tested. Needs Publish/Redeploy. Server-side reply push confirmed firing on delivery (ai_characters.py:1228).

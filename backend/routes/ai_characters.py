@@ -1335,8 +1335,6 @@ def build_router(ctx) -> APIRouter:
                     local_now = _local_now(state.get("tz"))
                     sleep_start, sleep_end = _sleep_window(c)
                     asleep = local_now is not None and _is_asleep(local_now.hour, sleep_start, sleep_end)
-                    schedule = c.get("schedule") or []
-                    busy = bool(schedule and local_now is not None and _busy_now(schedule, local_now)[0])
                     affection = (c.get("affection") or "").strip().lower()
                     cold = affection in ("distant", "dislikes")
 
@@ -1351,9 +1349,10 @@ def build_router(ctx) -> APIRouter:
                     st = live_state.get(key)
                     first_seen = st is None
                     if first_seen:
-                        # Just "joined" — schedule the first ambient comment 15-60s out (human lag).
+                        # Just "joined" — pop in with the first comment soon (5-20s) so they're
+                        # visibly present early in the stream.
                         st = live_state[key] = {
-                            "next_at": now + timedelta(seconds=random.randint(15, 60)),
+                            "next_at": now + timedelta(seconds=random.randint(5, 20)),
                             "count": 0, "answered_mid": None}
 
                     heart = getattr(ctx, "live_post_ai_heart", None)
@@ -1375,9 +1374,10 @@ def build_router(ctx) -> APIRouter:
                         commenters += 1
                         continue
 
-                    # AMBIENT presence respects feelings + schedule: cold characters stay away,
-                    # and asleep/busy ones aren't watching.
-                    if cold or asleep or busy:
+                    # AMBIENT presence: a cold character stays away and an asleep one isn't
+                    # watching — but being "busy" on their schedule no longer stops them from
+                    # dropping into their parent's live (you'd always peek at that).
+                    if cold or asleep:
                         continue
                     commenters += 1
                     # A watching character sends the occasional heart (no LLM cost) so they feel

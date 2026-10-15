@@ -2198,6 +2198,20 @@ async def web_push_unsubscribe(body: WebPushUnsubscribeBody, current: Annotated[
     return {"status": "unsubscribed"}
 
 
+@app.post("/api/push/web-test")
+async def web_push_test(current: Annotated[dict, Depends(get_current_user)]):
+    """Fire a real web push to the caller so they can verify delivery on their device.
+    Returns how many subscriptions are registered for this user so the UI can guide them."""
+    n = await db.push_subscriptions.count_documents({"user_id": current["id"]})
+    vapid_ready = bool(_vapid_pem_path() and settings_store.get("VAPID_PUBLIC_KEY"))
+    if n and vapid_ready:
+        await send_web_push(
+            current["id"], "PostMePlex",
+            "🔔 Test notification — your push is working! Lock your phone to see these.",
+            url="/notifications")
+    return {"subscriptions": n, "vapid_ready": vapid_ready, "sent": bool(n and vapid_ready)}
+
+
 # ============================================================
 # Routes — Push
 # ============================================================

@@ -142,6 +142,24 @@ export default function SettingsPage() {
     }
   };
 
+  const sendTestPush = async () => {
+    setPushBusy(true);
+    try {
+      const r = await api.post("/push/web-test", {});
+      if (!r.vapid_ready) {
+        toast.error("Push isn't configured on the server yet.");
+      } else if (!r.subscriptions) {
+        toast.error("This device isn't subscribed yet — tap Enable first, then try again.");
+      } else {
+        toast.success("Test sent! Background the app or lock your phone — it should appear in a few seconds.");
+      }
+    } catch (e) {
+      toast.error(e.message || "Couldn't send test");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (user) {
       setProfile({
@@ -413,24 +431,39 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Bell size={18} /> Browser notifications</CardTitle></CardHeader>
-        <CardContent className="flex items-center justify-between gap-4">
-          <div>
-            <div className="font-semibold">Get notified of new activity</div>
-            <p className="text-xs text-muted-foreground">
-              Alerts show even when PostMePlex is closed. On iPhone/iPad you must first add PostMePlex to your Home Screen (Share → Add to Home Screen) and open it from that icon.
-            </p>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="font-semibold">Get notified of new activity</div>
+              <p className="text-xs text-muted-foreground">
+                Alerts show even when PostMePlex is closed. On iPhone/iPad you must first add PostMePlex to your Home Screen (Share → Add to Home Screen) and open it from that icon.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant={pushOn ? "outline" : "default"}
+              disabled={pushBusy}
+              onClick={toggleBrowserPush}
+              className={`gap-2 ${pushOn ? "" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+              data-testid="settings-toggle-push"
+            >
+              {pushBusy ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
+              {pushOn ? "Turn off" : "Enable"}
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant={pushOn ? "outline" : "default"}
-            disabled={pushBusy}
-            onClick={toggleBrowserPush}
-            className={`gap-2 ${pushOn ? "" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
-            data-testid="settings-toggle-push"
-          >
-            {pushBusy ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
-            {pushOn ? "Turn off" : "Enable"}
-          </Button>
+          {pushOn && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pushBusy}
+              onClick={sendTestPush}
+              className="gap-2 self-start"
+              data-testid="settings-test-push"
+            >
+              <Bell size={13} /> Send test notification
+            </Button>
+          )}
         </CardContent>
       </Card>
 
