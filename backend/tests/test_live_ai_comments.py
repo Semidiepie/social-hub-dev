@@ -90,14 +90,14 @@ async def _run():
         assert after_dupe == after_direct, "re-answered the same mention"
         print("PASS: no duplicate reply to the same mention")
 
-        # Eligibility: flip to cold -> no new comment even with timer in the past.
-        await db.ai_characters.update_one({"id": char_id}, {"$set": {"affection": "cold"}})
+        # Eligibility: a distant character -> no ambient comment even with timer in the past.
+        await db.ai_characters.update_one({"id": char_id}, {"$set": {"affection": "distant"}})
         before = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
         router.live_state[key]["next_at"] = datetime.now(timezone.utc) - timedelta(seconds=1)
         await router.live_comments_once()
         after = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
-        assert after == before, "cold character should not comment"
-        print("PASS: cold character stayed quiet")
+        assert after == before, "distant character should not post ambient comments"
+        print("PASS: distant character stayed quiet (ambient)")
 
         # allow_live off also gates it.
         await db.ai_characters.update_one({"id": char_id}, {"$set": {"affection": "adores", "allow_live": False}})
@@ -106,6 +106,22 @@ async def _run():
         after2 = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
         assert after2 == before, "allow_live=off should gate commenting"
         print("PASS: allow_live=off stayed quiet")
+
+        # REGRESSION (the reported bug): a character whose affection/allow_live were never
+        # set (null) must STILL join and reply when spoken to directly.
+        await db.ai_characters.update_one(
+            {"id": char_id}, {"$unset": {"affection": "", "allow_live": ""}})
+        new_mid = str(uuid.uuid4())
+        await db.live_chat.insert_one({
+            "id": new_mid, "stream_id": stream_id, "kind": "chat",
+            "user_id": admin_id, "username": admin["username"], "display_name": admin["display_name"],
+            "text": "Nova sweetie are you here?", "created_at": datetime.now(timezone.utc),
+        })
+        before_reg = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        await router.live_comments_once()
+        after_reg = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        assert after_reg == before_reg + 1, "null-affection/allow_live character failed to reply when addressed"
+        print("PASS: null-affection character still replies when addressed (bug fixed)")
 
         # Ending the stream prunes the in-memory join state.
         await db.live_streams.update_one({"id": stream_id}, {"$set": {"status": "ended"}})

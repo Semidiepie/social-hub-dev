@@ -238,6 +238,18 @@ def build_router(ctx) -> APIRouter:
 
     ctx.live_post_ai_comment = post_ai_comment
 
+    async def post_ai_heart(stream_id: str, n: int = 1):
+        """Send floating heart(s) on behalf of a watching AI character (no LLM cost)."""
+        s = await db.live_streams.find_one({"id": stream_id}, {"_id": 0, "status": 1})
+        if not s or s.get("status") != "live":
+            return
+        n = max(1, min(int(n), 5))
+        await db.live_streams.update_one({"id": stream_id}, {"$inc": {"hearts": n}})
+        for _ in range(n):
+            await hub.broadcast(stream_id, {"type": "heart", "user_id": "ai"})
+
+    ctx.live_post_ai_heart = post_ai_heart
+
     @router.get("/api/live")
     async def list_live(current: Annotated[dict, Depends(get_current_user)]):
         rows = await db.live_streams.find({"status": "live"}, {"_id": 0}).sort("created_at", -1).to_list(100)

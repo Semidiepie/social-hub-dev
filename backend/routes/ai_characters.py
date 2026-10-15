@@ -128,8 +128,8 @@ def _parse_next_contact(text, local_now, sleep_start, sleep_end):
 
 import settings_store
 
-TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
-TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for the account/voice
+TTS_MODEL = "eleven_flash_v2_5"          # natural + low-latency English, no accent drift (language_code=en)
+TTS_FALLBACK_MODEL = "eleven_v4"         # flagship realism fallback if flash is unavailable
 
 # Proactive "human-like" texting. Cadence is PERSONALITY-PACED: each character picks
 # its own next check-in time — someone attached texts within hours (even daily), a
@@ -519,12 +519,11 @@ def build_router(ctx) -> APIRouter:
         if spoken:
             base += (" You are on a VOICE call, so answer the way a person naturally speaks out loud: "
                      "short warm sentences, no markdown, no bullet lists, no emojis, easy to say aloud. "
-                     "To sound truly human, express real emotion with inline audio cues in square brackets "
-                     "that the voice will PERFORM (not say): [laughs], [giggles], [sighs], [whispers], "
-                     "[excited], [sad], [crying], [nervously], [gasps], [clears throat]. Use them naturally and "
-                     "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
-                     "breathing and pauses. Never read a tag out loud or explain it. Keep each reply to 1-3 short "
-                     "sentences so you respond quickly and the call feels snappy.")
+                     "Speak in clear, natural American English with NO accent. Convey real emotion through "
+                     "your WORD CHOICE and rhythm — warm phrasing, little laughs written as words (\"haha\", "
+                     "\"aww\"), and ellipses (…) and commas for natural breathing and pauses. Do NOT use square-"
+                     "bracket cues or stage directions. Keep each reply to 1-3 short sentences so you respond "
+                     "quickly and the call feels snappy.")
         return base
 
     async def _realworld_context(local_time: str, tz: str, lat, lon) -> str:
@@ -633,16 +632,20 @@ def build_router(ctx) -> APIRouter:
         voice_id = c.get("voice_id")
         if not eleven_key or not voice_id:
             return None
+        # Safety net: never let a stray [bracket] cue be read aloud by non-v3 models.
+        text = re.sub(r"\s+", " ", AUDIO_TAG_RE.sub(" ", text or "")).strip()
+        if not text:
+            return None
 
         def _synth(model_id: str) -> bytes:
             from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
-            # Lower stability + higher style = more emotional, spontaneous delivery (laughs/breathing).
-            # Faithful to the pasted voice, NO added accent/theatrical drift:
-            # max similarity to the source voice + zero style keeps delivery neutral.
+            # language_code="en" enforces English pronunciation and curbs accent drift;
+            # max similarity + zero style keeps delivery faithful + neutral.
             stream = client.text_to_speech.convert(
                 text=text, voice_id=voice_id, model_id=model_id, output_format="mp3_44100_128",
+                language_code="en",
                 voice_settings=VoiceSettings(stability=0.5, similarity_boost=1.0, style=0.0, use_speaker_boost=True),
             )
             return b"".join(stream)
@@ -650,7 +653,7 @@ def build_router(ctx) -> APIRouter:
         try:
             audio = await asyncio.to_thread(_synth, TTS_MODEL)
         except Exception as e:
-            logger.warning(f"ai-char v3 tts failed, falling back to {TTS_FALLBACK_MODEL}: {e}")
+            logger.warning(f"ai-char tts failed on {TTS_MODEL}, falling back to {TTS_FALLBACK_MODEL}: {e}")
             try:
                 audio = await asyncio.to_thread(_synth, TTS_FALLBACK_MODEL)
             except Exception as e2:
@@ -1327,29 +1330,19 @@ def build_router(ctx) -> APIRouter:
                     break
                 try:
                     c = await db.ai_characters.find_one({"id": cid})
-                    if not c or not c.get("allow_live", True):
-                        continue
-                    if c.get("affection", "warm") not in ("adores", "warm"):
-                        continue  # only characters who feel warmly reach out
+                    if not c or c.get("allow_live") is False:
+                        continue  # only hard gate: explicitly turned off by the user
+
                     state = await db.ai_char_state.find_one(
                         {"character_id": cid, "admin_id": owner_id}) or {}
                     local_now = _local_now(state.get("tz"))
                     sleep_start, sleep_end = _sleep_window(c)
-                    if local_now is not None and _is_asleep(local_now.hour, sleep_start, sleep_end):
-                        continue  # asleep → not watching
+                    asleep = local_now is not None and _is_asleep(local_now.hour, sleep_start, sleep_end)
                     schedule = c.get("schedule") or []
-                    if schedule and local_now is not None:
-                        busy, _ = _busy_now(schedule, local_now)
-                        if busy:
-                            continue  # busy on their timetable → not watching
-                    commenters += 1
-                    key = (s["id"], cid)
-                    st = live_state.get(key)
-                    if st is None:
-                        # Just "joined" — schedule the first comment 15-60s out (human lag).
-                        live_state[key] = {"next_at": now + timedelta(seconds=random.randint(15, 60)),
-                                           "count": 0, "answered_mid": None}
-                        continue
+                    busy = bool(schedule and local_now is not None and _busy_now(schedule, local_now)[0])
+                    affection = (c.get("affection") or "").strip().lower()
+                    cold = affection in ("distant", "dislikes")
+
                     recent = await db.live_chat.find(
                         {"stream_id": s["id"]},
                         {"_id": 0, "id": 1, "user_id": 1, "display_name": 1, "username": 1,
@@ -1357,24 +1350,52 @@ def build_router(ctx) -> APIRouter:
                     ).sort("created_at", -1).limit(15).to_list(15)
                     recent.reverse()
 
-                    # Did the broadcaster just speak to this character by name? If so, reply
-                    # directly and promptly — this bypasses the ambient pace + comment cap.
+                    key = (s["id"], cid)
+                    st = live_state.get(key)
+                    first_seen = st is None
+                    if first_seen:
+                        # Just "joined" — schedule the first ambient comment 15-60s out (human lag).
+                        st = live_state[key] = {
+                            "next_at": now + timedelta(seconds=random.randint(15, 60)),
+                            "count": 0, "answered_mid": None}
+
+                    heart = getattr(ctx, "live_post_ai_heart", None)
+
+                    # DIRECT ADDRESS: if the broadcaster speaks to this character by name, they
+                    # ALWAYS reply — even if they feel distant, are busy, or it's late. The user
+                    # explicitly reaching out should never be met with silence.
                     mention = _owner_mention(recent, owner_id, c)
                     if mention and mention.get("id") != st.get("answered_mid"):
                         reply = await _live_comment(c, owner_id, s.get("title", "Live"), recent,
                                                     direct_text=mention.get("text", ""))
                         if reply:
                             await post(s["id"], c, reply)
+                            if heart:
+                                await heart(s["id"], random.randint(1, 3))
                         st["answered_mid"] = mention.get("id")
                         st["count"] += 1
                         st["next_at"] = now + timedelta(seconds=random.randint(45, 120))
+                        commenters += 1
                         continue
 
+                    # AMBIENT presence respects feelings + schedule: cold characters stay away,
+                    # and asleep/busy ones aren't watching.
+                    if cold or asleep or busy:
+                        continue
+                    commenters += 1
+                    # A watching character sends the occasional heart (no LLM cost) so they feel
+                    # present even between comments.
+                    if heart and random.random() < 0.4:
+                        await heart(s["id"], random.randint(1, 3))
+                    if first_seen:
+                        continue  # wait out the join delay before the first comment
                     if st["count"] >= LIVE_MAX_COMMENTS or now < st["next_at"]:
                         continue
                     comment = await _live_comment(c, owner_id, s.get("title", "Live"), recent)
                     if comment:
                         await post(s["id"], c, comment)
+                        if heart and random.random() < 0.6:
+                            await heart(s["id"], random.randint(1, 2))
                     st["count"] += 1
                     st["next_at"] = now + timedelta(seconds=random.randint(60, 180))
                 except Exception as e:

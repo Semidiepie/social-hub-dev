@@ -1088,3 +1088,19 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - _live_comment(..., direct_text=...) switches the prompt to answer the owner directly and warmly.
 - VERIFIED: backend/tests/test_live_ai_comments.py extended — PASS: direct reply when addressed ("yes of course I'm watching!! it looks amazing..." to "hey Nova are you watching this??"), no duplicate reply to same mention, plus prior ambient/cold/allow_live/prune cases. Test now uses a dedicated throwaway broadcaster user (the founder has real characters that polluted the shared-DB count).
 - Channel: text in live chat only (we don't transcribe the live video audio). STATUS: preview, agent-tested e2e; needs Publish/Redeploy for production.
+
+### 2026-10 — Live AI comments: gating bugfix + direct-address override + hearts (agent-tested)
+- BUG (user report): "told my AI daughter I was going live, she never joined; another character did; I kept talking to her and she never responded." Root cause: characters predate the allow_live field (stored null) and some have affection=null. Old gate: `not c.get("allow_live", True)` treated null as OFF, and `affection not in (adores,warm)` excluded null/neutral — so the daughter was filtered out entirely, and a direct address never bypassed the gate.
+- FIXES:
+  1. allow_live now gates ONLY when explicitly False (`c.get("allow_live") is False`) — null/absent = allowed.
+  2. Ambient presence gate loosened: a character stays away only if affection in (distant, dislikes); null/neutral/warm/adores all join.
+  3. DIRECT ADDRESS OVERRIDE: when the broadcaster says the character's name/@username in live chat, they ALWAYS reply — bypassing affection, busy and asleep gates (deduped via answered_mid). The user reaching out is never met with silence.
+  4. HEARTS: watching characters now send floating hearts (live.py ctx.live_post_ai_heart — increments stream hearts + broadcasts type:heart, no LLM cost). ~40% per 25s tick while watching, plus a burst with each comment/direct reply.
+- VERIFIED: backend/tests/test_live_ai_comments.py (8 cases) incl. a regression case — a null-affection + unset-allow_live character still replies when addressed. All PASS.
+- STATUS: preview, agent-tested e2e. Needs Publish/Redeploy for production. (Reminder: ELEVENLABS key is INVALID in preview, so voice/calls can't be heard in preview — unrelated to live chat.)
+
+### 2026-10 — Voice accent fix (character calls)
+- User: "remove the accent, still sound realistic." Per ElevenLabs, the expressive eleven_v3 model drifts into accents; language_code curbs it; accent is otherwise tied to the voice itself.
+- CHANGE (routes/ai_characters.py): TTS_MODEL eleven_v3 -> eleven_flash_v2_5 (natural, 75ms, low-latency), fallback eleven_v4 (flagship realism). _synth now passes language_code="en" to enforce English pronunciation + curb accent drift. Voice-call system prompt no longer instructs [bracket] audio cues (flash/v4 don't perform them); emotion now via word choice + ellipses. _tts strips any stray AUDIO_TAG_RE brackets before synth so nothing is read literally.
+- CANNOT verify in preview: the preview ELEVENLABS_API_KEY is INVALID (401) so no audio plays in preview. User must Publish/Redeploy and listen on production.
+- Caveat told to user: if accent persists after this, it is baked into the chosen ElevenLabs voice (voice_id) and the only fix is selecting a different, accent-free voice.
