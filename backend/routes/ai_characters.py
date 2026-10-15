@@ -799,19 +799,28 @@ def build_router(ctx) -> APIRouter:
                 promised = await _coerce_dt(state.get("promised_at"))
                 promise_due = bool(promised and now >= promised)
 
-                if idle_min < PROACTIVE_MIN_IDLE_MIN and not promise_due:
-                    continue
-                # Each thread re-checks at its own personality-paced time. Not due yet → skip.
-                next_eval = await _coerce_dt(state.get("next_eval_at"))
-                if next_eval and now < next_eval and not promise_due:
-                    continue
-
-                # Age-appropriate realism: compute the user's local time + this character's
-                # sleep window and daily-routine anchor points up front.
+                # Age/affection realism: user's local time, this character's sleep window,
+                # and (for attached school-age kids) their daily-routine moments.
                 local_now = _local_now(state.get("tz"))
                 sleep_start, sleep_end = _sleep_window(c)
                 anchors = _routine_anchors(c.get("age"), sleep_start, sleep_end) \
                     if (c.get("affection", "warm") in ("adores", "warm")) else []
+                # Are we AT one of her routine beats right now (within ~45 min)? If so she
+                # should naturally check in (lunch, recess, after school, goodnight…).
+                # Only actionable if she hasn't just messaged (prevents re-firing the same
+                # beat on every 15-min pass).
+                anchor_due = False
+                if local_now is not None and anchors:
+                    cur = local_now.hour + local_now.minute / 60
+                    anchor_due = any(0 <= (cur - h) <= 0.75 for h in anchors)
+                anchor_due = anchor_due and idle_min >= PROACTIVE_MIN_IDLE_MIN
+
+                if idle_min < PROACTIVE_MIN_IDLE_MIN and not promise_due:
+                    continue
+                # Each thread re-checks at its own personality-paced time. Not due yet → skip.
+                next_eval = await _coerce_dt(state.get("next_eval_at"))
+                if next_eval and now < next_eval and not promise_due and not anchor_due:
+                    continue
 
                 def _schedule(next_hours):
                     # clamp + ±15% jitter so it's not clockwork
@@ -846,14 +855,18 @@ def build_router(ctx) -> APIRouter:
                 if promise_due:
                     time_ctx += ("\n- IMPORTANT: Earlier you told them you'd reach out right about now "
                                  "(you promised a specific time/moment). Keep your word — send that text now.")
+                elif anchor_due:
+                    time_ctx += ("\n- This is one of your usual daily moments to reach out (e.g. recess, lunch "
+                                 "break, after school, or goodnight). Send a short, warm, natural text now about "
+                                 "what you're up to right now.")
                 hist = await db.ai_char_messages.find(
                     {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
                 ).sort("created_at", -1).limit(30).to_list(30)
                 hist.reverse()
                 transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
                 should, message, next_hours = await _proactive_decide(c, transcript, int(idle_min), unanswered, time_ctx)
-                if promise_due:
-                    should = True  # a promise is honored as long as she produced a message
+                if promise_due or anchor_due:
+                    should = True  # a promise / routine moment is honored if she produced a message
                 if not should or not message:
                     # character chose not to reach out now — recheck at their own pace
                     await db.ai_char_state.update_one(
@@ -886,4 +899,5 @@ def build_router(ctx) -> APIRouter:
             await asyncio.sleep(PROACTIVE_TICK_SEC)
 
     router.proactive_loop = proactive_loop
+    router.proactive_once = _proactive_once
     return router
