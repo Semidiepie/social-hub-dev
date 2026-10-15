@@ -317,6 +317,8 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
   const [affection, setAffection] = useState(character?.affection || "warm");
   const [sleepStart, setSleepStart] = useState(character?.sleep_start ?? "");
   const [sleepEnd, setSleepEnd] = useState(character?.sleep_end ?? "");
+  const [allowCalls, setAllowCalls] = useState(character?.allow_calls || false);
+  const [schedule, setSchedule] = useState(character?.schedule || []);
   const [memories, setMemories] = useState(character?.memories || []);
   const [newMem, setNewMem] = useState("");
   const [voice, setVoice] = useState(character?.voice_id || "");
@@ -324,6 +326,10 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const editing = !!character;
+
+  const addBlock = () => setSchedule((s) => [...s, { start: "", end: "", activity: "", busy: false, weekdays_only: false }]);
+  const updateBlock = (i, patch) => setSchedule((s) => s.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+  const removeBlock = (i) => setSchedule((s) => s.filter((_, j) => j !== i));
 
   const addMemory = async () => {
     if (!newMem.trim() || !editing) return;
@@ -358,7 +364,9 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
         age: age === "" ? null : parseInt(age, 10),
         affection,
         sleep_start: sleepStart === "" ? null : parseInt(sleepStart, 10),
-        sleep_end: sleepEnd === "" ? null : parseInt(sleepEnd, 10) };
+        sleep_end: sleepEnd === "" ? null : parseInt(sleepEnd, 10),
+        allow_calls: allowCalls,
+        schedule: schedule.filter((b) => b.start && b.activity).map((b) => ({ start: b.start, end: b.end || "", activity: b.activity, busy: !!b.busy, weekdays_only: !!b.weekdays_only })) };
       if (editing) await api.put(`/ai-characters/${character.id}`, body);
       else await api.post("/ai-characters", body);
       toast.success(editing ? "Character updated" : "Character created");
@@ -452,6 +460,36 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
           </div>
         </div>
         <p className="mt-1 text-[10px] text-muted-foreground">24h hours. They won&apos;t text you while they&apos;re &quot;asleep&quot; — a 9-year-old who loves you will say goodnight before bed instead.</p>
+
+        <div className="mt-3 flex items-center justify-between">
+          <label className="block text-[11px] font-bold uppercase text-muted-foreground">Daily schedule</label>
+          <button type="button" onClick={addBlock} className="flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold hover:bg-secondary/70" data-testid="aichar-schedule-add"><Plus size={12} /> Add block</button>
+        </div>
+        <p className="mb-1 mt-1 text-[10px] text-muted-foreground">Their whole day. They only text/call during <b>free</b> blocks, never while busy. &quot;School days&quot; blocks skip weekends.</p>
+        <div className="space-y-1.5">
+          {schedule.length === 0 && <p className="text-[11px] text-muted-foreground">No schedule yet — add School, Lunch, Soccer, Dinner, etc.</p>}
+          {schedule.map((b, i) => (
+            <div key={i} className="rounded-xl border border-border p-2" data-testid={`aichar-schedule-row-${i}`}>
+              <div className="flex items-center gap-1.5">
+                <input type="time" value={b.start} onChange={(e) => updateBlock(i, { start: e.target.value })} className="h-9 w-[92px] rounded-lg border border-border bg-background px-2 text-xs outline-none focus:border-primary" data-testid={`aichar-schedule-start-${i}`} />
+                <span className="text-xs text-muted-foreground">–</span>
+                <input type="time" value={b.end} onChange={(e) => updateBlock(i, { end: e.target.value })} className="h-9 w-[92px] rounded-lg border border-border bg-background px-2 text-xs outline-none focus:border-primary" data-testid={`aichar-schedule-end-${i}`} />
+                <input value={b.activity} onChange={(e) => updateBlock(i, { activity: e.target.value })} placeholder="Activity" maxLength={60} className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 text-xs outline-none focus:border-primary" data-testid={`aichar-schedule-activity-${i}`} />
+                <button type="button" onClick={() => removeBlock(i)} className="text-muted-foreground hover:text-destructive" data-testid={`aichar-schedule-remove-${i}`}><X size={14} /></button>
+              </div>
+              <div className="mt-1.5 flex items-center gap-3 pl-0.5">
+                <label className="flex items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={!!b.busy} onChange={(e) => updateBlock(i, { busy: e.target.checked })} data-testid={`aichar-schedule-busy-${i}`} /> Busy (can&apos;t reach out)</label>
+                <label className="flex items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={!!b.weekdays_only} onChange={(e) => updateBlock(i, { weekdays_only: e.target.checked })} data-testid={`aichar-schedule-weekdays-${i}`} /> School days only</label>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <label className="mt-3 flex cursor-pointer items-center justify-between rounded-xl border border-border p-3" data-testid="aichar-allow-calls-row">
+          <span className="flex items-center gap-2 text-sm font-semibold"><Phone size={15} className="text-green-500" /> Let this character call me</span>
+          <input type="checkbox" checked={allowCalls} onChange={(e) => setAllowCalls(e.target.checked)} className="h-5 w-5 accent-primary" data-testid="aichar-allow-calls" />
+        </label>
+        <p className="mt-1 text-[10px] text-muted-foreground">When on, they may ring you now and then during their free moments (max ~2/day). Your phone rings and you choose to answer.</p>
 
         {editing ? (
           <div className="mt-3 rounded-xl border border-border p-2.5">

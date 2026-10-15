@@ -1008,3 +1008,18 @@ Still inside `server.py` (candidates for future extraction into `/routes/`): aut
 - Added router.proactive_once hook (safe test entrypoint).
 - VERIFIED END-TO-END (1 real LLM call, data restored): at 12:23pm America/New_York with age=9, affection=adores, tz set, idle 3h → Nova sent "Dad it's lunchtime and I can't stop thinking about that joke…" and the web push fired; next_eval snapped to the evening anchor. 
 - ACTION FOR USER: redeploy production again to ship this strengthening. Note: if the user is actively chatting with her near a beat (idle<60m) she won't ALSO proactively ping — by design (she only initiates when you haven't been talking).
+
+### 2026-10 — AI characters: full daily SCHEDULE + AI-decided timing + opt-in CALLS (preview)
+Backend (routes/ai_characters.py):
+- New per-character fields: schedule (list of {start "HH:MM", end, activity, busy, weekdays_only}) + allow_calls (bool). Stored/returned in _char_public, create, update. New ScheduleBlock model.
+- Schedule helpers (pure, unit-tested): _hhmm, _todays_blocks (drops weekdays_only on Sat/Sun), _busy_now (free blocks override busy ones; returns next-free hour), _free_anchors (reach-out moments = free-block starts + busy-block ends), _schedule_lines (static timetable for _system), _schedule_now_ctx ("right now you are busy with/free during X").
+- _system now includes the character's static daily schedule; /send & /voice-turn append the time-relative "right now" line so replies reference what she's doing.
+- Proactive scheduler: when a schedule exists it drives anchors (replaces age-routine) + a BUSY GATE — if she's in a busy block she won't text/call and reschedules next_eval to her next free moment. Sleep gate still applies.
+- Calls: _proactive_decide now takes can_call and returns an action ("text"|"call"). can_call = allow_calls AND affection in (adores/warm) AND under daily cap (2/day, tracked via state.calls_day/calls_count) AND local time known. When she chooses "call": inserts an ai_char_calls doc (status ringing, 120s expiry), stores a "📞 Nova tried to call you" thread message, and web-pushes "📞 Nova is calling you". Counts toward the one-proactive-per-pass cap.
+- New endpoints: GET /api/ai-characters/incoming-call (latest ringing call for the user), POST /api/ai-characters/calls/{id}/answer, /decline. (curl-verified.)
+Frontend:
+- Admin form (Messages.jsx): structured schedule editor (time-block rows: start/end/activity + Busy + School-days-only checkboxes, add/remove) + "Let this character call me" toggle. (DOM-verified render + row add + persistence via API.)
+- CharacterCall (AiCharacterChat.jsx) exported + new autoListen mode: greets first, then hands-free VAD (AnalyserNode RMS) — after you stop talking ~1.2s it auto-sends and she replies, looping for a natural call; 20s safety cap; manual mic still works. Non-incoming (user-initiated) calls keep tap-to-talk.
+- New global IncomingCallListener (mounted in AppShell, admin-only): polls incoming-call every 20s + on focus, shows a full-screen ringing screen with a synthesized "ring ring" ringtone + Answer/Decline; Answer → hands-free CharacterCall(autoListen). (Incoming screen + Answer/Decline DOM-verified.)
+Verified: schedule logic unit-tested; create/update persist; call endpoints curl-verified; admin form + incoming-call UI Playwright DOM-verified; lint clean (py+js).
+NOT verifiable in automation (needs real device/user): the LLM actually choosing to "call", live microphone auto-listen, and ringtone audio (browser autoplay needs a prior gesture). Web can't truly ring when the app is fully closed — the push notification is the trigger (told user). Requires Publish/Redeploy for production.

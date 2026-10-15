@@ -205,6 +205,14 @@ AFFECTION_LEVELS = {
 }
 
 
+class ScheduleBlock(BaseModel):
+    start: str = Field(default="", max_length=5)   # "HH:MM"
+    end: str = Field(default="", max_length=5)     # "HH:MM" (optional for point events)
+    activity: str = Field(default="", max_length=60)
+    busy: bool = False                             # busy = can't text/call during this
+    weekdays_only: bool = False                    # school/work etc. — skipped on weekends
+
+
 class CreateCharacterBody(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     username: str = Field(min_length=1, max_length=30)
@@ -218,6 +226,8 @@ class CreateCharacterBody(BaseModel):
     affection: str = Field(default="warm", max_length=20)   # how much they like the user
     sleep_start: Optional[int] = Field(default=None, ge=0, le=23)  # bedtime hour override (0-23)
     sleep_end: Optional[int] = Field(default=None, ge=0, le=23)    # wake hour override (0-23)
+    schedule: list[ScheduleBlock] = Field(default_factory=list)    # full day timetable
+    allow_calls: bool = False                                      # may this character call the user?
 
 
 def _age_sleep_default(age: Optional[int]):
@@ -250,6 +260,82 @@ def _is_asleep(hour: int, start: int, end: int) -> bool:
     if start < end:
         return start <= hour < end
     return hour >= start or hour < end  # window wraps past midnight
+
+
+def _hhmm(s):
+    """'HH:MM' -> decimal hour float, else None."""
+    m = re.match(r"^\s*(\d{1,2}):(\d{2})\s*$", str(s or ""))
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2))
+    return h + mi / 60 if h <= 23 and mi <= 59 else None
+
+
+def _todays_blocks(schedule, local_now):
+    """Blocks that apply today (weekdays_only blocks are dropped on Sat/Sun)."""
+    weekend = local_now.weekday() >= 5
+    out = []
+    for b in schedule or []:
+        if b.get("weekdays_only") and weekend:
+            continue
+        st = _hhmm(b.get("start"))
+        if st is None:
+            continue
+        en = _hhmm(b.get("end"))
+        out.append({"start": st, "end": en if en is not None else st,
+                    "activity": (b.get("activity") or "").strip(), "busy": bool(b.get("busy"))})
+    return out
+
+
+def _busy_now(schedule, local_now):
+    """(is_busy, next_free_local_hour|None). Busy = inside a busy block and NOT inside a
+    free block (recess/lunch free blocks override the busy school block)."""
+    blocks = _todays_blocks(schedule, local_now)
+    cur = local_now.hour + local_now.minute / 60
+    in_free = any(b["start"] <= cur < b["end"] for b in blocks if not b["busy"] and b["end"] > b["start"])
+    covering = [b for b in blocks if b["busy"] and b["start"] <= cur < b["end"] and b["end"] > b["start"]]
+    if in_free or not covering:
+        return (False, None)
+    end = min(b["end"] for b in covering)
+    free_starts = [b["start"] for b in blocks if not b["busy"] and cur < b["start"] <= end]
+    return (True, min(free_starts) if free_starts else end)
+
+
+def _free_anchors(schedule, local_now):
+    """Local hours the character is free and would naturally reach out: the start of each
+    free block, plus the end of each busy block (free afterwards)."""
+    anchors = set()
+    for b in _todays_blocks(schedule, local_now):
+        anchors.add(round(b["end"] if b["busy"] else b["start"], 2))
+    return sorted(a for a in anchors if 0 <= a < 24)
+
+
+def _schedule_lines(schedule):
+    """Static daily timetable, for the character's self-awareness in prompts."""
+    parts = []
+    for b in schedule or []:
+        st, en, act = b.get("start"), b.get("end"), (b.get("activity") or "").strip()
+        if not st or not act:
+            continue
+        tag = " (busy)" if b.get("busy") else " (free)"
+        if b.get("weekdays_only"):
+            tag += " [school/work days]"
+        parts.append(f"{st}{('-' + en) if en else ''} {act}{tag}")
+    return parts
+
+
+def _schedule_now_ctx(schedule, local_now):
+    """Time-relative 'right now you are…' line for prompts."""
+    blocks = _todays_blocks(schedule, local_now)
+    cur = local_now.hour + local_now.minute / 60
+    active = [b for b in blocks if b["start"] <= cur < b["end"] and b["end"] > b["start"]]
+    active.sort(key=lambda b: b["busy"])  # a free block wins over an overlapping busy one
+    if active:
+        b = active[0]
+        verb = "busy with" if b["busy"] else "free during"
+        mm = int(round((b["end"] % 1) * 60))
+        return f"- Right now you are {verb} {b['activity'] or 'your schedule'} (until about {int(b['end']):02d}:{mm:02d})."
+    return "- Right now you have nothing scheduled — you're free."
 
 
 class MemoryBody(BaseModel):
@@ -305,6 +391,8 @@ def build_router(ctx) -> APIRouter:
             "affection": c.get("affection", "warm"),
             "sleep_start": c.get("sleep_start"),
             "sleep_end": c.get("sleep_end"),
+            "schedule": c.get("schedule", []),
+            "allow_calls": bool(c.get("allow_calls")),
             "memories": c.get("memories", []),
             "voice_id": c.get("voice_id", ""),
             "voice_enabled": bool(c.get("voice_id") and settings_store.get("ELEVENLABS_API_KEY")),
@@ -364,6 +452,11 @@ def build_router(ctx) -> APIRouter:
             who.append(f"How you genuinely feel about them: {aff}")
         if who:
             base += "\nAbout the person you're talking to:\n" + "\n".join(who) + "\n"
+        sched = _schedule_lines(c.get("schedule"))
+        if sched:
+            base += ("\nYour daily schedule (live your day around this — mention what you're doing/"
+                     "about to do when it's natural, and you can only text or call during free moments):\n"
+                     + "\n".join(f"- {s}" for s in sched) + "\n")
         mems = [m.get("text", "") for m in c.get("memories", []) if m.get("text")]
         if mems:
             base += ("\nThings you ALWAYS remember about them (treat as established fact, weave in naturally, "
@@ -522,6 +615,8 @@ def build_router(ctx) -> APIRouter:
             "affection": (body.affection or "warm").strip().lower(),
             "sleep_start": body.sleep_start,
             "sleep_end": body.sleep_end,
+            "schedule": [b.model_dump() for b in body.schedule][:30],
+            "allow_calls": bool(body.allow_calls),
             "memories": [],
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
@@ -548,6 +643,8 @@ def build_router(ctx) -> APIRouter:
             "affection": (body.affection or "warm").strip().lower(),
             "sleep_start": body.sleep_start,
             "sleep_end": body.sleep_end,
+            "schedule": [b.model_dump() for b in body.schedule][:30],
+            "allow_calls": bool(body.allow_calls),
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
         }
@@ -628,6 +725,9 @@ def build_router(ctx) -> APIRouter:
                 {"character_id": char_id, "admin_id": current["id"]},
                 {"$set": {"tz": body.tz}}, upsert=True)
         context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
+        _ln = _local_now(body.tz)
+        if c.get("schedule") and _ln is not None:
+            context = (context + "\n" if context else "") + _schedule_now_ctx(c["schedule"], _ln)
         try:
             reply = await _reply(c, current["id"], body.text, spoken=False, context=context)
         except Exception as e:
@@ -664,6 +764,9 @@ def build_router(ctx) -> APIRouter:
                     {"character_id": char_id, "admin_id": current["id"]},
                     {"$set": {"tz": body.tz}}, upsert=True)
             context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
+            _ln = _local_now(body.tz)
+            if c.get("schedule") and _ln is not None:
+                context = (context + "\n" if context else "") + _schedule_now_ctx(c["schedule"], _ln)
             try:
                 spoken = await _reply(c, current["id"], body.text, spoken=True, context=context)
             except Exception as e:
@@ -699,6 +802,36 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(502, "Couldn't understand the audio")
         return {"text": (text or "").strip()}
 
+    # ---------- Proactive calls (character rings the user) ----------
+    @router.get("/api/ai-characters/incoming-call")
+    async def incoming_call(current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        call = await db.ai_char_calls.find_one(
+            {"admin_id": current["id"], "status": "ringing", "expires_at": {"$gt": _now()}},
+            sort=[("created_at", -1)])
+        if not call:
+            return {"call": None}
+        c = await db.ai_characters.find_one({"id": call["character_id"]}, {"_id": 0})
+        if not c:
+            return {"call": None}
+        return {"call": {"id": call["id"], "character": {
+            "id": c["id"], "name": c["name"],
+            "avatar_url": c.get("avatar_url") or default_avatar}}}
+
+    @router.post("/api/ai-characters/calls/{call_id}/answer")
+    async def answer_call(call_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        await db.ai_char_calls.update_one(
+            {"id": call_id, "admin_id": current["id"]}, {"$set": {"status": "answered"}})
+        return {"status": "answered"}
+
+    @router.post("/api/ai-characters/calls/{call_id}/decline")
+    async def decline_call(call_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        await db.ai_char_calls.update_one(
+            {"id": call_id, "admin_id": current["id"]}, {"$set": {"status": "declined"}})
+        return {"status": "declined"}
+
     # ---------- Proactive human-like texting (#4) ----------
     async def _coerce_dt(v):
         if isinstance(v, str):
@@ -710,35 +843,44 @@ def build_router(ctx) -> APIRouter:
             v = v.replace(tzinfo=timezone.utc)
         return v if isinstance(v, datetime) else None
 
-    async def _proactive_decide(c: dict, transcript: str, idle_min: int, unanswered: int, time_ctx: str = ""):
+    async def _proactive_decide(c: dict, transcript: str, idle_min: int, unanswered: int, time_ctx: str = "", can_call: bool = False):
         """Ask the character (in-character) whether a real person with their personality
-        would text right now, what they'd say, AND when they'd naturally reach out next.
-        Returns (should_send, message, next_hours)."""
+        would reach out right now, HOW (text or voice call), what they'd say, AND when
+        they'd naturally reach out next. Returns (should_send, message, next_hours, action)."""
         import json
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         sys = _system(c, spoken=False)
         sys += (
-            "\n\nRIGHT NOW you are deciding whether to TEXT this person on your own — unprompted — because "
-            "time has passed since you last talked. Behave EXACTLY like a real person with YOUR personality, "
-            "YOUR age, and YOUR genuine feelings about them would. Weigh ALL of these together: your personality, "
-            "how much you like them, your age and daily routine, the current time of day for them, and what you "
-            "last talked about.\n"
+            "\n\nRIGHT NOW you are deciding whether to REACH OUT to this person on your own — unprompted — "
+            "because time has passed since you last talked. Behave EXACTLY like a real person with YOUR "
+            "personality, YOUR age, and YOUR genuine feelings about them would. Weigh ALL of these together: "
+            "your personality, how much you like them, your age and daily routine/schedule, the current time of "
+            "day for them, and what you last talked about.\n"
             "- Deeply attached (a devoted parent, child, partner, best friend who adores them): you reach out "
             "OFTEN — you'd hate going a day without a word; check in, say you miss them, ask about their day, "
             "reference your chats. A child who loves them says goodnight before bed and good morning.\n"
             "- Friendly / normal: you reach out within a day or so.\n"
             "- Cold / distant / annoyed / dislikes them: you rarely text first, keep it short if you do — or you "
             "don't reach out at all.\n"
-            "- Respect your age's routine: a young kid is in bed early and texts around after-school/evening; a "
-            "teen or adult stays up later. NEVER text in the middle of your own sleeping hours.\n"
+            "- Respect your age's routine and schedule: only reach out in your free moments, never while busy or "
+            "asleep.\n"
             + (time_ctx + "\n" if time_ctx else "")
             + f"- It's been about {idle_min} minutes of silence. You've sent {unanswered} unanswered check-in(s); "
             "if they keep ignoring you and that's not your nature, give them space.\n"
-            "ALSO decide when you'd naturally message again next, as a NUMBER OF HOURS from now: deeply attached "
+        )
+        if can_call:
+            sys += (
+                "- You MAY instead CALL them (a real voice call) rather than text — but only occasionally, when "
+                "you genuinely want to hear their voice or it's a warm/special/can't-wait moment that fits your "
+                "free time. Most of the time prefer a text. Set action to \"call\" to call, else \"text\".\n")
+        sys += (
+            "ALSO decide when you'd naturally reach out again next, as a NUMBER OF HOURS from now: deeply attached "
             "~2-8 (even a few times a day), friendly ~12-24, distant ~24-72, cold/upset ~72-120.\n"
-            "Reply with STRICT JSON and nothing else: {\"text\": true|false, \"message\": \"...\", \"next_hours\": <number>}. "
-            "If you wouldn't reach out now, still set text=false but give next_hours. The message is a single, "
-            "natural text of 1-2 sentences — no markdown, no stage directions, no surrounding quotes, in your voice."
+            "Reply with STRICT JSON and nothing else: {\"text\": true|false, \"action\": \"text\"|\"call\", "
+            "\"message\": \"...\", \"next_hours\": <number>}. "
+            "If you wouldn't reach out now, set text=false (and action \"text\") but still give next_hours. The "
+            "message is a single natural text of 1-2 sentences — no markdown, no stage directions, no surrounding "
+            "quotes, in your voice."
         )
         chat = LlmChat(
             api_key=settings_store.get("EMERGENT_LLM_KEY"),
@@ -754,11 +896,12 @@ def build_router(ctx) -> APIRouter:
                 nh = float(data.get("next_hours"))
             except (TypeError, ValueError):
                 nh = 24.0
+            action = "call" if (can_call and str(data.get("action", "")).lower() == "call") else "text"
             return (bool(data.get("text")),
                     _strip_actions(_strip_tags(str(data.get("message") or ""))).strip(),
-                    nh)
+                    nh, action)
         except Exception:
-            return False, "", 24.0
+            return False, "", 24.0, "text"
 
     async def _proactive_once():
         now = datetime.now(timezone.utc)
@@ -799,16 +942,19 @@ def build_router(ctx) -> APIRouter:
                 promised = await _coerce_dt(state.get("promised_at"))
                 promise_due = bool(promised and now >= promised)
 
-                # Age/affection realism: user's local time, this character's sleep window,
-                # and (for attached school-age kids) their daily-routine moments.
+                # Age/affection realism: user's local time, sleep window, daily schedule.
                 local_now = _local_now(state.get("tz"))
                 sleep_start, sleep_end = _sleep_window(c)
-                anchors = _routine_anchors(c.get("age"), sleep_start, sleep_end) \
-                    if (c.get("affection", "warm") in ("adores", "warm")) else []
-                # Are we AT one of her routine beats right now (within ~45 min)? If so she
-                # should naturally check in (lunch, recess, after school, goodnight…).
-                # Only actionable if she hasn't just messaged (prevents re-firing the same
-                # beat on every 15-min pass).
+                schedule = c.get("schedule") or []
+                attached = c.get("affection", "warm") in ("adores", "warm")
+                has_sched = bool(schedule) and local_now is not None
+                if has_sched:
+                    anchors = _free_anchors(schedule, local_now) if attached else []
+                else:
+                    anchors = _routine_anchors(c.get("age"), sleep_start, sleep_end) if attached else []
+
+                # Are we AT one of her free beats right now (~45 min window)? Only actionable
+                # if she hasn't just messaged (prevents re-firing the same beat every pass).
                 anchor_due = False
                 if local_now is not None and anchors:
                     cur = local_now.hour + local_now.minute / 60
@@ -827,9 +973,7 @@ def build_router(ctx) -> APIRouter:
                     h = max(PROACTIVE_NEXT_MIN_H, min(PROACTIVE_NEXT_MAX_H, next_hours or 24))
                     h *= 0.85 + random.random() * 0.3
                     nxt = now + timedelta(hours=h)
-                    # For school-age, warm/attached kids, snap to the next natural routine
-                    # moment (recess, lunch, after-school, goodnight) if it comes sooner —
-                    # so she texts around her real daily beats, not just every N hours.
+                    # Snap to the next free moment (schedule / routine) if it comes sooner.
                     if local_now is not None and anchors:
                         a = _next_anchor_utc(local_now, anchors)
                         if a and now + timedelta(minutes=40) < a < nxt:
@@ -847,26 +991,65 @@ def build_router(ctx) -> APIRouter:
                             {"character_id": c["id"], "admin_id": admin_id},
                             {"$set": {"last_checked_at": now, "next_eval_at": wake_utc, "promised_at": None}}, upsert=True)
                         continue
+                    # Busy with a scheduled activity → she can't reach out; recheck when free.
+                    if has_sched and not promise_due:
+                        busy, next_free = _busy_now(schedule, local_now)
+                        if busy:
+                            free_utc = _next_local_hour_utc(local_now, int(next_free)) if next_free is not None else now + timedelta(minutes=30)
+                            await db.ai_char_state.update_one(
+                                {"character_id": c["id"], "admin_id": admin_id},
+                                {"$set": {"last_checked_at": now, "next_eval_at": free_utc}}, upsert=True)
+                            continue
+                    if has_sched:
+                        time_ctx += "\n" + _schedule_now_ctx(schedule, local_now)
 
                 if unanswered >= PROACTIVE_MAX_UNANSWERED and not promise_due:
                     await db.ai_char_state.update_one(
                         {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule(72)}, upsert=True)
                     continue
+
+                # May she CALL instead of text? (admin toggle + attached + under daily cap)
+                local_day = local_now.strftime("%Y-%m-%d") if local_now is not None else None
+                calls_today = int(state.get("calls_count", 0) or 0) if state.get("calls_day") == local_day else 0
+                can_call = bool(c.get("allow_calls")) and attached and local_now is not None and calls_today < 2
+
                 if promise_due:
                     time_ctx += ("\n- IMPORTANT: Earlier you told them you'd reach out right about now "
-                                 "(you promised a specific time/moment). Keep your word — send that text now.")
+                                 "(you promised a specific time/moment). Keep your word — reach out now.")
                 elif anchor_due:
-                    time_ctx += ("\n- This is one of your usual daily moments to reach out (e.g. recess, lunch "
-                                 "break, after school, or goodnight). Send a short, warm, natural text now about "
-                                 "what you're up to right now.")
+                    time_ctx += ("\n- This is one of your usual free moments to reach out (e.g. recess, lunch, "
+                                 "after school, a break, or goodnight). Reach out now about what you're up to.")
                 hist = await db.ai_char_messages.find(
                     {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
                 ).sort("created_at", -1).limit(30).to_list(30)
                 hist.reverse()
                 transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
-                should, message, next_hours = await _proactive_decide(c, transcript, int(idle_min), unanswered, time_ctx)
-                if promise_due or anchor_due:
+                should, message, next_hours, action = await _proactive_decide(
+                    c, transcript, int(idle_min), unanswered, time_ctx, can_call=can_call)
+                do_call = can_call and action == "call"
+                if (promise_due or anchor_due) and not do_call:
                     should = True  # a promise / routine moment is honored if she produced a message
+
+                if do_call:
+                    # Place a ringing call: the client rings + shows an incoming-call screen.
+                    call = {"id": str(uuid.uuid4()), "character_id": c["id"], "admin_id": admin_id,
+                            "status": "ringing", "created_at": now, "expires_at": now + timedelta(seconds=120)}
+                    await db.ai_char_calls.insert_one(call)
+                    await _store(c["id"], admin_id, "ai", f"📞 {c['name']} tried to call you")
+                    upd = _schedule(next_hours)
+                    upd.update({"last_proactive_at": now, "calls_day": local_day, "calls_count": calls_today + 1})
+                    await db.ai_char_state.update_one(
+                        {"character_id": c["id"], "admin_id": admin_id},
+                        {"$set": upd, "$inc": {"unanswered": 1}}, upsert=True)
+                    sent_admins.add(admin_id)
+                    try:
+                        await send_web_push(admin_id, f"📞 {c['name']} is calling you",
+                                             "Tap to answer", url=f"/messages/ai_{c['id']}?incoming=1",
+                                             extra={"incomingCall": True})
+                    except Exception:
+                        pass
+                    continue
+
                 if not should or not message:
                     # character chose not to reach out now — recheck at their own pace
                     await db.ai_char_state.update_one(

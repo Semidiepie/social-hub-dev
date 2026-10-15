@@ -28,6 +28,7 @@ import { Avatar } from "@/components/Avatar";
 import { HamburgerMenu } from "@/components/HamburgerMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { RightSidebar } from "@/components/RightSidebar";
+import { IncomingCallListener } from "@/components/IncomingCallListener";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -258,6 +259,8 @@ export function AppShell({ children }) {
         <div className="mx-auto w-full max-w-[1000px] flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6">
           {children}
         </div>
+
+        <IncomingCallListener />
 
         {/* Mobile bottom nav */}
         <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 flex justify-center px-4 pb-[max(env(safe-area-inset-bottom),8px)] md:hidden">

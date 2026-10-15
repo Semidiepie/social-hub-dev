@@ -196,9 +196,9 @@ export function AiCharacterChat({ characterId, onBack }) {
 }
 
 // Push-to-talk voice call (same UX as Sage): greeting → tap mic to talk → tap to
-// send → character replies with voice. No auto-listen (VAD). Plays via Web Audio
-// so the in-call volume slider works on iOS too.
-function CharacterCall({ character, onEnd }) {
+// send → character replies with voice. When `autoListen` is on (answered incoming
+// calls) it greets first, then listens hands-free and replies after you stop talking.
+export function CharacterCall({ character, onEnd, autoListen = false }) {
   const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
   const [caption, setCaption] = useState("");
   const [speaker, setSpeaker] = useState(true);
@@ -218,6 +218,9 @@ function CharacterCall({ character, onEnd }) {
   const speakerRef = useRef(true);
   speakerRef.current = speaker;
   const acRef = useRef(null);
+  const vadTimerRef = useRef(null);
+  const micSrcRef = useRef(null);
+  const stopSendRef = useRef(null);
 
   const ensureAC = () => {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -256,6 +259,12 @@ function CharacterCall({ character, onEnd }) {
     })();
   }), []);
 
+  const stopVad = () => {
+    if (vadTimerRef.current) { clearInterval(vadTimerRef.current); vadTimerRef.current = null; }
+    try { micSrcRef.current?.disconnect(); } catch { /* noop */ }
+    micSrcRef.current = null;
+  };
+
   const startRecording = async () => {
     if (endedRef.current) return;
     try {
@@ -271,12 +280,40 @@ function CharacterCall({ character, onEnd }) {
       rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
       rec.start();
       setStatus("recording");
+      // Hands-free: listen for your voice, then auto-send after you stop talking.
+      if (autoListen) {
+        try {
+          const ac = ensureAC();
+          if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
+          const src = ac.createMediaStreamSource(stream);
+          const analyser = ac.createAnalyser();
+          analyser.fftSize = 512;
+          src.connect(analyser);
+          micSrcRef.current = src;
+          const data = new Uint8Array(analyser.frequencyBinCount);
+          let spoke = false; let silenceStart = 0; const started = Date.now();
+          vadTimerRef.current = setInterval(() => {
+            analyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+            const rms = Math.sqrt(sum / data.length);
+            const t = Date.now();
+            if (rms > 0.055) { spoke = true; silenceStart = 0; }
+            else if (spoke) {
+              if (!silenceStart) silenceStart = t;
+              else if (t - silenceStart > 1200) { stopVad(); stopSendRef.current && stopSendRef.current(); }
+            }
+            if (t - started > 20000) { stopVad(); stopSendRef.current && stopSendRef.current(); } // safety cap
+          }, 120);
+        } catch { /* noop — manual mic still works */ }
+      }
     } catch {
       toast.error("Mic blocked — allow microphone access. If you're in the embedded preview, open the preview in its own browser tab.");
     }
   };
 
   const stopRecordingAndSend = async () => {
+    stopVad();
     const rec = recorderRef.current;
     if (!rec) return;
     recorderRef.current = null;
@@ -297,17 +334,23 @@ function CharacterCall({ character, onEnd }) {
       if (!sttRes.ok) throw new Error("stt");
       const { text } = await sttRes.json();
       if (endedRef.current) return;
-      if (!text) { toast("I didn't catch that — tap the mic and try again"); setStatus("idle"); return; }
+      if (!text) {
+        // nothing heard — in hands-free mode just keep listening, else prompt a tap
+        if (autoListen && !endedRef.current) { setStatus("idle"); startRecording(); }
+        else { toast("I didn't catch that — tap the mic and try again"); setStatus("idle"); }
+        return;
+      }
       setCaption(text);
       const r = await api.post(`/ai-characters/${character.id}/voice-turn`, { text, ...gatherContext() });
       if (endedRef.current) return;
       setCaption(r.reply);
       await playAudio(r.audio_url);
-      if (!endedRef.current) setStatus("idle");
+      if (!endedRef.current) { setStatus("idle"); if (autoListen) startRecording(); } // keep the call flowing
     } catch {
       if (!endedRef.current) { toast.error("Trouble hearing you — let's try again"); setStatus("idle"); }
     }
   };
+  stopSendRef.current = stopRecordingAndSend;
 
   useEffect(() => {
     endedRef.current = false;
@@ -318,13 +361,14 @@ function CharacterCall({ character, onEnd }) {
         if (endedRef.current) return;
         setCaption(r.reply);
         await playAudio(r.audio_url);
-        if (!endedRef.current) setStatus("idle");
+        if (!endedRef.current) { setStatus("idle"); if (autoListen) startRecording(); } // they called you → listen for your reply
       } catch {
         if (!endedRef.current) { toast.error("Couldn't start the voice call"); onEnd(); }
       }
     })();
     return () => {
       endedRef.current = true;
+      stopVad();
       try { srcNodeRef.current?.stop(); } catch { /* noop */ }
       try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
       stopTracks();
@@ -334,6 +378,7 @@ function CharacterCall({ character, onEnd }) {
 
   const hangUp = () => {
     endedRef.current = true;
+    stopVad();
     try { srcNodeRef.current?.stop(); } catch { /* noop */ }
     try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }
     stopTracks();
@@ -350,8 +395,8 @@ function CharacterCall({ character, onEnd }) {
   const recording = status === "recording";
   const busy = status === "connecting" || status === "thinking" || status === "speaking";
   const statusText = {
-    connecting: "Connecting…", idle: "Tap the mic and talk",
-    recording: "Listening… tap to send", thinking: `${character.name} is thinking…`, speaking: `${character.name} is speaking…`,
+    connecting: "Connecting…", idle: autoListen ? "Just speak…" : "Tap the mic and talk",
+    recording: autoListen ? "Listening…" : "Listening… tap to send", thinking: `${character.name} is thinking…`, speaking: `${character.name} is speaking…`,
   }[status];
 
   return (
@@ -393,7 +438,7 @@ function CharacterCall({ character, onEnd }) {
       <button onClick={hangUp} className="mt-10 flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white" data-testid="aichar-hangup">
         <PhoneOff size={24} />
       </button>
-      <p className="mt-6 max-w-xs text-[11px] text-white/40">Tap the mic to talk, tap again to send.</p>
+      <p className="mt-6 max-w-xs text-[11px] text-white/40">{autoListen ? "Just talk — they reply when you pause. Tap the mic to send manually." : "Tap the mic to talk, tap again to send."}</p>
     </div>
   );
 }
