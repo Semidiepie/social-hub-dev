@@ -140,6 +140,10 @@ PROACTIVE_NEXT_MIN_H = 1          # clamp the character's self-chosen next check
 PROACTIVE_NEXT_MAX_H = 120        # distant characters can go up to ~5 days
 PROACTIVE_MAX_UNANSWERED = 3      # stop texting after this many ignored check-ins (until they reply)
 
+LIVE_TICK_SEC = 25               # live-chat comment loop cadence
+LIVE_MAX_COMMENTS = 6            # max AI comments per character per live session
+LIVE_MAX_CHARS_PER_LIVE = 3      # at most this many of a user's characters comment on one live
+
 # Emotion / non-verbal cues the character may embed in replies; performed by eleven_v3
 # and stripped from the text shown on screen.
 AUDIO_TAG_RE = re.compile(r"\[[a-zA-Z][a-zA-Z '\-]{0,24}\]")
@@ -228,6 +232,7 @@ class CreateCharacterBody(BaseModel):
     sleep_end: Optional[int] = Field(default=None, ge=0, le=23)    # wake hour override (0-23)
     schedule: list[ScheduleBlock] = Field(default_factory=list)    # full day timetable
     allow_calls: bool = False                                      # may this character call the user?
+    allow_live: bool = True                                        # may this character join & comment on the user's lives?
 
 
 def _age_sleep_default(age: Optional[int]):
@@ -433,6 +438,7 @@ def build_router(ctx) -> APIRouter:
             "sleep_end": c.get("sleep_end"),
             "schedule": c.get("schedule", []),
             "allow_calls": bool(c.get("allow_calls")),
+            "allow_live": bool(c.get("allow_live", True)),
             "memories": c.get("memories", []),
             "voice_id": c.get("voice_id", ""),
             "voice_enabled": bool(c.get("voice_id") and settings_store.get("ELEVENLABS_API_KEY")),
@@ -709,6 +715,7 @@ def build_router(ctx) -> APIRouter:
             "sleep_end": body.sleep_end,
             "schedule": [b.model_dump() for b in body.schedule][:30],
             "allow_calls": bool(body.allow_calls),
+            "allow_live": bool(body.allow_live),
             "memories": [],
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
@@ -737,6 +744,7 @@ def build_router(ctx) -> APIRouter:
             "sleep_end": body.sleep_end,
             "schedule": [b.model_dump() for b in body.schedule][:30],
             "allow_calls": bool(body.allow_calls),
+            "allow_live": bool(body.allow_live),
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
         }
@@ -1242,8 +1250,110 @@ def build_router(ctx) -> APIRouter:
                 logger.warning(f"ai-char reply_loop error: {e}")
             await asyncio.sleep(15)
 
+    async def _live_comment(c: dict, admin_id: str, title: str, recent: list) -> str:
+        """Generate ONE short, in-character live-chat comment reacting to the user's
+        stream + what other viewers just said. Cheap single Claude call."""
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        sys = _system(c, spoken=False)
+        them = c.get("nickname") or c.get("your_name") or "them"
+        sys += (
+            f"\n\nRIGHT NOW {them} is livestreaming on PostMePlex (stream title: \"{title}\"). "
+            "You're watching their live and dropping a comment in the live chat, exactly like a real "
+            "person who cares about them would. Keep it SHORT — a casual live-chat line of about 3-14 "
+            "words, in your own voice. React to the stream and/or reply naturally to what other viewers "
+            "just said. Be warm/supportive/excited in a way that fits your feelings and age. "
+            "No markdown, no stage directions, no surrounding quotes, no @handles. "
+            "Output ONLY the comment text, nothing else."
+        )
+        transcript = "\n".join(
+            f"{m.get('display_name') or m.get('username')}: {m.get('text','')}"
+            for m in recent if m.get("kind") != "system" and m.get("text"))
+        chat = LlmChat(
+            api_key=settings_store.get("EMERGENT_LLM_KEY"),
+            session_id=f"aichar-live-{c['id']}-{admin_id}",
+            system_message=sys,
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        prompt = ((f"Recent live chat:\n{transcript}\n\n" if transcript else "")
+                  + "Write ONE short live-chat comment now.")
+        resp = await chat.send_message(UserMessage(text=prompt))
+        return _strip_actions(_strip_tags((resp or "").strip())).strip().strip('"')[:200]
+
+    live_state: dict = {}  # (stream_id, char_id) -> {"next_at": dt, "count": int}
+
+    async def _live_comments_once():
+        post = getattr(ctx, "live_post_ai_comment", None)
+        if not post:
+            return
+        now = _now()
+        streams = await db.live_streams.find(
+            {"status": "live"}, {"_id": 0, "id": 1, "owner_id": 1, "title": 1}).to_list(100)
+        live_ids = {s["id"] for s in streams}
+        for k in [k for k in live_state if k[0] not in live_ids]:
+            live_state.pop(k, None)  # prune ended streams
+        for s in streams:
+            owner_id = s["owner_id"]
+            # Only characters that have a relationship (message thread) with the broadcaster.
+            char_ids = await db.ai_char_messages.distinct("character_id", {"admin_id": owner_id})
+            if not char_ids:
+                continue
+            commenters = 0
+            for cid in char_ids:
+                if commenters >= LIVE_MAX_CHARS_PER_LIVE:
+                    break
+                try:
+                    c = await db.ai_characters.find_one({"id": cid})
+                    if not c or not c.get("allow_live", True):
+                        continue
+                    if c.get("affection", "warm") not in ("adores", "warm"):
+                        continue  # only characters who feel warmly reach out
+                    state = await db.ai_char_state.find_one(
+                        {"character_id": cid, "admin_id": owner_id}) or {}
+                    local_now = _local_now(state.get("tz"))
+                    sleep_start, sleep_end = _sleep_window(c)
+                    if local_now is not None and _is_asleep(local_now.hour, sleep_start, sleep_end):
+                        continue  # asleep → not watching
+                    schedule = c.get("schedule") or []
+                    if schedule and local_now is not None:
+                        busy, _ = _busy_now(schedule, local_now)
+                        if busy:
+                            continue  # busy on their timetable → not watching
+                    commenters += 1
+                    key = (s["id"], cid)
+                    st = live_state.get(key)
+                    if st is None:
+                        # Just "joined" — schedule the first comment 15-60s out (human lag).
+                        live_state[key] = {"next_at": now + timedelta(seconds=random.randint(15, 60)), "count": 0}
+                        continue
+                    if st["count"] >= LIVE_MAX_COMMENTS or now < st["next_at"]:
+                        continue
+                    recent = await db.live_chat.find(
+                        {"stream_id": s["id"]},
+                        {"_id": 0, "display_name": 1, "username": 1, "text": 1, "kind": 1}
+                    ).sort("created_at", -1).limit(12).to_list(12)
+                    recent.reverse()
+                    comment = await _live_comment(c, owner_id, s.get("title", "Live"), recent)
+                    if comment:
+                        await post(s["id"], c, comment)
+                    st["count"] += 1
+                    st["next_at"] = now + timedelta(seconds=random.randint(60, 180))
+                except Exception as e:
+                    logger.warning(f"ai-char live comment error {cid}/{s.get('id')}: {e}")
+
+    async def live_loop():
+        await asyncio.sleep(30)  # let the app + live router finish booting
+        while True:
+            try:
+                if settings_store.get("EMERGENT_LLM_KEY"):
+                    await _live_comments_once()
+            except Exception as e:
+                logger.warning(f"ai-char live_loop error: {e}")
+            await asyncio.sleep(LIVE_TICK_SEC)
+
     router.proactive_loop = proactive_loop
     router.proactive_once = _proactive_once
     router.reply_loop = reply_loop
     router.replies_once = _replies_once
+    router.live_loop = live_loop
+    router.live_comments_once = _live_comments_once
+    router.live_state = live_state
     return router

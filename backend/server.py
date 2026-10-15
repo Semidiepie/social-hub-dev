@@ -3382,6 +3382,7 @@ async def _start_ai_char_proactive():
     import asyncio
     asyncio.create_task(_ai_char_router.proactive_loop())
     asyncio.create_task(_ai_char_router.reply_loop())
+    asyncio.create_task(_ai_char_router.live_loop())
 
 
 @app.on_event("startup")

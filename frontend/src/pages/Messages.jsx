@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Loader2, Send, MessageSquare, ArrowLeft, Trash2, Phone, Video, BadgeCheck,
-  Plus, Users, Settings as SettingsIcon, X, Check, UserPlus, LogOut, Search, ImagePlus, Sparkles,
+  Plus, Users, Settings as SettingsIcon, X, Check, UserPlus, LogOut, Search, ImagePlus, Sparkles, Radio,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
@@ -318,6 +318,7 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
   const [sleepStart, setSleepStart] = useState(character?.sleep_start ?? "");
   const [sleepEnd, setSleepEnd] = useState(character?.sleep_end ?? "");
   const [allowCalls, setAllowCalls] = useState(character?.allow_calls || false);
+  const [allowLive, setAllowLive] = useState(character?.allow_live ?? true);
   const [schedule, setSchedule] = useState(character?.schedule || []);
   const [memories, setMemories] = useState(character?.memories || []);
   const [newMem, setNewMem] = useState("");
@@ -366,6 +367,7 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
         sleep_start: sleepStart === "" ? null : parseInt(sleepStart, 10),
         sleep_end: sleepEnd === "" ? null : parseInt(sleepEnd, 10),
         allow_calls: allowCalls,
+        allow_live: allowLive,
         schedule: schedule.filter((b) => b.start && b.activity).map((b) => ({ start: b.start, end: b.end || "", activity: b.activity, busy: !!b.busy, weekdays_only: !!b.weekdays_only })) };
       if (editing) await api.put(`/ai-characters/${character.id}`, body);
       else await api.post("/ai-characters", body);
@@ -490,6 +492,12 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
           <input type="checkbox" checked={allowCalls} onChange={(e) => setAllowCalls(e.target.checked)} className="h-5 w-5 accent-primary" data-testid="aichar-allow-calls" />
         </label>
         <p className="mt-1 text-[10px] text-muted-foreground">When on, they may ring you now and then during their free moments (max ~2/day). Your phone rings and you choose to answer.</p>
+
+        <label className="mt-3 flex cursor-pointer items-center justify-between rounded-xl border border-border p-3" data-testid="aichar-allow-live-row">
+          <span className="flex items-center gap-2 text-sm font-semibold"><Radio size={15} className="text-rose-500" /> Let this character join my lives</span>
+          <input type="checkbox" checked={allowLive} onChange={(e) => setAllowLive(e.target.checked)} className="h-5 w-5 accent-primary" data-testid="aichar-allow-live" />
+        </label>
+        <p className="mt-1 text-[10px] text-muted-foreground">When on, they&apos;ll drop by your livestreams during their free time and comment in the live chat (only if they feel warmly toward you). Viewers see their name but can&apos;t open a profile.</p>
 
         {editing ? (
           <div className="mt-3 rounded-xl border border-border p-2.5">

@@ -1071,3 +1071,13 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - BUG FIXED: _replies_once left pending_reply_at set when _media_reply raised (e.g. 403/expired media URL) → reply_loop re-matched the same state every 15s forever, burning Gemini quota. Now the except branch $unsets pending_reply_at+pending_from so a bad media URL can't infinite-loop (user just resends). lint clean.
 - STATUS: live in preview, testing-agent verified. Requires Publish/Redeploy for production.
 - Known deferred (non-blocking): ai_characters.py ~1250 lines (split recommended); AiCharacterChat.jsx temp-message dedupe compares exact text (duplicate sends may visually dedupe — minor UX). Mobile (Expo) does NOT have this media/AI-vision feature yet — web-only.
+
+### 2026-10 — AI characters join & comment on your lives (agent-tested e2e)
+- When a user goes live, their attached AI characters "join" and post short in-character comments in the live chat, reading the stream title + recent chat for realistic, context-aware lines that can reply to other viewers.
+- Gating (per user request): affection (only warm/adoring characters comment; cold/distant stay quiet) + schedule (only when free & awake per timetable) + new per-character admin toggle **allow_live** (default ON).
+- Human-paced: first comment 15-60s after join, then every 60-180s, capped LIVE_MAX_COMMENTS=6/char/live, max LIVE_MAX_CHARS_PER_LIVE=3 characters/live. 1 Claude call per comment (cost-capped).
+- Public sees the character's username+comment but it is NOT clickable (live overlay ChatRow renders plain text; comment flagged is_ai + clickable:false). No profile opens — AI stays hidden.
+- Backend: live.py exposes ctx.live_post_ai_comment (inserts into live_chat + hub.broadcast {type:chat}); ai_characters.py adds _live_comment / _live_comments_once / live_loop (25s tick), started in server.py startup. Only comments on the broadcaster's OWN lives (characters with a message thread with that owner).
+- Frontend: Messages.jsx admin form adds "Let this character join my lives" toggle (allow_live, default on).
+- VERIFIED: backend/tests/test_live_ai_comments.py drives the real loop — PASS: join registered, contextual comment posted ("omg the new setup looks so good already!!"), cold character stays quiet, allow_live=off gated, ended-stream state pruned. Web render path (useLiveSocket → ChatRow) confirmed by code.
+- STATUS: live in preview, agent-tested e2e. Requires Publish/Redeploy for production. NOTE: not run through the full UI testing agent (the real loop + a live stream + timers is hard to drive in-browser); the server-side flow and the unchanged client render path are both verified.

@@ -204,6 +204,40 @@ def build_router(ctx) -> APIRouter:
     async def list_gifts():
         return GIFTS
 
+    async def post_ai_comment(stream_id: str, character: dict, text: str):
+        """Post a live-chat comment on behalf of an AI character (called by the AI
+        scheduler). Looks like a normal viewer comment but is flagged is_ai + not
+        clickable so the client never links it to a profile. No-op if the stream
+        isn't live."""
+        text = (text or "").strip()[:300]
+        if not text:
+            return
+        s = await db.live_streams.find_one({"id": stream_id}, {"_id": 0, "status": 1, "chat_enabled": 1})
+        if not s or s.get("status") != "live" or not s.get("chat_enabled", True):
+            return
+        msg = {
+            "id": str(uuid.uuid4()),
+            "stream_id": stream_id,
+            "kind": "chat",
+            "user_id": f"ai_{character['id']}",
+            "username": character.get("username") or character.get("name"),
+            "display_name": character.get("name") or character.get("username"),
+            "avatar_url": _av(character.get("avatar_url")),
+            "is_verified": False,
+            "verified_color": None,
+            "remembering": False,
+            "is_ai": True,
+            "clickable": False,
+            "text": text,
+            "created_at": now(),
+        }
+        await db.live_chat.insert_one(dict(msg))
+        msg["created_at"] = msg["created_at"].isoformat()
+        msg.pop("_id", None)
+        await hub.broadcast(stream_id, {"type": "chat", "message": msg})
+
+    ctx.live_post_ai_comment = post_ai_comment
+
     @router.get("/api/live")
     async def list_live(current: Annotated[dict, Depends(get_current_user)]):
         rows = await db.live_streams.find({"status": "live"}, {"_id": 0}).sort("created_at", -1).to_list(100)
