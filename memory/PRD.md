@@ -1104,3 +1104,7 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - CHANGE (routes/ai_characters.py): TTS_MODEL eleven_v3 -> eleven_flash_v2_5 (natural, 75ms, low-latency), fallback eleven_v4 (flagship realism). _synth now passes language_code="en" to enforce English pronunciation + curb accent drift. Voice-call system prompt no longer instructs [bracket] audio cues (flash/v4 don't perform them); emotion now via word choice + ellipses. _tts strips any stray AUDIO_TAG_RE brackets before synth so nothing is read literally.
 - CANNOT verify in preview: the preview ELEVENLABS_API_KEY is INVALID (401) so no audio plays in preview. User must Publish/Redeploy and listen on production.
 - Caveat told to user: if accent persists after this, it is baked into the chosen ElevenLabs voice (voice_id) and the only fix is selecting a different, accent-free voice.
+
+### 2026-10 — Voice model reverted to eleven_v3 (per user)
+- User disliked the flash_v2_5 change ("keep old model for better emotions and expressions"). Fully reverted: TTS_MODEL=eleven_v3, fallback eleven_multilingual_v2, voice-call prompt restored to instruct [laughs]/[sighs]/etc. audio cues, _tts language_code + bracket-strip removed.
+- NET: accent fix abandoned by user choice; expressiveness prioritized. Accent (if any) is inherent to v3 drift / the chosen voice.

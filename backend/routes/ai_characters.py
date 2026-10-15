@@ -128,8 +128,8 @@ def _parse_next_contact(text, local_now, sleep_start, sleep_end):
 
 import settings_store
 
-TTS_MODEL = "eleven_flash_v2_5"          # natural + low-latency English, no accent drift (language_code=en)
-TTS_FALLBACK_MODEL = "eleven_v4"         # flagship realism fallback if flash is unavailable
+TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
+TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for the account/voice
 
 # Proactive "human-like" texting. Cadence is PERSONALITY-PACED: each character picks
 # its own next check-in time — someone attached texts within hours (even daily), a
@@ -519,11 +519,12 @@ def build_router(ctx) -> APIRouter:
         if spoken:
             base += (" You are on a VOICE call, so answer the way a person naturally speaks out loud: "
                      "short warm sentences, no markdown, no bullet lists, no emojis, easy to say aloud. "
-                     "Speak in clear, natural American English with NO accent. Convey real emotion through "
-                     "your WORD CHOICE and rhythm — warm phrasing, little laughs written as words (\"haha\", "
-                     "\"aww\"), and ellipses (…) and commas for natural breathing and pauses. Do NOT use square-"
-                     "bracket cues or stage directions. Keep each reply to 1-3 short sentences so you respond "
-                     "quickly and the call feels snappy.")
+                     "To sound truly human, express real emotion with inline audio cues in square brackets "
+                     "that the voice will PERFORM (not say): [laughs], [giggles], [sighs], [whispers], "
+                     "[excited], [sad], [crying], [nervously], [gasps], [clears throat]. Use them naturally and "
+                     "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
+                     "breathing and pauses. Never read a tag out loud or explain it. Keep each reply to 1-3 short "
+                     "sentences so you respond quickly and the call feels snappy.")
         return base
 
     async def _realworld_context(local_time: str, tz: str, lat, lon) -> str:
@@ -632,20 +633,16 @@ def build_router(ctx) -> APIRouter:
         voice_id = c.get("voice_id")
         if not eleven_key or not voice_id:
             return None
-        # Safety net: never let a stray [bracket] cue be read aloud by non-v3 models.
-        text = re.sub(r"\s+", " ", AUDIO_TAG_RE.sub(" ", text or "")).strip()
-        if not text:
-            return None
 
         def _synth(model_id: str) -> bytes:
             from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
-            # language_code="en" enforces English pronunciation and curbs accent drift;
-            # max similarity + zero style keeps delivery faithful + neutral.
+            # Lower stability + higher style = more emotional, spontaneous delivery (laughs/breathing).
+            # Faithful to the pasted voice, NO added accent/theatrical drift:
+            # max similarity to the source voice + zero style keeps delivery neutral.
             stream = client.text_to_speech.convert(
                 text=text, voice_id=voice_id, model_id=model_id, output_format="mp3_44100_128",
-                language_code="en",
                 voice_settings=VoiceSettings(stability=0.5, similarity_boost=1.0, style=0.0, use_speaker_boost=True),
             )
             return b"".join(stream)
@@ -653,7 +650,7 @@ def build_router(ctx) -> APIRouter:
         try:
             audio = await asyncio.to_thread(_synth, TTS_MODEL)
         except Exception as e:
-            logger.warning(f"ai-char tts failed on {TTS_MODEL}, falling back to {TTS_FALLBACK_MODEL}: {e}")
+            logger.warning(f"ai-char v3 tts failed, falling back to {TTS_FALLBACK_MODEL}: {e}")
             try:
                 audio = await asyncio.to_thread(_synth, TTS_FALLBACK_MODEL)
             except Exception as e2:
