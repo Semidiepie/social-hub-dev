@@ -338,6 +338,28 @@ def _schedule_now_ctx(schedule, local_now):
     return "- Right now you have nothing scheduled — you're free."
 
 
+def _reply_delay_seconds(affection):
+    """Human-paced reply latency when the character is free: usually seconds, sometimes
+    a couple minutes, occasionally ~5 min. Slower the less they like you."""
+    r = random.random()
+    if affection == "adores":
+        if r < 0.45:
+            return random.randint(4, 25)
+        if r < 0.8:
+            return random.randint(30, 120)
+        return random.randint(120, 300)
+    if affection == "warm":
+        if r < 0.3:
+            return random.randint(8, 40)
+        if r < 0.75:
+            return random.randint(60, 240)
+        return random.randint(240, 360)
+    # neutral / distant / dislikes — they take their time
+    if r < 0.5:
+        return random.randint(90, 300)
+    return random.randint(300, 600)
+
+
 class MemoryBody(BaseModel):
     text: str = Field(min_length=1, max_length=400)
 
@@ -720,30 +742,28 @@ def build_router(ctx) -> APIRouter:
         _require_admin(current)
         c = await _get_char(char_id)
         await _store(char_id, current["id"], "user", body.text)
+        # Decide WHEN the character replies — like a real person: sometimes within seconds,
+        # sometimes a few minutes. If they're busy on their schedule, they reply only once
+        # free. The reply itself is generated + delivered later by the reply loop, which
+        # web-pushes you the moment it's actually sent (works even with the app closed).
+        local_now = _local_now(body.tz)
+        schedule = c.get("schedule") or []
+        busy = False
+        if schedule and local_now is not None:
+            busy, next_free = _busy_now(schedule, local_now)
+        now = _now()
+        if busy and local_now is not None:
+            free_utc = _next_local_hour_utc(local_now, int(next_free)) if next_free is not None else now + timedelta(minutes=30)
+            reply_at = free_utc + timedelta(seconds=random.randint(20, 240))
+        else:
+            reply_at = now + timedelta(seconds=_reply_delay_seconds(c.get("affection", "warm")))
+        setfields = {"pending_reply_at": reply_at, "pending_from": current["id"]}
         if body.tz:
-            await db.ai_char_state.update_one(
-                {"character_id": char_id, "admin_id": current["id"]},
-                {"$set": {"tz": body.tz}}, upsert=True)
-        context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
-        _ln = _local_now(body.tz)
-        if c.get("schedule") and _ln is not None:
-            context = (context + "\n" if context else "") + _schedule_now_ctx(c["schedule"], _ln)
-        try:
-            reply = await _reply(c, current["id"], body.text, spoken=False, context=context)
-        except Exception as e:
-            logger.warning(f"ai-char reply error: {e}")
-            raise HTTPException(502, f"{c['name']} is having trouble responding right now")
-        clean = _strip_actions(_strip_tags(reply))
-        msg = await _store(char_id, current["id"], "ai", clean)
-        # If she said she'd reach out again at a set time/moment, remember it so she keeps her word.
-        await _capture_promise(char_id, current["id"], clean, body.tz)
-        # Texting is silent by design — voice only plays during a call (/voice-turn).
-        # NOTE: we intentionally do NOT push here. This reply is a response to a message
-        # the user JUST sent while looking at the chat, and the client reveals it with a
-        # realistic "thinking + typing" delay. Pushing now would fire a banner BEFORE the
-        # typing finishes. The client shows a notification itself only if the tab is hidden
-        # when the reply actually renders. (Proactive, unprompted texts still push.)
-        return {"message": _msg_out(msg), "audio_url": None}
+            setfields["tz"] = body.tz
+        await db.ai_char_state.update_one(
+            {"character_id": char_id, "admin_id": current["id"]},
+            {"$set": setfields}, upsert=True)
+        return {"pending": True, "reply_at": reply_at.isoformat(), "busy": busy}
 
     @router.post("/api/ai-characters/{char_id}/voice-turn")
     async def voice_turn(char_id: str, body: VoiceTurnBody, current: Annotated[dict, Depends(get_current_user)]):
@@ -1081,6 +1101,63 @@ def build_router(ctx) -> APIRouter:
                 logger.warning(f"ai-char proactive_loop error: {e}")
             await asyncio.sleep(PROACTIVE_TICK_SEC)
 
+    async def _replies_once():
+        """Deliver due deferred replies to messages you sent — the human-paced delay has
+        elapsed (or the character is now free). Generates the reply, stores it, and web-
+        pushes you the moment it's sent (so you're notified even with the app closed)."""
+        now = _now()
+        states = await db.ai_char_state.find({"pending_reply_at": {"$lte": now}}).to_list(200)
+        for state in states:
+            char_id, admin_id = state.get("character_id"), state.get("admin_id")
+            try:
+                c = await db.ai_characters.find_one({"id": char_id})
+                if not c:
+                    await db.ai_char_state.update_one({"_id": state["_id"]}, {"$unset": {"pending_reply_at": ""}})
+                    continue
+                # Still busy on their schedule? push the reply to their next free moment.
+                local_now = _local_now(state.get("tz"))
+                schedule = c.get("schedule") or []
+                if schedule and local_now is not None:
+                    busy, next_free = _busy_now(schedule, local_now)
+                    if busy:
+                        free_utc = _next_local_hour_utc(local_now, int(next_free)) if next_free is not None else now + timedelta(minutes=30)
+                        await db.ai_char_state.update_one(
+                            {"_id": state["_id"]},
+                            {"$set": {"pending_reply_at": free_utc + timedelta(seconds=random.randint(20, 240))}})
+                        continue
+                # Only reply if the latest message is still an unanswered one from the user.
+                last = await db.ai_char_messages.find_one(
+                    {"character_id": char_id, "admin_id": admin_id}, sort=[("created_at", -1)])
+                if not last or last.get("role") != "user":
+                    await db.ai_char_state.update_one({"_id": state["_id"]}, {"$unset": {"pending_reply_at": ""}})
+                    continue
+                context = ""
+                if schedule and local_now is not None:
+                    context = _schedule_now_ctx(schedule, local_now)
+                reply = await _reply(c, admin_id, last.get("text", ""), spoken=False, context=context)
+                clean = _strip_actions(_strip_tags(reply))
+                await _store(char_id, admin_id, "ai", clean)
+                await db.ai_char_state.update_one({"_id": state["_id"]}, {"$unset": {"pending_reply_at": "", "pending_from": ""}})
+                await _capture_promise(char_id, admin_id, clean, state.get("tz"))
+                try:
+                    await send_web_push(admin_id, c["name"], clean, url=f"/messages/ai_{char_id}", extra={"suppressIfFocused": True})
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.warning(f"ai-char reply delivery error {char_id}/{admin_id}: {e}")
+
+    async def reply_loop():
+        await asyncio.sleep(15)
+        while True:
+            try:
+                if settings_store.get("EMERGENT_LLM_KEY"):
+                    await _replies_once()
+            except Exception as e:
+                logger.warning(f"ai-char reply_loop error: {e}")
+            await asyncio.sleep(15)
+
     router.proactive_loop = proactive_loop
     router.proactive_once = _proactive_once
+    router.reply_loop = reply_loop
+    router.replies_once = _replies_once
     return router

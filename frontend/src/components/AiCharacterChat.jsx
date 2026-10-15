@@ -30,19 +30,6 @@ function primeGeo() {
   } catch { /* noop */ }
 }
 
-// If the user switched away (tab hidden) while the character was "typing", let them
-// know the reply landed. No banner while they're actually watching the chat.
-async function notifyReplyReady(name, body) {
-  try {
-    if (!("serviceWorker" in navigator) || typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    const reg = await navigator.serviceWorker.ready;
-    reg.showNotification(name || "PostMePlex", {
-      body: (body || "").slice(0, 140),
-      icon: "/logo-512.png", badge: "/favicon.png", tag: "postmeplex-activity",
-    });
-  } catch { /* noop */ }
-}
-
 function unlockAudio() {
   try {
     if (!window.__aiAudioEl) window.__aiAudioEl = new Audio();
@@ -59,16 +46,19 @@ export function AiCharacterChat({ characterId, onBack }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
-  const [phase, setPhase] = useState("idle"); // idle | thinking | typing
-  const busy = phase !== "idle";
+  const [phase, setPhase] = useState("idle"); // idle | typing (brief flourish when a reply lands)
+  const [sending, setSending] = useState(false);
+  const busy = sending;
   const [inCall, setInCall] = useState(false);
   const listRef = useRef(null);
+  const seenIds = useRef(new Set());
 
   const load = useCallback(async () => {
     try {
       const r = await api.get(`/ai-characters/${characterId}/thread`);
       setCharacter(r.character);
       setMessages(r.messages);
+      (r.messages || []).forEach((m) => seenIds.current.add(m.id));
     } catch (e) {
       toast.error(e.message || "Couldn't load character");
     } finally {
@@ -76,38 +66,54 @@ export function AiCharacterChat({ characterId, onBack }) {
     }
   }, [characterId]);
 
+  // Replies arrive asynchronously — human-paced, and deferred while the character is
+  // busy on their schedule. Poll the thread so new messages appear with a brief typing
+  // flourish (and the backend web-pushes you the moment the reply is actually sent).
+  const poll = useCallback(async () => {
+    try {
+      const r = await api.get(`/ai-characters/${characterId}/thread`);
+      const server = r.messages || [];
+      const newest = server[server.length - 1];
+      const hasNewAi = newest && newest.role === "ai" && !seenIds.current.has(newest.id);
+      if (hasNewAi) {
+        setPhase("typing");
+        await new Promise((res) => setTimeout(res, 900));
+        setPhase("idle");
+      }
+      server.forEach((m) => seenIds.current.add(m.id));
+      setMessages((prev) => {
+        const temps = prev.filter((m) => String(m.id).startsWith("tmp-") && !server.some((s) => s.role === "user" && s.text === m.text));
+        return [...server, ...temps];
+      });
+    } catch { /* noop */ }
+  }, [characterId]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const iv = setInterval(poll, 8000);
+    const onVis = () => { if (document.visibilityState === "visible") poll(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+  }, [poll]);
   useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages, phase]);
 
   const send = async (e) => {
     e.preventDefault();
-    if (!text.trim() || busy) return;
     const draft = text.trim();
+    if (!draft || sending) return;
     setText("");
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", text: draft, created_at: new Date().toISOString() }]);
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    // Phase 1 "thinking": NO typing indicator yet — breathing room while they read &
-    // decide, like a real person. Sometimes they're AFK and take a while.
-    setPhase("thinking");
+    setSending(true);
     try {
-      let think = 1300 + Math.random() * 2400;             // 1.3–3.7s of silence before typing
-      if (Math.random() < 0.18) think += 2500 + Math.random() * 5000; // ~18% they were away
-      const apiPromise = api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() });
-      await sleep(think);
-      // Phase 2 "typing": now the dots appear, for a length-proportional duration.
-      setPhase("typing");
-      const r = await apiPromise;
-      const replyLen = (r.message?.text || "").length;
-      await sleep(Math.min(5000, 700 + replyLen * 28) + Math.random() * 500);
-      setMessages((m) => [...m, r.message]);
-      if (document.hidden) notifyReplyReady(character.name, r.message?.text);
-      // Texting is silent — voice only plays during a call.
+      await api.post(`/ai-characters/${characterId}/send`, { text: draft, ...gatherContext() });
     } catch (err) {
-      // Keep the user's message on screen; just surface the failure so nothing "disappears".
-      toast.error(err.message || `${character.name} couldn't respond — try again`);
+      toast.error(err.message || `Couldn't send — try again`);
     } finally {
-      setPhase("idle");
+      setSending(false);
     }
+    // reply comes asynchronously — nudge a couple quick polls so a fast reply shows promptly
+    setTimeout(poll, 2500);
+    setTimeout(poll, 6000);
   };
 
   const clearThread = async () => {

@@ -57,11 +57,11 @@ export default function AdminKeysPage() {
 
   const turnOnPush = async () => {
     try {
-      await enableBrowserPush();
-      setPushOn(true);
-      toast.success("Browser alerts enabled — you'll be notified the moment a key breaks.");
-    } catch {
-      toast.error("Couldn't enable browser notifications");
+      const ok = await enableBrowserPush();
+      setPushOn(ok);
+      toast[ok ? "success" : "error"](ok ? "Browser alerts enabled — you'll be notified the moment a key breaks." : "Couldn't enable — check your notification permissions.");
+    } catch (e) {
+      toast.error(e.message || "Couldn't enable browser notifications");
     }
   };
 
@@ -85,14 +85,14 @@ export default function AdminKeysPage() {
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4" data-testid="keys-enable-push">
           <div className="flex items-center gap-2 text-sm">
             <BellOff size={18} className="text-primary" />
-            <span>Turn on browser alerts so you're notified the instant a key breaks.</span>
+            <span>Turn on browser alerts so you&apos;re notified the instant a key breaks.</span>
           </div>
           <Button onClick={turnOnPush} className="bg-primary text-primary-foreground" data-testid="keys-enable-push-btn">Enable</Button>
         </div>
       )}
       {pushOn && (
         <div className="flex items-center gap-2 rounded-2xl border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-300">
-          <BellRing size={16} /> Browser alerts are on — you'll be notified right away.
+          <BellRing size={16} /> Browser alerts are on — you&apos;ll be notified right away.
         </div>
       )}
 

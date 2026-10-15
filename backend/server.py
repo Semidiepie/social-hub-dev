@@ -3381,6 +3381,7 @@ async def _start_pet_reminders():
 async def _start_ai_char_proactive():
     import asyncio
     asyncio.create_task(_ai_char_router.proactive_loop())
+    asyncio.create_task(_ai_char_router.reply_loop())
 
 
 @app.on_event("startup")

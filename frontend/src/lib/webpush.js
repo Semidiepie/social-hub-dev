@@ -17,14 +17,49 @@ export function pushSupported() {
   );
 }
 
+// iOS (incl. iPadOS reporting as Mac) only exposes Web Push inside an installed PWA.
+export function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+export function isStandalone() {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
+    window.navigator.standalone === true
+  );
+}
+
+// Returns a reason string when push can't be enabled here, else null.
+//  - "ios-install": iPhone/iPad in a normal Safari tab → must Add to Home Screen first
+//  - "unsupported": browser has no Web Push at all
+export function pushUnavailableReason() {
+  if (typeof window === "undefined") return "unsupported";
+  if (isIOS() && !isStandalone()) return "ios-install";
+  if (!pushSupported()) return "unsupported";
+  return null;
+}
+
 // Subscribe this browser to Web Push. Must be triggered from a user gesture on
 // first run (for the permission prompt). Returns true when subscribed.
 export async function enableBrowserPush() {
+  const reason = pushUnavailableReason();
+  if (reason === "ios-install") {
+    throw new Error("On iPhone/iPad, first add PostMePlex to your Home Screen, then open it from that icon to turn on notifications.");
+  }
   if (!pushSupported()) return false;
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return false;
 
-  const registration = await navigator.serviceWorker.ready;
+  // Never hang if the service worker never takes control (common on iOS Safari tabs).
+  const registration = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("Service worker didn't start — reload the page and try again.")), 8000)),
+  ]);
   let sub = await registration.pushManager.getSubscription();
   if (!sub) {
     const { publicKey } = await api.get("/push/vapid-public-key");
