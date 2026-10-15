@@ -44,6 +44,88 @@ def _next_local_hour_utc(local_now, target_hour: int):
         target += timedelta(days=1)
     return target.astimezone(timezone.utc)
 
+
+def _routine_anchors(age, sleep_start, sleep_end):
+    """Natural moments (local decimal hours) a school-age kid has a free beat to text."""
+    if age is None or age > 17:
+        return []
+    goodnight = (sleep_start - 0.5) % 24       # right before bed
+    morning = (sleep_end + 0.25) % 24          # just after waking
+    base = [morning, 7.5, 10.25, 12.25, 15.25, 17.5, goodnight]  # wake, leave-for-school, recess, lunch, after-school, evening, goodnight
+    return sorted({round(h, 2) for h in base})
+
+
+def _next_anchor_utc(local_now, anchors):
+    """UTC datetime of the next routine anchor after ~36min from now, else None."""
+    if not anchors:
+        return None
+    cur = local_now.hour + local_now.minute / 60
+    ahead = [h for h in anchors if h > cur + 0.6]
+    if ahead:
+        h, day = min(ahead), local_now
+    else:
+        h, day = min(anchors), local_now + timedelta(days=1)
+    hh = int(h)
+    mm = int(round((h - hh) * 60)) % 60
+    target = day.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    return target.astimezone(timezone.utc)
+
+
+# words that mean "I'll contact you again at <moment>", mapped to a local decimal hour
+_CONTACT_MOMENTS = [
+    (re.compile(r"\brecess\b"), 10.25),
+    (re.compile(r"\blunch(\s*break|\s*time)?\b"), 12.25),
+    (re.compile(r"\b(after school|get(ting)? home|home from school|out of school|end of school)\b"), 15.25),
+    (re.compile(r"\b(leave|leaving|head(ing)? (out|to school)|on my way to school|before school)\b"), 7.5),
+    (re.compile(r"\b(tonight|this evening)\b"), 19.0),
+]
+
+
+def _parse_next_contact(text, local_now, sleep_start, sleep_end):
+    """Scan the character's OWN outgoing text for a promise to reach out again and
+    return the next matching local time as a UTC datetime (soonest wins), else None.
+    Pure/free — no LLM. Honors things like 'I'll text you at 8:30am' or 'at lunch'."""
+    if not text or local_now is None:
+        return None
+    t = text.lower()
+
+    def _build(hour_f, require_future=True):
+        hh = int(hour_f)
+        mm = int(round((hour_f - hh) * 60)) % 60
+        d = local_now.replace(hour=hh % 24, minute=mm, second=0, microsecond=0)
+        if require_future and d <= local_now:
+            d += timedelta(days=1)
+        return d
+
+    cands = []
+    # explicit clock times: "8:30 am", "at 3pm", "around 10 pm"
+    for m in re.finditer(r"\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)", t):
+        hr = int(m.group(1))
+        mn = int(m.group(2) or 0)
+        if hr == 0 or hr > 12 or mn > 59:
+            continue
+        pm = m.group(3).startswith("p")
+        hr24 = (hr % 12) + (12 if pm else 0)
+        cands.append(_build(hr24 + mn / 60))
+    # named daily moments
+    for rx, hour_f in _CONTACT_MOMENTS:
+        if rx.search(t):
+            cands.append(_build(hour_f))
+    # good-morning / before-bed relative to this character's own schedule
+    if re.search(r"\b(good ?morning|in the morning|when i wake)\b", t):
+        cands.append(_build((sleep_end + 0.25) % 24))
+    if re.search(r"\b(good ?night|goodnight|before bed|before i sleep|bed ?time)\b", t):
+        cands.append(_build((sleep_start - 0.5) % 24))
+    # "tomorrow" with no specific time → next morning
+    if re.search(r"\btomorrow\b", t) and not cands:
+        d = _build((sleep_end + 1) % 24)
+        if d <= local_now:
+            d += timedelta(days=1)
+        cands.append(d)
+
+    future = [c for c in cands if c > local_now]
+    return min(future).astimezone(timezone.utc) if future else None
+
 import settings_store
 
 TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
@@ -515,6 +597,27 @@ def build_router(ctx) -> APIRouter:
         await db.ai_char_messages.delete_many({"character_id": char_id, "admin_id": current["id"]})
         return {"status": "cleared"}
 
+    async def _capture_promise(char_id: str, admin_id: str, ai_text: str, tz: str):
+        """If the character's own reply promises a next contact time ('I'll text you at
+        8:30am', 'at lunch', 'after school'), schedule a proactive text for then (free, no LLM)."""
+        local_now = _local_now(tz)
+        if local_now is None:
+            return
+        c = await db.ai_characters.find_one({"id": char_id})
+        if not c:
+            return
+        s_start, s_end = _sleep_window(c)
+        when = _parse_next_contact(ai_text, local_now, s_start, s_end)
+        if not when:
+            return
+        state = await db.ai_char_state.find_one({"character_id": char_id, "admin_id": admin_id}) or {}
+        cur_eval = await _coerce_dt(state.get("next_eval_at"))
+        upd = {"promised_at": when}
+        if not cur_eval or when < cur_eval:
+            upd["next_eval_at"] = when
+        await db.ai_char_state.update_one(
+            {"character_id": char_id, "admin_id": admin_id}, {"$set": upd}, upsert=True)
+
     @router.post("/api/ai-characters/{char_id}/send")
     async def send(char_id: str, body: SendBody, current: Annotated[dict, Depends(get_current_user)]):
         _require_admin(current)
@@ -530,7 +633,10 @@ def build_router(ctx) -> APIRouter:
         except Exception as e:
             logger.warning(f"ai-char reply error: {e}")
             raise HTTPException(502, f"{c['name']} is having trouble responding right now")
-        msg = await _store(char_id, current["id"], "ai", _strip_actions(_strip_tags(reply)))
+        clean = _strip_actions(_strip_tags(reply))
+        msg = await _store(char_id, current["id"], "ai", clean)
+        # If she said she'd reach out again at a set time/moment, remember it so she keeps her word.
+        await _capture_promise(char_id, current["id"], clean, body.tz)
         # Texting is silent by design — voice only plays during a call (/voice-turn).
         # NOTE: we intentionally do NOT push here. This reply is a response to a message
         # the user JUST sent while looking at the chat, and the client reveals it with a
@@ -687,24 +793,40 @@ def build_router(ctx) -> APIRouter:
                 if not last_at:
                     continue
                 idle_min = (now - last_at).total_seconds() / 60
-                if idle_min < PROACTIVE_MIN_IDLE_MIN:
+
+                # A promise she made ("I'll text you at 8:30 / at lunch") that's now due
+                # overrides the normal quiet/pacing gates — she keeps her word.
+                promised = await _coerce_dt(state.get("promised_at"))
+                promise_due = bool(promised and now >= promised)
+
+                if idle_min < PROACTIVE_MIN_IDLE_MIN and not promise_due:
                     continue
                 # Each thread re-checks at its own personality-paced time. Not due yet → skip.
                 next_eval = await _coerce_dt(state.get("next_eval_at"))
-                if next_eval and now < next_eval:
+                if next_eval and now < next_eval and not promise_due:
                     continue
+
+                # Age-appropriate realism: compute the user's local time + this character's
+                # sleep window and daily-routine anchor points up front.
+                local_now = _local_now(state.get("tz"))
+                sleep_start, sleep_end = _sleep_window(c)
+                anchors = _routine_anchors(c.get("age"), sleep_start, sleep_end) \
+                    if (c.get("affection", "warm") in ("adores", "warm")) else []
 
                 def _schedule(next_hours):
                     # clamp + ±15% jitter so it's not clockwork
                     h = max(PROACTIVE_NEXT_MIN_H, min(PROACTIVE_NEXT_MAX_H, next_hours or 24))
                     h *= 0.85 + random.random() * 0.3
-                    return {"last_checked_at": now, "next_eval_at": now + timedelta(hours=h)}
+                    nxt = now + timedelta(hours=h)
+                    # For school-age, warm/attached kids, snap to the next natural routine
+                    # moment (recess, lunch, after-school, goodnight) if it comes sooner —
+                    # so she texts around her real daily beats, not just every N hours.
+                    if local_now is not None and anchors:
+                        a = _next_anchor_utc(local_now, anchors)
+                        if a and now + timedelta(minutes=40) < a < nxt:
+                            nxt = a
+                    return {"last_checked_at": now, "next_eval_at": nxt, "promised_at": None}
 
-                # Age-appropriate realism: if it's currently the character's SLEEPING
-                # hours in the user's timezone, they're asleep — don't text. Recheck
-                # shortly after they'd wake up (so a kid never texts at 3am).
-                local_now = _local_now(state.get("tz"))
-                sleep_start, sleep_end = _sleep_window(c)
                 time_ctx = ""
                 if local_now is not None:
                     lh = local_now.hour
@@ -714,19 +836,24 @@ def build_router(ctx) -> APIRouter:
                         wake_utc = _next_local_hour_utc(local_now, sleep_end)
                         await db.ai_char_state.update_one(
                             {"character_id": c["id"], "admin_id": admin_id},
-                            {"$set": {"last_checked_at": now, "next_eval_at": wake_utc}}, upsert=True)
+                            {"$set": {"last_checked_at": now, "next_eval_at": wake_utc, "promised_at": None}}, upsert=True)
                         continue
 
-                if unanswered >= PROACTIVE_MAX_UNANSWERED:
+                if unanswered >= PROACTIVE_MAX_UNANSWERED and not promise_due:
                     await db.ai_char_state.update_one(
                         {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule(72)}, upsert=True)
                     continue
+                if promise_due:
+                    time_ctx += ("\n- IMPORTANT: Earlier you told them you'd reach out right about now "
+                                 "(you promised a specific time/moment). Keep your word — send that text now.")
                 hist = await db.ai_char_messages.find(
                     {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
                 ).sort("created_at", -1).limit(30).to_list(30)
                 hist.reverse()
                 transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
                 should, message, next_hours = await _proactive_decide(c, transcript, int(idle_min), unanswered, time_ctx)
+                if promise_due:
+                    should = True  # a promise is honored as long as she produced a message
                 if not should or not message:
                     # character chose not to reach out now — recheck at their own pace
                     await db.ai_char_state.update_one(
@@ -738,6 +865,8 @@ def build_router(ctx) -> APIRouter:
                 await db.ai_char_state.update_one(
                     {"character_id": c["id"], "admin_id": admin_id},
                     {"$set": upd, "$inc": {"unanswered": 1}}, upsert=True)
+                # if this proactive text itself promises a next moment, honor that too
+                await _capture_promise(c["id"], admin_id, message, state.get("tz"))
                 sent_admins.add(admin_id)
                 try:
                     await send_web_push(admin_id, c["name"], message, url=f"/messages/ai_{c['id']}", extra={"suppressIfFocused": True})
