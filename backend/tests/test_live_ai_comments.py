@@ -19,9 +19,12 @@ router = server._ai_char_router
 
 
 async def _run():
-    admin = await db.users.find_one({"username": "semidiepie"})
-    assert admin, "founder account missing"
-    admin_id = admin["id"]
+    admin_id = f"test-live-owner-{uuid.uuid4()}"
+    await db.users.insert_one({
+        "id": admin_id, "username": "testliveowner", "display_name": "Test Live Owner",
+        "created_at": datetime.now(timezone.utc),
+    })
+    admin = {"id": admin_id, "username": "testliveowner", "display_name": "Test Live Owner"}
 
     char_id = str(uuid.uuid4())
     stream_id = str(uuid.uuid4())
@@ -65,6 +68,28 @@ async def _run():
         assert msg.get("display_name") == "Nova Test"
         print("PASS: AI live comment ->", repr(msg["text"]))
 
+        # Direct address: the broadcaster speaks to the character by name in chat ->
+        # the character replies directly, bypassing the ambient pace/cap.
+        await db.live_chat.insert_one({
+            "id": str(uuid.uuid4()), "stream_id": stream_id, "kind": "chat",
+            "user_id": admin_id, "username": admin["username"],
+            "display_name": admin.get("display_name", admin["username"]),
+            "text": "hey Nova are you watching this?? what do you think",
+            "created_at": datetime.now(timezone.utc),
+        })
+        before_direct = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        await router.live_comments_once()
+        after_direct = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        assert after_direct == before_direct + 1, "character didn't reply when spoken to directly"
+        assert router.live_state[key].get("answered_mid"), "answered_mid not recorded"
+        latest = await db.live_chat.find({"stream_id": stream_id, "is_ai": True}).sort("created_at", -1).limit(1).to_list(1)
+        print("PASS: direct reply when addressed ->", repr(latest[0]["text"]))
+        # Ticking again must NOT re-answer the same mention.
+        await router.live_comments_once()
+        after_dupe = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        assert after_dupe == after_direct, "re-answered the same mention"
+        print("PASS: no duplicate reply to the same mention")
+
         # Eligibility: flip to cold -> no new comment even with timer in the past.
         await db.ai_characters.update_one({"id": char_id}, {"$set": {"affection": "cold"}})
         before = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
@@ -89,6 +114,7 @@ async def _run():
         print("PASS: ended-stream state pruned")
         print("\nALL LIVE-AI-COMMENT TESTS PASSED")
     finally:
+        await db.users.delete_one({"id": admin_id})
         await db.ai_characters.delete_one({"id": char_id})
         await db.ai_char_messages.delete_many({"character_id": char_id})
         await db.ai_char_state.delete_many({"character_id": char_id})

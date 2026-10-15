@@ -1081,3 +1081,10 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Frontend: Messages.jsx admin form adds "Let this character join my lives" toggle (allow_live, default on).
 - VERIFIED: backend/tests/test_live_ai_comments.py drives the real loop — PASS: join registered, contextual comment posted ("omg the new setup looks so good already!!"), cold character stays quiet, allow_live=off gated, ended-stream state pruned. Web render path (useLiveSocket → ChatRow) confirmed by code.
 - STATUS: live in preview, agent-tested e2e. Requires Publish/Redeploy for production. NOTE: not run through the full UI testing agent (the real loop + a live stream + timers is hard to drive in-browser); the server-side flow and the unchanged client render path are both verified.
+
+### 2026-10 — Live AI characters now respond when you talk TO them (agent-tested e2e)
+- Enhancement to the live-comment feature: the live loop now detects when the BROADCASTER addresses a character by name or @username in the live chat (_owner_mention, word-boundary match on first-name token + username) and makes the character reply DIRECTLY to what was said — not just ambient reactions.
+- Direct replies bypass the ambient pace gate + the per-live comment cap (solicited), and are deduped via live_state answered_mid so the same message is answered once. Short cooldown (45-120s) after a direct reply.
+- _live_comment(..., direct_text=...) switches the prompt to answer the owner directly and warmly.
+- VERIFIED: backend/tests/test_live_ai_comments.py extended — PASS: direct reply when addressed ("yes of course I'm watching!! it looks amazing..." to "hey Nova are you watching this??"), no duplicate reply to same mention, plus prior ambient/cold/allow_live/prune cases. Test now uses a dedicated throwaway broadcaster user (the founder has real characters that polluted the shared-DB count).
+- Channel: text in live chat only (we don't transcribe the live video audio). STATUS: preview, agent-tested e2e; needs Publish/Redeploy for production.

@@ -1250,18 +1250,27 @@ def build_router(ctx) -> APIRouter:
                 logger.warning(f"ai-char reply_loop error: {e}")
             await asyncio.sleep(15)
 
-    async def _live_comment(c: dict, admin_id: str, title: str, recent: list) -> str:
-        """Generate ONE short, in-character live-chat comment reacting to the user's
-        stream + what other viewers just said. Cheap single Claude call."""
+    async def _live_comment(c: dict, admin_id: str, title: str, recent: list, direct_text: str = "") -> str:
+        """Generate ONE short, in-character live-chat comment. If direct_text is set the
+        broadcaster just spoke to this character by name — reply directly to them.
+        Cheap single Claude call."""
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         sys = _system(c, spoken=False)
         them = c.get("nickname") or c.get("your_name") or "them"
         sys += (
             f"\n\nRIGHT NOW {them} is livestreaming on PostMePlex (stream title: \"{title}\"). "
-            "You're watching their live and dropping a comment in the live chat, exactly like a real "
+            "You're watching their live and commenting in the live chat, exactly like a real "
             "person who cares about them would. Keep it SHORT — a casual live-chat line of about 3-14 "
-            "words, in your own voice. React to the stream and/or reply naturally to what other viewers "
-            "just said. Be warm/supportive/excited in a way that fits your feelings and age. "
+            "words, in your own voice. ")
+        if direct_text:
+            sys += (
+                f"IMPORTANT: {them} just spoke to YOU directly in the live chat — they said: "
+                f"\"{direct_text}\". Reply straight back to them, answering what they said, warm and "
+                "natural, like you're thrilled they noticed you in chat. ")
+        else:
+            sys += "React to the stream and/or reply naturally to what other viewers just said. "
+        sys += (
+            "Be warm/supportive/excited in a way that fits your feelings and age. "
             "No markdown, no stage directions, no surrounding quotes, no @handles. "
             "Output ONLY the comment text, nothing else."
         )
@@ -1274,9 +1283,25 @@ def build_router(ctx) -> APIRouter:
             system_message=sys,
         ).with_model("anthropic", "claude-sonnet-4-6")
         prompt = ((f"Recent live chat:\n{transcript}\n\n" if transcript else "")
-                  + "Write ONE short live-chat comment now.")
+                  + ("Reply to them now." if direct_text else "Write ONE short live-chat comment now."))
         resp = await chat.send_message(UserMessage(text=prompt))
         return _strip_actions(_strip_tags((resp or "").strip())).strip().strip('"')[:200]
+
+    def _owner_mention(recent: list, owner_id: str, c: dict):
+        """Latest message from the broadcaster that addresses this character by name /
+        username (so the character knows it's being spoken to). Returns the message or None."""
+        name_tok = (c.get("name", "").split() or [""])[0].lower()
+        uname = (c.get("username", "") or "").lower().lstrip("@")
+        toks = [t for t in (name_tok, uname) if len(t) >= 2]
+        if not toks:
+            return None
+        for m in reversed(recent):  # newest first
+            if m.get("is_ai") or m.get("user_id") != owner_id:
+                continue
+            tl = (m.get("text") or "").lower()
+            if any(re.search(rf"\b{re.escape(t)}\b", tl) for t in toks):
+                return m
+        return None
 
     live_state: dict = {}  # (stream_id, char_id) -> {"next_at": dt, "count": int}
 
@@ -1322,15 +1347,31 @@ def build_router(ctx) -> APIRouter:
                     st = live_state.get(key)
                     if st is None:
                         # Just "joined" — schedule the first comment 15-60s out (human lag).
-                        live_state[key] = {"next_at": now + timedelta(seconds=random.randint(15, 60)), "count": 0}
-                        continue
-                    if st["count"] >= LIVE_MAX_COMMENTS or now < st["next_at"]:
+                        live_state[key] = {"next_at": now + timedelta(seconds=random.randint(15, 60)),
+                                           "count": 0, "answered_mid": None}
                         continue
                     recent = await db.live_chat.find(
                         {"stream_id": s["id"]},
-                        {"_id": 0, "display_name": 1, "username": 1, "text": 1, "kind": 1}
-                    ).sort("created_at", -1).limit(12).to_list(12)
+                        {"_id": 0, "id": 1, "user_id": 1, "display_name": 1, "username": 1,
+                         "text": 1, "kind": 1, "is_ai": 1}
+                    ).sort("created_at", -1).limit(15).to_list(15)
                     recent.reverse()
+
+                    # Did the broadcaster just speak to this character by name? If so, reply
+                    # directly and promptly — this bypasses the ambient pace + comment cap.
+                    mention = _owner_mention(recent, owner_id, c)
+                    if mention and mention.get("id") != st.get("answered_mid"):
+                        reply = await _live_comment(c, owner_id, s.get("title", "Live"), recent,
+                                                    direct_text=mention.get("text", ""))
+                        if reply:
+                            await post(s["id"], c, reply)
+                        st["answered_mid"] = mention.get("id")
+                        st["count"] += 1
+                        st["next_at"] = now + timedelta(seconds=random.randint(45, 120))
+                        continue
+
+                    if st["count"] >= LIVE_MAX_COMMENTS or now < st["next_at"]:
+                        continue
                     comment = await _live_comment(c, owner_id, s.get("title", "Live"), recent)
                     if comment:
                         await post(s["id"], c, comment)
