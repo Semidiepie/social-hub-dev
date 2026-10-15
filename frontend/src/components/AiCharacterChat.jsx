@@ -277,6 +277,8 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
   const stopTracks = () => {
     try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch { /* noop */ }
     streamRef.current = null;
+    try { micSrcRef.current?.disconnect(); } catch { /* noop */ }
+    micSrcRef.current = null;
   };
 
   // Play the reply through a GainNode so the volume slider actually controls
@@ -308,15 +310,27 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
 
   const stopVad = () => {
     if (vadTimerRef.current) { clearInterval(vadTimerRef.current); vadTimerRef.current = null; }
+    // Only tear down the analyser edge — keep the mic source + stream ALIVE so the
+    // next turn reuses them (re-acquiring the mic each turn fails on iOS Safari).
     try { micSrcRef.current?.disconnect(); } catch { /* noop */ }
-    micSrcRef.current = null;
+  };
+
+  // Acquire the microphone ONCE and reuse it for the whole call. iOS Safari often
+  // fails to re-grant getUserMedia on a 2nd/3rd turn, which is what made it stop
+  // hearing you after the first reply.
+  const ensureMic = async () => {
+    const live = streamRef.current && streamRef.current.getTracks().some((t) => t.readyState === "live");
+    if (live) return streamRef.current;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    streamRef.current = stream;
+    micSrcRef.current = null; // new stream → rebuild the source node for it
+    return stream;
   };
 
   const startRecording = async () => {
     if (endedRef.current) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      streamRef.current = stream;
+      const stream = await ensureMic();
       let mime = "";
       for (const m of ["audio/webm", "audio/mp4", "audio/ogg"]) {
         if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
@@ -332,15 +346,13 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
         try {
           const ac = ensureAC();
           if (ac.state === "suspended") { try { await ac.resume(); } catch { /* noop */ } }
-          const src = ac.createMediaStreamSource(stream);
+          if (!micSrcRef.current) micSrcRef.current = ac.createMediaStreamSource(stream);
           const analyser = ac.createAnalyser();
           analyser.fftSize = 512;
-          src.connect(analyser);
-          micSrcRef.current = src;
+          micSrcRef.current.connect(analyser);
           const data = new Uint8Array(analyser.frequencyBinCount);
           // Wait for a real, settled pause before deciding you're done — so breathing
-          // or a mid-thought beat won't cut you off. Only end the turn after ~2.2s of
-          // continuous quiet following actual speech.
+          // or a mid-thought beat won't cut you off, but reply promptly once you stop.
           const SILENCE_MS = 1400;      // continuous quiet that counts as "done talking"
           const MAX_TURN_MS = 60000;    // hard safety cap on a single turn
           let spoke = false; let silenceStart = 0; const started = Date.now();
@@ -374,7 +386,6 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
     try { rec.stop(); } catch { /* noop */ }
     await done;
     const type = rec.mimeType || "audio/webm";
-    stopTracks();
     const blob = new Blob(chunksRef.current, { type });
     try {
       const fd = new FormData();
@@ -399,7 +410,11 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
       await playAudio(r.audio_url);
       if (!endedRef.current) { setStatus("idle"); if (autoListen) startRecording(); } // keep the call flowing
     } catch {
-      if (!endedRef.current) { toast.error("Trouble hearing you — let's try again"); setStatus("idle"); }
+      // A hiccup (STT/network) shouldn't dead-end a hands-free call — keep listening.
+      if (!endedRef.current) {
+        if (autoListen) { setStatus("idle"); startRecording(); }
+        else { toast.error("Trouble hearing you — let's try again"); setStatus("idle"); }
+      }
     }
   };
   stopSendRef.current = stopRecordingAndSend;
