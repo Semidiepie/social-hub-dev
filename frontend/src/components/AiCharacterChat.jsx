@@ -341,7 +341,7 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
           // Wait for a real, settled pause before deciding you're done — so breathing
           // or a mid-thought beat won't cut you off. Only end the turn after ~2.2s of
           // continuous quiet following actual speech.
-          const SILENCE_MS = 2200;      // continuous quiet that counts as "done talking"
+          const SILENCE_MS = 1400;      // continuous quiet that counts as "done talking"
           const MAX_TURN_MS = 60000;    // hard safety cap on a single turn
           let spoke = false; let silenceStart = 0; const started = Date.now();
           vadTimerRef.current = setInterval(() => {
