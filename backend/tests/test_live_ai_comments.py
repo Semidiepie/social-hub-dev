@@ -102,6 +102,18 @@ async def _run():
         assert after_sp == before_sp + 1, "character didn't react to her spoken name"
         print("PASS: reacts to broadcaster's spoken name (live_speech)")
 
+        # FOLLOW-UP: broadcaster replies right after her comment WITHOUT her name ("how are
+        # you?") -> she continues the back-and-forth.
+        await db.live_chat.insert_one({
+            "id": str(uuid.uuid4()), "stream_id": stream_id, "kind": "chat",
+            "user_id": admin_id, "username": admin["username"], "display_name": admin["display_name"],
+            "text": "how are you?", "created_at": datetime.now(timezone.utc)})
+        before_fu = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        await router.live_comments_once()
+        after_fu = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        assert after_fu == before_fu + 1, "didn't continue the conversation on a no-name follow-up"
+        print("PASS: replies to a no-name follow-up right after her comment")
+
         # Eligibility: a distant character -> no ambient comment even with timer in the past.
         await db.ai_characters.update_one({"id": char_id}, {"$set": {"affection": "distant"}})
         before = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})

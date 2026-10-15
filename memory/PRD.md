@@ -1125,3 +1125,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
   - Trigger intent: she replies when the user says her name/username; ambient cadence covers topic chit-chat. (A nickname-she-knows match is name/username based for now.)
 - VERIFIED: test_live_ai_comments.py now 10/10 incl. "reacts to broadcaster's spoken name" + "busy character stays absent". ElevenLabs STT key healthy (health check 200).
 - STATUS: preview, agent-tested. Needs Publish/Redeploy. Note: continuous STT cost while live, as the user approved.
+
+### 2026-10 — Live: conversational follow-up (no-name continuation)
+- User replied "how are you?" to her live comment (no name) and she didn't continue. _owner_mention only fired on name/username.
+- FIX: replaced with _owner_turn — she now replies when the broadcaster says her name/username OR posts within 4 min AFTER her own last comment (natural back-and-forth), via chat OR transcribed speech. Still deduped by answered_mid; still gated by availability (asleep/busy = absent). _mentions_char extracted as the name-match helper.
+- VERIFIED: test_live_ai_comments.py 11/11 incl. "replies to a no-name follow-up right after her comment".
+- STATUS: preview, agent-tested. Needs Publish/Redeploy.

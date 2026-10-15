@@ -1324,19 +1324,35 @@ def build_router(ctx) -> APIRouter:
         resp = await chat.send_message(UserMessage(text=prompt))
         return _strip_actions(_strip_tags((resp or "").strip())).strip().strip('"')[:200]
 
-    def _owner_mention(recent: list, owner_id: str, c: dict):
-        """Latest message from the broadcaster that addresses this character by name /
-        username (so the character knows it's being spoken to). Returns the message or None."""
+    def _mentions_char(text: str, c: dict) -> bool:
         name_tok = (c.get("name", "").split() or [""])[0].lower()
         uname = (c.get("username", "") or "").lower().lstrip("@")
         toks = [t for t in (name_tok, uname) if len(t) >= 2]
-        if not toks:
-            return None
+        tl = (text or "").lower()
+        return any(re.search(rf"\b{re.escape(t)}\b", tl) for t in toks)
+
+    def _owner_turn(recent: list, owner_id: str, c: dict, cid: str, answered_mid):
+        """The broadcaster message this character should reply to, if any. Triggers when they
+        say her name/username OR when they post right AFTER her own comment (a natural back-and-
+        forth follow-up like "how are you?"). Returns the message or None."""
+        my_last_at = None
+        for m in recent:
+            if m.get("is_ai") and m.get("user_id") == f"ai_{cid}":
+                my_last_at = m.get("created_at")
         for m in reversed(recent):  # newest first
-            if m.get("is_ai") or m.get("user_id") != owner_id:
+            if m.get("is_ai") or m.get("user_id") != owner_id or not (m.get("text") or "").strip():
                 continue
-            tl = (m.get("text") or "").lower()
-            if any(re.search(rf"\b{re.escape(t)}\b", tl) for t in toks):
+            if m.get("id") == answered_mid:
+                break  # reached the last thing we answered — nothing newer to answer
+            named = _mentions_char(m.get("text", ""), c)
+            followup = False
+            if my_last_at is not None and m.get("created_at") is not None:
+                try:
+                    gap = (m["created_at"] - my_last_at).total_seconds()
+                    followup = 0 < gap <= 240  # they replied within 4 min of her comment
+                except Exception:
+                    followup = False
+            if named or followup:
                 return m
         return None
 
@@ -1417,9 +1433,9 @@ def build_router(ctx) -> APIRouter:
 
                     heart = getattr(ctx, "live_post_ai_heart", None)
 
-                    # DIRECT ADDRESS: if the broadcaster speaks to this character by name, they
-                    # reply (she's free/awake here). Bypasses only the ambient affection gate.
-                    mention = _owner_mention(recent, owner_id, c)
+                    # DIRECT ADDRESS / FOLLOW-UP: she replies when the broadcaster says her name
+                    # OR posts right after her own comment (a natural back-and-forth).
+                    mention = _owner_turn(recent, owner_id, c, cid, st.get("answered_mid"))
                     if mention and mention.get("id") != st.get("answered_mid"):
                         reply = await _live_comment(c, owner_id, s.get("title", "Live"), recent,
                                                     direct_text=mention.get("text", ""))
