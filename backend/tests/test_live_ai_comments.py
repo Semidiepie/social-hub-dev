@@ -90,6 +90,18 @@ async def _run():
         assert after_dupe == after_direct, "re-answered the same mention"
         print("PASS: no duplicate reply to the same mention")
 
+        # SPEECH: the broadcaster SAYS her name out loud (transcribed into live_speech) ->
+        # she reacts just like a typed mention.
+        await db.live_speech.insert_one({
+            "id": str(uuid.uuid4()), "stream_id": stream_id, "owner_id": admin_id,
+            "text": "so anyway Nova what do you think about all this",
+            "created_at": datetime.now(timezone.utc)})
+        before_sp = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        await router.live_comments_once()
+        after_sp = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        assert after_sp == before_sp + 1, "character didn't react to her spoken name"
+        print("PASS: reacts to broadcaster's spoken name (live_speech)")
+
         # Eligibility: a distant character -> no ambient comment even with timer in the past.
         await db.ai_characters.update_one({"id": char_id}, {"$set": {"affection": "distant"}})
         before = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
@@ -123,6 +135,25 @@ async def _run():
         assert after_reg == before_reg + 1, "null-affection/allow_live character failed to reply when addressed"
         print("PASS: null-affection character still replies when addressed (bug fixed)")
 
+        # BUSY: her schedule says she's busy right now -> she is absent and must NOT reply,
+        # even when addressed (accurate schedule behavior the user asked for).
+        await db.ai_characters.update_one({"id": char_id}, {"$set": {
+            "affection": "adores", "allow_live": True,
+            "schedule": [{"start": "00:00", "end": "23:59", "activity": "school",
+                          "busy": True, "weekdays_only": False}]}})
+        await db.ai_char_state.update_one(
+            {"character_id": char_id, "admin_id": admin_id},
+            {"$set": {"tz": "UTC"}}, upsert=True)
+        await db.live_chat.insert_one({
+            "id": str(uuid.uuid4()), "stream_id": stream_id, "kind": "chat",
+            "user_id": admin_id, "username": admin["username"], "display_name": admin["display_name"],
+            "text": "Nova are you around??", "created_at": datetime.now(timezone.utc)})
+        before_busy = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        await router.live_comments_once()
+        after_busy = await db.live_chat.count_documents({"stream_id": stream_id, "is_ai": True})
+        assert after_busy == before_busy, "busy character must stay absent (schedule not respected)"
+        print("PASS: busy character stays absent (schedule respected)")
+
         # Ending the stream prunes the in-memory join state.
         await db.live_streams.update_one({"id": stream_id}, {"$set": {"status": "ended"}})
         await router.live_comments_once()
@@ -132,6 +163,7 @@ async def _run():
     finally:
         await db.users.delete_one({"id": admin_id})
         await db.ai_characters.delete_one({"id": char_id})
+        await db.live_speech.delete_many({"stream_id": stream_id})
         await db.ai_char_messages.delete_many({"character_id": char_id})
         await db.ai_char_state.delete_many({"character_id": char_id})
         await db.live_streams.delete_one({"id": stream_id})

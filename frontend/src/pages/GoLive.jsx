@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Video, AlertTriangle, Mic, Radio } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { useLiveSocket } from "@/lib/useLiveSocket";
@@ -10,6 +10,47 @@ import { LiveStage } from "@/components/LiveStage";
 import { whipPublish, withPlaceholderVideo, endSession } from "@/lib/webrtc";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+// Continuously transcribe the broadcaster's mic so their AI characters can react to what
+// they SAY OUT LOUD on the live. Records the mic in ~12s complete clips and uploads each to
+// the backend (which no-ops cheaply if the user has no AI characters). Returns a stop fn.
+function startSpeechCapture(streamId, micStream) {
+  const audioTrack = micStream?.getAudioTracks?.()[0];
+  if (!audioTrack || !window.MediaRecorder) return () => {};
+  const audioStream = new MediaStream([audioTrack]);
+  const mime = ["audio/webm", "audio/mp4", "audio/ogg"].find(
+    (m) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || "";
+  let stopped = false;
+  const cycle = () => {
+    if (stopped) return;
+    let rec;
+    try {
+      rec = mime ? new MediaRecorder(audioStream, { mimeType: mime }) : new MediaRecorder(audioStream);
+    } catch { return; }
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      const type = rec.mimeType || "audio/webm";
+      const blob = new Blob(chunks, { type });
+      if (!stopped && blob.size > 2500) {
+        try {
+          const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+          const fd = new FormData();
+          fd.append("audio", blob, `live.${ext}`);
+          await fetch(`${BACKEND_URL}/api/ai-characters/live-speech/${streamId}`, {
+            method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd });
+        } catch { /* non-blocking */ }
+      }
+      if (!stopped) cycle();
+    };
+    try { rec.start(); } catch { return; }
+    setTimeout(() => { try { if (rec.state !== "inactive") rec.stop(); } catch { /* noop */ } }, 12000);
+  };
+  cycle();
+  return () => { stopped = true; };
+}
 
 export default function GoLivePage() {
   const { user } = useAuth();
@@ -26,6 +67,7 @@ export default function GoLivePage() {
   const mediaRef = useRef(null);
   const rtcRef = useRef(null);
   const placeholderRef = useRef(null);
+  const speechStopRef = useRef(null);
 
   const live = useLiveSocket(stream?.id);
 
@@ -51,6 +93,7 @@ export default function GoLivePage() {
         rtcRef.current = await whipPublish(s.whip_url, publishStream);
       }
       setStream(s); // mounts the broadcasting screen; the effect below binds the preview
+      speechStopRef.current = startSpeechCapture(s.id, media);
     } catch (e) {
       toast.error(e.message?.includes("getUserMedia") || e.name === "NotAllowedError"
         ? "Camera/microphone permission denied."
@@ -85,6 +128,7 @@ export default function GoLivePage() {
 
   const endStream = async () => {
     try { if (stream?.id) await api.post(`/live/${stream.id}/stop`); } catch { /* noop */ }
+    speechStopRef.current?.();
     await endSession(rtcRef.current?.session);
     rtcRef.current?.pc?.close();
     placeholderRef.current?.();
@@ -94,6 +138,7 @@ export default function GoLivePage() {
 
   useEffect(() => {
     return () => {
+      speechStopRef.current?.();
       endSession(rtcRef.current?.session);
       rtcRef.current?.pc?.close();
       placeholderRef.current?.();

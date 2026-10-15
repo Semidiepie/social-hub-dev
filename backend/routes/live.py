@@ -389,6 +389,7 @@ def build_router(ctx) -> APIRouter:
                         logger.warning(f"Cloudflare cohost stop failed: {e}")
         await db.live_streams.update_one({"id": stream_id}, {"$set": {"status": "ended", "ended_at": now()}})
         await db.users.update_one({"id": current["id"]}, {"$set": {"is_live": False, "live_stream_id": None}})
+        await db.live_speech.delete_many({"stream_id": stream_id})
         await hub.broadcast(stream_id, {"type": "ended"})
         return {"status": "ended"}
 

@@ -903,7 +903,44 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(502, "Couldn't understand the audio")
         return {"text": (text or "").strip()}
 
-    # ---------- Proactive calls (character rings the user) ----------
+    @router.post("/api/ai-characters/live-speech/{stream_id}")
+    async def live_speech(stream_id: str, audio: UploadFile = File(...),
+                          current: dict = Depends(get_current_user)):
+        """Transcribe a chunk of the broadcaster's live mic audio so their AI characters can
+        react to what they SAY OUT LOUD on the stream. Stored privately (never shown to
+        viewers); the live loop merges it into each character's context."""
+        s = await db.live_streams.find_one(
+            {"id": stream_id}, {"_id": 0, "owner_id": 1, "status": 1})
+        if not s or s.get("owner_id") != current["id"] or s.get("status") != "live":
+            raise HTTPException(404, "Not your live stream")
+        # No characters watching → skip STT entirely (no cost).
+        has_chars = await db.ai_char_messages.distinct("character_id", {"admin_id": current["id"]})
+        eleven_key = settings_store.get("ELEVENLABS_API_KEY")
+        if not has_chars or not eleven_key:
+            return {"text": ""}
+        content = await audio.read()
+        if not content:
+            return {"text": ""}
+
+        def _transcribe() -> str:
+            import io
+            from elevenlabs.client import ElevenLabs
+            client = ElevenLabs(api_key=eleven_key)
+            r = client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1")
+            return r.text if hasattr(r, "text") else str(r)
+
+        try:
+            text = (await asyncio.to_thread(_transcribe) or "").strip()
+        except Exception as e:
+            logger.warning(f"live-speech stt error: {e}")
+            return {"text": ""}
+        if len(text) >= 2:
+            await db.live_speech.insert_one({
+                "id": str(uuid.uuid4()), "stream_id": stream_id, "owner_id": current["id"],
+                "text": text[:1000], "created_at": _now()})
+            await db.live_speech.delete_many(
+                {"stream_id": stream_id, "created_at": {"$lt": _now() - timedelta(minutes=10)}})
+        return {"text": text}
     @router.get("/api/ai-characters/incoming-call")
     async def incoming_call(current: Annotated[dict, Depends(get_current_user)]):
         _require_admin(current)
@@ -1321,6 +1358,27 @@ def build_router(ctx) -> APIRouter:
             char_ids = await db.ai_char_messages.distinct("character_id", {"admin_id": owner_id})
             if not char_ids:
                 continue
+            # Shared per-stream context: typed live chat + the broadcaster's TRANSCRIBED SPEECH
+            # (what they're saying out loud on the stream), merged in time order. Speech lines are
+            # treated as the owner "speaking" so saying a character's name triggers a reply and the
+            # transcript lets her discuss the live topic. Speech is never shown to viewers.
+            owner_user = await db.users.find_one(
+                {"id": owner_id}, {"_id": 0, "display_name": 1, "username": 1})
+            owner_name = (owner_user or {}).get("display_name") or (owner_user or {}).get("username") or "Host"
+            chat_recent = await db.live_chat.find(
+                {"stream_id": s["id"]},
+                {"_id": 0, "id": 1, "user_id": 1, "display_name": 1, "username": 1,
+                 "text": 1, "kind": 1, "is_ai": 1, "created_at": 1}
+            ).sort("created_at", -1).limit(15).to_list(15)
+            speech_recent = await db.live_speech.find(
+                {"stream_id": s["id"]}, {"_id": 0, "id": 1, "text": 1, "created_at": 1}
+            ).sort("created_at", -1).limit(8).to_list(8)
+            merged = list(chat_recent) + [{
+                "id": sp["id"], "user_id": owner_id, "display_name": owner_name, "username": None,
+                "text": sp["text"], "kind": "chat", "is_ai": False, "created_at": sp.get("created_at"),
+            } for sp in speech_recent]
+            merged.sort(key=lambda m: m.get("created_at") or _now())
+            recent = merged[-18:]
             commenters = 0
             for cid in char_ids:
                 if commenters >= LIVE_MAX_CHARS_PER_LIVE:
@@ -1335,15 +1393,17 @@ def build_router(ctx) -> APIRouter:
                     local_now = _local_now(state.get("tz"))
                     sleep_start, sleep_end = _sleep_window(c)
                     asleep = local_now is not None and _is_asleep(local_now.hour, sleep_start, sleep_end)
+                    schedule = c.get("schedule") or []
+                    busy = bool(schedule and local_now is not None and _busy_now(schedule, local_now)[0])
                     affection = (c.get("affection") or "").strip().lower()
                     cold = affection in ("distant", "dislikes")
 
-                    recent = await db.live_chat.find(
-                        {"stream_id": s["id"]},
-                        {"_id": 0, "id": 1, "user_id": 1, "display_name": 1, "username": 1,
-                         "text": 1, "kind": 1, "is_ai": 1}
-                    ).sort("created_at", -1).limit(15).to_list(15)
-                    recent.reverse()
+                    # HARD AVAILABILITY GATE: if she's asleep or busy on her schedule she is
+                    # genuinely NOT at the live — no joining, no comments, no hearts, and no
+                    # reply even if addressed. Her schedule is respected accurately.
+                    if asleep or busy:
+                        live_state.pop((s["id"], cid), None)
+                        continue
 
                     key = (s["id"], cid)
                     st = live_state.get(key)
@@ -1358,8 +1418,7 @@ def build_router(ctx) -> APIRouter:
                     heart = getattr(ctx, "live_post_ai_heart", None)
 
                     # DIRECT ADDRESS: if the broadcaster speaks to this character by name, they
-                    # ALWAYS reply — even if they feel distant, are busy, or it's late. The user
-                    # explicitly reaching out should never be met with silence.
+                    # reply (she's free/awake here). Bypasses only the ambient affection gate.
                     mention = _owner_mention(recent, owner_id, c)
                     if mention and mention.get("id") != st.get("answered_mid"):
                         reply = await _live_comment(c, owner_id, s.get("title", "Live"), recent,
@@ -1374,10 +1433,8 @@ def build_router(ctx) -> APIRouter:
                         commenters += 1
                         continue
 
-                    # AMBIENT presence: a cold character stays away and an asleep one isn't
-                    # watching — but being "busy" on their schedule no longer stops them from
-                    # dropping into their parent's live (you'd always peek at that).
-                    if cold or asleep:
+                    # AMBIENT presence: a cold character keeps its distance.
+                    if cold:
                         continue
                     commenters += 1
                     # A watching character sends the occasional heart (no LLM cost) so they feel
