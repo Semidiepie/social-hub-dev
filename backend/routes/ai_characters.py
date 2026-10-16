@@ -903,6 +903,26 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(502, "Couldn't understand the audio")
         return {"text": (text or "").strip()}
 
+    async def _is_live_speech_user_talking(text: str) -> bool:
+        """Tell apart the streamer actually TALKING from background music / song lyrics /
+        singing that the mic picked up. Returns True only if it's real speech to react to."""
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        try:
+            chat = LlmChat(
+                api_key=settings_store.get("EMERGENT_LLM_KEY"),
+                session_id="live-speech-filter",
+                system_message=(
+                    "You filter audio transcribed from a livestreamer's microphone. Decide if the text is "
+                    "the STREAMER TALKING (conversation, commentary, addressing viewers or someone by name) "
+                    "versus SONG LYRICS, music playing, humming or singing. "
+                    "Answer with exactly one word: TALK or MUSIC."),
+            ).with_model("anthropic", "claude-sonnet-4-6")
+            r = await chat.send_message(UserMessage(text=f'Transcribed audio: "{text}"\nTALK or MUSIC?'))
+            return "music" not in (r or "").strip().lower()[:12]
+        except Exception as e:
+            logger.warning(f"live-speech filter error (defaulting to talk): {e}")
+            return True  # don't lose real speech if the filter itself fails
+
     @router.post("/api/ai-characters/live-speech/{stream_id}")
     async def live_speech(stream_id: str, audio: UploadFile = File(...),
                           current: dict = Depends(get_current_user)):
@@ -934,7 +954,7 @@ def build_router(ctx) -> APIRouter:
         except Exception as e:
             logger.warning(f"live-speech stt error: {e}")
             return {"text": ""}
-        if len(text) >= 2:
+        if len(text) >= 2 and await _is_live_speech_user_talking(text):
             await db.live_speech.insert_one({
                 "id": str(uuid.uuid4()), "stream_id": stream_id, "owner_id": current["id"],
                 "text": text[:1000], "created_at": _now()})

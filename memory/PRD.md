@@ -1131,3 +1131,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - FIX: replaced with _owner_turn — she now replies when the broadcaster says her name/username OR posts within 4 min AFTER her own last comment (natural back-and-forth), via chat OR transcribed speech. Still deduped by answered_mid; still gated by availability (asleep/busy = absent). _mentions_char extracted as the name-match helper.
 - VERIFIED: test_live_ai_comments.py 11/11 incl. "replies to a no-name follow-up right after her comment".
 - STATUS: preview, agent-tested. Needs Publish/Redeploy.
+
+### 2026-10 — Live voice: filter out background music / song lyrics
+- User: was playing YouTube songs; live STT transcribed the lyrics and the character reacted as if the user was singing/talking.
+- FIX (ai_characters.py live-speech endpoint): new _is_live_speech_user_talking(text) classifies each transcribed chunk as TALK vs MUSIC (claude-sonnet-4-6, one-word answer). Only TALK chunks are stored into live_speech; MUSIC/lyrics/singing are dropped so the loop never reacts to them. On classifier error, defaults to TALK (never lose real speech).
+- Verified: "Hey Nova how are you" -> TALK (kept); "cause baby you're a firework", "ooh la la baby baby" -> MUSIC (dropped); "welcome back to my stream" -> TALK.
+- Cost: adds one cheap classification call per ~12s speech chunk (on top of STT), only while live with characters. STATUS: preview, agent-tested. Needs Publish/Redeploy.
