@@ -1223,3 +1223,8 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
   - Page = the grouped static-route Select (as before).
   - Profile/Post = debounced live search via GET /api/search?q= → pick a user (→ /user/{id}) or post (→ /posts/{id}). Chosen target shows as a removable chip; preview + Send reflect it; Send disabled until a destination is set.
 - No backend change needed — /admin/broadcast already accepts any url (verified earlier) and stores it as notification.link + push url. Verified via browser: profile search/pick sets /user/{id}, preview updates, send enables.
+
+### 2026-06 (fork) — Push notification click now routes correctly + Live Chat nav
+- PUSH NAV BUG (prod report: "doesn't bring them to the right spot"): push-sw.js notificationclick previously only called WindowClient.navigate() on the focused tab — unsupported on iOS Safari, so an already-open PWA never routed. Fix: SW now postMessages {type:'pmp-navigate', url} to the open client (navigate() kept as best-effort fallback); App.js usePushNavigation() hook listens on navigator.serviceWorker 'message' and react-router navigates. openWindow(target) still used when the app isn't open. SW updates on next load after redeploy.
+- LIVE CHAT NAV: already present in AppShell.jsx NAV (/livechat, testId nav-livechat) in preview — verified in DOM. Missing on production = that deploy predates it; resolved by redeploy.
+- STATUS: both fixed in preview; require Publish/Redeploy to reach production.

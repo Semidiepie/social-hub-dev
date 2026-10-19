@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { CheckCircle2, XCircle, Info, AlertTriangle, Loader2 } from "lucide-react";
 import { AuthProvider } from "@/context/AuthContext";
@@ -54,11 +54,32 @@ import GameProfilePage from "@/pages/GameProfile";
 import GamePlayerPage from "@/pages/GamePlayer";
 
 /**
+ * Listen for "navigate here" messages from the push service worker. When a
+ * system push notification is tapped and the app is already open, the SW can't
+ * route on its own (WindowClient.navigate() is unsupported on iOS), so it
+ * postMessages the target path and we route client-side via react-router.
+ */
+function usePushNavigation() {
+  const navigate = useNavigate();
+  React.useEffect(() => {
+    if (!("serviceWorker" in navigator)) return undefined;
+    const onMessage = (e) => {
+      if (e.data && e.data.type === "pmp-navigate" && typeof e.data.url === "string") {
+        navigate(e.data.url);
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [navigate]);
+}
+
+/**
  * Shell wrapper that mounts the sidebar/topbar/bottom-nav for authenticated
  * routes. Public routes (auth flows) render outside the shell.
  */
 function Shell({ children }) {
   useNotificationBadge();
+  usePushNavigation();
   const location = useLocation();
   const isAuthRoute = ["/login", "/register"].includes(location.pathname);
   // Only the reels player renders fullscreen (edge-to-edge, immersive). The

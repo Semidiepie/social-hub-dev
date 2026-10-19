@@ -29,11 +29,20 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL(event.notification.data && event.notification.data.url ? event.notification.data.url : "/", self.location.origin).href;
+  const url = (event.notification.data && event.notification.data.url) ? event.notification.data.url : "/";
+  const target = new URL(url, self.location.origin).href;
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
       const existing = wins.find((w) => w.url.startsWith(self.location.origin));
-      if (existing) return existing.focus().then(() => existing.navigate(target));
+      if (existing) {
+        // Focus the already-open app and tell it to route client-side. postMessage
+        // works everywhere (incl. iOS, where WindowClient.navigate() is unsupported);
+        // navigate() is a best-effort fallback for odd timing on other browsers.
+        return existing.focus().then(() => {
+          existing.postMessage({ type: "pmp-navigate", url });
+          if ("navigate" in existing) { try { existing.navigate(target); } catch (_) {} }
+        });
+      }
       return clients.openWindow(target);
     })
   );
