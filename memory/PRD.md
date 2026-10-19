@@ -1236,3 +1236,8 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - ALSO: handoff's two TTS calls (daughter line + mom greeting) now run via asyncio.gather → ~2.4s→1.3s. Single-relative pass-phone fallback broadened (fires even if relation label is unusual, as long as the character has exactly one relative).
 - Both call entry points (in-chat + IncomingCallListener) use the same CharacterCall component. Regression: normal voice-turn still returns audio (curl). Mom's specific failing voice can't be reproduced in preview (preview voices are v4-compatible).
 - STATUS: preview; needs Publish/Redeploy + user re-test on production.
+
+### 2026-06 (fork) — Live Chat missing from MOBILE side menu (real cause)
+- Earlier I only confirmed Live Chat in AppShell.jsx (desktop left rail). The mobile "side menu" is a SEPARATE component (HamburgerMenu.jsx) with its own LINKS array that never had Live Chat — so on phones it was absent even after redeploy.
+- FIX: added { label:"Live Chat", route:"/livechat", icon: MessagesSquare, testId:"menu-livechat" } to HamburgerMenu LINKS (after Messages) + imported MessagesSquare. Verified present via mobile-viewport screenshot (menu-livechat in DOM).
+- STATUS: preview; needs redeploy.

@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   Compass,
   MessageSquare,
+  MessagesSquare,
   Bell,
   User,
   Settings,
@@ -49,6 +50,7 @@ const LINKS = [
   { label: "Wallet", route: "/wallet", icon: Coins, testId: "menu-wallet" },
   { label: "Market", route: "/market", icon: ShoppingBag, testId: "menu-market" },
   { label: "Messages", route: "/messages", icon: MessageSquare, testId: "menu-messages" },
+  { label: "Live Chat", route: "/livechat", icon: MessagesSquare, testId: "menu-livechat" },
   { label: "Notifications", route: "/notifications", icon: Bell, testId: "menu-notifications" },
   { label: "Discover", route: "/discover", icon: Compass, testId: "menu-discover" },
 ];
