@@ -1217,3 +1217,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - VERIFIED iter 65/66: 8/8 backend pytest (test_iteration65_passphone_schedule.py). Web call UI (mic/VAD/playback) not auto-testable. STATUS: preview; needs Publish + device confirm.
 - AMBIENCE (character's own voice) still deferred.
 - ANNOUNCEMENT TARGET PAGE: AdminAnnounce.jsx now has an "Open this page when tapped" grouped Select (every static web route — Main/Content/Social&Live/Features/Auth/Admin) with live preview. url passed to /admin/broadcast (was hardcoded "/"). Backend now also stores link=url on the in-app 'update' notification; Notifications.jsx navigates to n.link for update type; push-sw.js already opens data.url on click. Verified via curl (broadcast accepts /wallet, notification.link persisted) + screenshot. STATUS: preview; needs Publish.
+
+### 2026-06 (fork) — Announcement destination: profile/post picker
+- AdminAnnounce.jsx now has a 3-way "Open this when tapped" toggle: A page / A profile / A post.
+  - Page = the grouped static-route Select (as before).
+  - Profile/Post = debounced live search via GET /api/search?q= → pick a user (→ /user/{id}) or post (→ /posts/{id}). Chosen target shows as a removable chip; preview + Send reflect it; Send disabled until a destination is set.
+- No backend change needed — /admin/broadcast already accepts any url (verified earlier) and stores it as notification.link + push url. Verified via browser: profile search/pick sets /user/{id}, preview updates, send enables.
