@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 62 — AI character call-event pill labels + voice-note caption removal + Cloudinary .mp3 playback fix. All 7 backend pytest cases passed (POST /call-event start/end variants, chronological order via /thread, last_call_ended_at state write, regression that text /send still produces an ai reply with system rows present in history, and /voice-turn still returns {reply, audio_url}). Web UI verified: call-event system messages render as CENTERED PILLS with data-testid='aichar-call-label' (NOT normal left/right bubbles); AI voice-note message renders an AudioBubble with data-testid='voice-note' and the text caption is hidden INSIDE the chat thread; the <audio> src is rewritten from a Cloudinary .webm URL to .mp3 (playableUrl works). No regressions observed.",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "Messages sidebar (threads list)", "issues": ["The sidebar last-message PREVIEW shows the raw caption text of an audio message (e.g. 'this caption should NOT ap...') instead of a '🎤 Voice note' placeholder. Inside the actual chat thread the caption is correctly hidden under the AudioBubble (as required). Minor polish: consider filtering `media_type === 'audio'` in the threads-list preview too."]}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration62_call_events.py",
+    "/app/test_reports/pytest/iteration62_call_events.xml"
+  ],
+  "action_items": [
+    "(Optional/polish) In the AI-characters threads list (left sidebar in /messages), when the last message is media_type=='audio', render a '🎤 Voice note' label instead of leaking the raw transcript/caption. Not blocking — inside the thread view the caption is already correctly hidden."
+  ],
+  "critical_code_review_comments": [
+    "ai_characters.py:1356 call-event endpoint cleanly reuses _msg_out and sets last_call_ended_at only on 'end' — good.",
+    "_tline (ai_characters.py:845) safely renders role=='system' rows as '[text]' so the transcript assembled for the LLM reply loop never crashes when a call-event row is present (verified end-to-end).",
+    "VoiceNote.jsx:21 playableUrl correctly handles both .webm→.mp3 rewrite AND Cloudinary URLs without an extension (appends .mp3). Local blob URLs are passed through untouched.",
+    "AiCharacterChat.jsx:241 hides captions for ANY audio message (both user and AI). This is exactly what the spec asked for."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration62_call_events.py"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (3/3 UI checks)"},
+  "test_credentials": "founder: semidiepie / Semi123! (PIN 7455 also works)",
+  "seed_data_creation": "Backend tests create a single TEST_Caller_<hex> character and delete it + its messages/state on teardown. UI run created TEST_UICallBot + injected one Cloudinary audio ai message via Mongo for the src-rewrite inspection, then deleted the character + messages/state afterwards.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Call-event endpoint is at POST /api/ai-characters/{id}/call-event with CallEventBody {event: 'start'|'end', duration}. System messages are stored with role='system' and appear in /thread between user/ai rows. The frontend renders them as centered pills (data-testid='aichar-call-label'); any audio message in the thread hides its caption and routes through VoiceNote.playableUrl which rewrites Cloudinary extensions to .mp3 for iOS Safari compatibility. The AI-character threads-list sidebar still shows the raw caption text as a preview — minor polish only, not functional.",
+  "rca of the issue": ""
+}

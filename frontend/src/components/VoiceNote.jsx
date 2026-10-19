@@ -15,6 +15,21 @@ function fmt(sec) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// iOS Safari can't play webm/opus. Recorded notes are hosted on Cloudinary as a
+// "video" resource — asking Cloudinary to deliver the same asset as .mp3 makes
+// playback work on every browser/device. Local blob previews are left untouched.
+function playableUrl(url) {
+  if (!url || typeof url !== "string") return url;
+  if (url.includes("res.cloudinary.com") && url.includes("/upload/")) {
+    if (/\.mp3(\?.*)?$/i.test(url)) return url;
+    if (/\.(webm|m4a|mp4|aac|ogg|wav|mpga|opus)(\?.*)?$/i.test(url)) {
+      return url.replace(/\.(webm|m4a|mp4|aac|ogg|wav|mpga|opus)(\?.*)?$/i, ".mp3$2");
+    }
+    return `${url}.mp3`;
+  }
+  return url;
+}
+
 // Mic button that records audio and hands back a Blob + duration via onSend.
 export function VoiceRecorder({ onSend, disabled, busy, onRecordingChange }) {
   const [recording, setRecording] = useState(false);
@@ -139,7 +154,7 @@ export function AudioBubble({ url, duration, mine }) {
     <div className="flex min-w-[180px] items-center gap-2 py-0.5" data-testid="voice-note">
       <audio
         ref={audioRef}
-        src={url}
+        src={playableUrl(url)}
         preload="metadata"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}

@@ -216,7 +216,15 @@ export function AiCharacterChat({ characterId, onBack }) {
           </div>
         ) : (
           messages.map((m) => {
+            if (m.role === "system") {
+              return (
+                <div key={m.id} className="flex justify-center py-1" data-testid="aichar-call-label">
+                  <span className="rounded-full bg-secondary px-3 py-1 text-[11px] font-medium text-muted-foreground">{m.text}</span>
+                </div>
+              );
+            }
             const mine = m.role === "user";
+            const isAudio = m.media_url && m.media_type === "audio";
             return (
               <div key={m.id} className={`flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
                 {!mine && <Avatar src={character.avatar_url} size={28} className="mb-4" />}
@@ -227,10 +235,10 @@ export function AiCharacterChat({ characterId, onBack }) {
                   {m.media_url && m.media_type === "video" && (
                     <video src={m.media_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="aichar-msg-video" />
                   )}
-                  {m.media_url && m.media_type === "audio" && (
+                  {isAudio && (
                     <AudioBubble url={m.media_url} duration={m.audio_duration} mine={mine} />
                   )}
-                  {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
+                  {m.text && !isAudio ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
                   <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
                 </div>
               </div>
@@ -290,6 +298,8 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
   volumeRef.current = volume;
 
   const gainRef = useRef(null);
+  const callStartRef = useRef(0);
+  const endPostedRef = useRef(false);
   const srcNodeRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -477,7 +487,11 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
 
   useEffect(() => {
     endedRef.current = false;
+    endPostedRef.current = false;
+    callStartRef.current = Date.now();
     primeGeo();
+    // Label the call start in the chat thread (always the chat's character).
+    api.post(`/ai-characters/${initialCharacter.id}/call-event`, { event: "start" }).catch(() => {});
     (async () => {
       try {
         const r = await api.post(`/ai-characters/${char.id}/voice-turn`, { greeting: true });
@@ -491,6 +505,11 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
     })();
     return () => {
       endedRef.current = true;
+      if (!endPostedRef.current) {
+        endPostedRef.current = true;
+        const dur = Math.round((Date.now() - callStartRef.current) / 1000);
+        api.post(`/ai-characters/${initialCharacter.id}/call-event`, { event: "end", duration: dur }).catch(() => {});
+      }
       stopVad();
       try { srcNodeRef.current?.stop(); } catch { /* noop */ }
       try { recorderRef.current?.state === "recording" && recorderRef.current.stop(); } catch { /* noop */ }

@@ -1188,6 +1188,13 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Refactored _run_char_exchange to use shared _exchange_lines. Approximation noted: overhearing is sequential clips w/ volume, not true overlapping room audio.
 - VERIFIED iter 61: 5/5 (relay reply-back, overhear segments w/ real audio, handoff, 2 regressions). STATUS: preview; voice-call behaviors need DEVICE confirmation after redeploy.
 
+### 2026-06 — Call labels + AI knows call ended + no voice-note transcript + silent-playback fix (testing-agent verified, iter 62)
+- Call labels: POST /api/ai-characters/{id}/call-event {event:'start'|'end', duration} stores a role='system' message ('📞 Call started' / '📞 Call ended · Xm Ys'); CharacterCall posts start on mount + end on unmount (to the chat's character id). Frontend renders role=='system' as a centered pill (aichar-call-label).
+- AI recognizes call ended: _tline() renders system rows as [event] in the history transcript (regular/media/proactive) so the character sees the call ended; 'end' also sets state.last_call_ended_at.
+- No transcript on voice notes: chat bubble hides text when media_type=='audio' (audio-only); character-list preview shows '🎤 Voice message' for audio last_message.
+- BUG (silent playback): recorded notes are webm/opus which iOS Safari can't play. playableUrl() rewrites Cloudinary audio URLs to .mp3 for universal playback; AudioBubble uses it.
+- VERIFIED iter 62: 7/7 backend (call-event labels, last_call_ended_at, system-in-history regression for send+voice-turn) + web (centered pills, caption hidden in thread, audio src rewritten .webm→.mp3). STATUS: preview; needs redeploy + device confirm (esp. iOS playback).
+
 ### 2026-06 — Switch character TTS to ElevenLabs eleven_v4
 - Per user request: TTS_MODEL "eleven_v3" → "eleven_v4" (newest model, still supports audio tags for expressiveness). Fallback changed to "eleven_v3" (graceful degrade, not the flat multilingual_v2). VoiceSettings unchanged (v4 ignores unsupported style slider).
 - Lint clean. NOT voice-validated — preview ElevenLabs key unusable. Needs Publish/Redeploy + user listen on production. Trivial revert if disliked.

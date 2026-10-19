@@ -433,6 +433,11 @@ class SendBody(BaseModel):
     lon: Optional[float] = None
 
 
+class CallEventBody(BaseModel):
+    event: str = Field(default="start", max_length=10)  # "start" | "end"
+    duration: int = 0  # seconds (for "end")
+
+
 class VoiceTurnBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     greeting: bool = False
@@ -837,6 +842,12 @@ def build_router(ctx) -> APIRouter:
                 await _relative_pings_user(admin_id, c, rc, user_text)
                 return
 
+    def _tline(cname: str, m: dict) -> str:
+        """Render one history line; system events (call started/ended) shown as [event]."""
+        if m.get("role") == "system":
+            return f"[{m.get('text', '')}]"
+        return f"{'User' if m['role'] == 'user' else cname}: {m.get('text', '')}"
+
     async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "") -> str:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         st = await db.ai_char_state.find_one(
@@ -852,7 +863,7 @@ def build_router(ctx) -> APIRouter:
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
         ).sort("created_at", -1).limit(40).to_list(40)
         history.reverse()
-        transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in history)
+        transcript = "\n".join(_tline(c['name'], m) for m in history)
         chat = LlmChat(
             api_key=settings_store.get("EMERGENT_LLM_KEY"),
             session_id=f"aichar-{c['id']}-{admin_id}",
@@ -879,7 +890,7 @@ def build_router(ctx) -> APIRouter:
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
         ).sort("created_at", -1).limit(20).to_list(20)
         history.reverse()
-        transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in history if m.get("text"))
+        transcript = "\n".join(_tline(c['name'], m) for m in history if m.get("text"))
         chat = LlmChat(
             api_key=settings_store.get("EMERGENT_LLM_KEY"),
             session_id=f"aichar-media-{c['id']}-{admin_id}",
@@ -1072,7 +1083,10 @@ def build_router(ctx) -> APIRouter:
             pub = _char_public(c)
             last = await db.ai_char_messages.find_one(
                 {"character_id": c["id"], "admin_id": current["id"]}, sort=[("created_at", -1)])
-            pub["last_message"] = _msg_out(last) if last else None
+            lm = _msg_out(last) if last else None
+            if lm and lm.get("media_type") == "audio":
+                lm["text"] = "🎤 Voice message"
+            pub["last_message"] = lm
             state = await db.ai_char_state.find_one({"character_id": c["id"], "admin_id": current["id"]}) or {}
             last_read = await _coerce_dt(state.get("last_read_at"))
             q = {"character_id": c["id"], "admin_id": current["id"], "role": "ai"}
@@ -1341,6 +1355,28 @@ def build_router(ctx) -> APIRouter:
             await _flag_elevenlabs(e)
             raise HTTPException(502, "Couldn't understand the audio")
         return {"text": (text or "").strip(), "speaker_note": speaker_note}
+
+    @router.post("/api/ai-characters/{char_id}/call-event")
+    async def call_event(char_id: str, body: CallEventBody, current: Annotated[dict, Depends(get_current_user)]):
+        """Record a call start/end as a labeled event in the chat thread so the user sees
+        '📞 Call started/ended' and the character knows a call just happened/ended."""
+        _require_admin(current)
+        await _get_char(char_id)
+        if body.event == "end":
+            d = max(0, int(body.duration))
+            mm, ss = divmod(d, 60)
+            dur = f"{mm}m {ss:02d}s" if mm else f"{ss}s"
+            text = f"📞 Call ended · {dur}"
+        else:
+            text = "📞 Call started"
+        doc = {"id": str(uuid.uuid4()), "character_id": char_id, "admin_id": current["id"],
+               "role": "system", "text": text, "created_at": _now()}
+        await db.ai_char_messages.insert_one(doc)
+        if body.event == "end":
+            await db.ai_char_state.update_one(
+                {"character_id": char_id, "admin_id": current["id"]},
+                {"$set": {"last_call_ended_at": _now()}}, upsert=True)
+        return _msg_out(doc)
 
     async def _is_live_speech_user_talking(text: str) -> bool:
         """Tell apart the streamer actually TALKING from background music / song lyrics /
@@ -1630,7 +1666,7 @@ def build_router(ctx) -> APIRouter:
                     {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
                 ).sort("created_at", -1).limit(30).to_list(30)
                 hist.reverse()
-                transcript = "\n".join(f"{'User' if m['role'] == 'user' else c['name']}: {m['text']}" for m in hist)
+                transcript = "\n".join(_tline(c['name'], m) for m in hist)
                 should, message, next_hours, action = await _proactive_decide(
                     c, transcript, int(idle_min), unanswered, time_ctx, can_call=can_call)
                 do_call = can_call and action == "call"
