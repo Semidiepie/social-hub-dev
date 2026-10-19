@@ -94,7 +94,7 @@ export default function LiveChatPage() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-1rem)] w-full max-w-3xl flex-col p-2 sm:p-4" data-testid="livechat-page">
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col p-2 sm:p-4" data-testid="livechat-page">
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card">
         <header className="flex items-center gap-3 border-b border-border p-4">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 text-primary">

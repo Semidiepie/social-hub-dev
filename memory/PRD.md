@@ -1241,3 +1241,8 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Earlier I only confirmed Live Chat in AppShell.jsx (desktop left rail). The mobile "side menu" is a SEPARATE component (HamburgerMenu.jsx) with its own LINKS array that never had Live Chat — so on phones it was absent even after redeploy.
 - FIX: added { label:"Live Chat", route:"/livechat", icon: MessagesSquare, testId:"menu-livechat" } to HamburgerMenu LINKS (after Messages) + imported MessagesSquare. Verified present via mobile-viewport screenshot (menu-livechat in DOM).
 - STATUS: preview; needs redeploy.
+
+### 2026-06 (fork) — Chat input bars out of view (LiveChat + Messages)
+- CAUSE: both pages set a fixed height (LiveChat h-[calc(100vh-1rem)]; Messages h-[calc(100dvh-140px)]) but live inside AppShell's content wrapper which already adds a mobile top bar + pt-4 + pb-24 (~168px chrome). Page ended up taller than viewport → input pushed below the fold / behind the bottom nav.
+- FIX: both page roots now use h-full to fill the flex-1 wrapper (which already reserves bottom-nav space via pb-24) instead of magic-number offsets — auto-adapts to top bar/safe areas. LiveChatPage.jsx line 97, Messages.jsx line 112.
+- Verified on 430x900 mobile viewport: livechat-input bottom at y=783 (<900); AI/DM chat-input visible above bottom nav. STATUS: preview; needs redeploy.

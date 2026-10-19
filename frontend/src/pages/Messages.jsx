@@ -109,7 +109,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="grid gap-0 grid-cols-1 md:grid-cols-[320px_1fr] min-w-0 h-[calc(100dvh-140px)] md:h-[calc(100dvh-112px)]">
+    <div className="grid gap-0 grid-cols-1 md:grid-cols-[320px_1fr] min-w-0 h-full">
       <aside className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <h1 className="text-xl font-black">Messages</h1>
