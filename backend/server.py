@@ -2618,6 +2618,7 @@ async def admin_broadcast(body: BroadcastBody, current: Annotated[dict, Depends(
             "actor_name": "PostMePlex",
             "actor_avatar": DEFAULT_AVATAR_URL,
             "text": body.body,
+            "link": body.url,
             "read": False,
             "created_at": now(),
         } for uid in user_ids]
@@ -3378,6 +3379,9 @@ app.include_router(_build_presence(route_ctx))
 
 from routes.games import build_router as _build_games  # noqa: E402
 app.include_router(_build_games(route_ctx))
+
+from routes.livechat import build_router as _build_livechat  # noqa: E402
+app.include_router(_build_livechat(route_ctx))
 
 
 @app.on_event("startup")

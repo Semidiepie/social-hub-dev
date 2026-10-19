@@ -13,6 +13,7 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import { SageChat, SAGE } from "@/components/SageChat";
 import { AiCharacterChat } from "@/components/AiCharacterChat";
 import { VoiceRecorder, AudioBubble } from "@/components/VoiceNote";
+import { ReactionPicker, ReactionChips } from "@/components/MessageReactions";
 import { toast } from "sonner";
 
 // Compact "active Xm ago" label from an ISO timestamp.
@@ -641,15 +642,16 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
     e.target.value = "";
     if (!file || !conv) return;
     const isVideo = file.type.startsWith("video");
-    const maxMb = isVideo ? 1024 : 250;
+    const isAudioFile = file.type.startsWith("audio");
+    const maxMb = isVideo ? 1024 : isAudioFile ? 100 : 250;
     if (file.size > maxMb * 1024 * 1024) {
-      toast.error(`${isVideo ? "Video" : "Photo"} too large (max ${isVideo ? "1 GB" : "250 MB"}).`);
+      toast.error(`File too large (max ${isVideo ? "1 GB" : isAudioFile ? "100 MB" : "250 MB"}).`);
       return;
     }
     setUploading(true);
     try {
-      const up = await uploadToCloudinary(file, { resourceType: isVideo ? "video" : "image" });
-      const payload = isVideo ? { video_url: up.secure_url } : { image_url: up.secure_url };
+      const up = await uploadToCloudinary(file, { resourceType: isAudioFile ? "video" : (isVideo ? "video" : "image") });
+      const payload = isAudioFile ? { audio_url: up.secure_url } : (isVideo ? { video_url: up.secure_url } : { image_url: up.secure_url });
       const m = await api.post(`/conversations/${conv.id}/messages`, payload);
       setMessages((prev) => [...prev, m]);
     } catch (err) {
@@ -672,6 +674,17 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
       toast.error(err.message || "Couldn't send that voice message");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const toggleReaction = async (id, emoji, hasMine) => {
+    try {
+      const res = hasMine
+        ? await api.del(`/messages/${id}/reactions`)
+        : await api.post(`/messages/${id}/reactions`, { emoji });
+      setMessages((rows) => rows.map((m) => (m.id === id ? { ...m, reactions: res.reactions } : m)));
+    } catch (err) {
+      toast.error(err.message || "Couldn't react");
     }
   };
 
@@ -738,30 +751,41 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
           messages.map((m) => {
             const mine = m.sender_id === me?.id;
             return (
-              <div key={m.id} className={`group flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
+              <div key={m.id} className={`group flex items-end gap-1 ${mine ? "justify-end" : "justify-start"}`}>
                 {!mine && conv.is_group && (
                   <Avatar src={m.sender_avatar} size={28} frame={m.sender_frame} live={m.sender_is_live} className="mb-4" />
                 )}
                 {mine && (
-                  <button onClick={() => deleteMessage(m.id)} title="Delete message" aria-label="Delete message"
-                    className="rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover:opacity-100"
-                    data-testid={`msg-delete-${m.id}`}>
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="mb-3 flex items-center gap-0.5">
+                    <ReactionPicker side="right" onPick={(e) => toggleReaction(m.id, e, false)} />
+                    <button onClick={() => deleteMessage(m.id)} title="Delete message" aria-label="Delete message"
+                      className="rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                      data-testid={`msg-delete-${m.id}`}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 )}
-                <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"}`} data-testid={`msg-${m.id}`}>
-                  {!mine && conv.is_group && (
-                    <div className="mb-0.5 flex items-center gap-1 text-[11px] font-bold text-primary">
-                      {m.sender_display_name || m.sender_username}
-                      {m.sender_verified && <BadgeCheck size={11} className={badgeCls({ remembering: m.sender_remembering }, "shrink-0")} style={badgeStyle({ verified_color: m.sender_verified_color })} />}
-                    </div>
-                  )}
-                  {m.image_url && <img src={m.image_url} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" data-testid="dm-msg-image" />}
-                  {m.video_url && <video src={m.video_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="dm-msg-video" />}
-                  {m.audio_url && <AudioBubble url={m.audio_url} duration={m.audio_duration} mine={mine} />}
-                  {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
-                  <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
+                <div className="flex max-w-[75%] flex-col">
+                  <div className={`rounded-2xl px-3 py-2 text-sm ${mine ? "self-end bg-primary text-primary-foreground" : "self-start bg-secondary text-foreground"}`} data-testid={`msg-${m.id}`}>
+                    {!mine && conv.is_group && (
+                      <div className="mb-0.5 flex items-center gap-1 text-[11px] font-bold text-primary">
+                        {m.sender_display_name || m.sender_username}
+                        {m.sender_verified && <BadgeCheck size={11} className={badgeCls({ remembering: m.sender_remembering }, "shrink-0")} style={badgeStyle({ verified_color: m.sender_verified_color })} />}
+                      </div>
+                    )}
+                    {m.image_url && <img src={m.image_url} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" data-testid="dm-msg-image" />}
+                    {m.video_url && <video src={m.video_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="dm-msg-video" />}
+                    {m.audio_url && <AudioBubble url={m.audio_url} duration={m.audio_duration} mine={mine} />}
+                    {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
+                    <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
+                  </div>
+                  <ReactionChips reactions={m.reactions} myId={me?.id} mine={mine} onToggle={(e, h) => toggleReaction(m.id, e, h)} />
                 </div>
+                {!mine && (
+                  <div className="mb-3">
+                    <ReactionPicker side="left" onPick={(e) => toggleReaction(m.id, e, false)} />
+                  </div>
+                )}
               </div>
             );
           })
@@ -778,7 +802,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
-        <input ref={dmFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={sendMedia} data-testid="chat-file-input" />
+        <input ref={dmFileRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={sendMedia} data-testid="chat-file-input" />
         {!recordingVoice && (
           <button type="button" onClick={() => dmFileRef.current?.click()} disabled={uploading} title="Send a photo or video"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="chat-attach">

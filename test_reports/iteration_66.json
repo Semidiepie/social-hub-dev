@@ -1,0 +1,42 @@
+{
+  "summary": "Retest of iteration_65 pass-the-phone + schedule-gating fixes. Re-ran /app/backend/tests/test_iteration65_passphone_schedule.py (8 cases) against the shared backend. ALL 8 PASS, including the two previously-failing cases ('put mom on' handoff detection and 'put her back on' pronoun fallback). Schedule gating with host tz fallback for a relative with no ai_char_state.tz continues to block handoff. Normal voice turn and relay (segments) regressions intact.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration65_passphone_schedule.py",
+    "/app/test_reports/pytest/iteration66_passphone_retest.xml"
+  ],
+  "test_results_detail": {
+    "TestPassThePhoneHandoff::test_pass_the_phone_to_mom_returns_handoff": "PASSED",
+    "TestScheduleGatingAsleep::test_asleep_relative_does_not_handoff": "PASSED",
+    "TestSwitchBackPhrases::test_switchback_phrases_produce_handoff[put her back on]": "PASSED (pronoun fallback fix verified)",
+    "TestSwitchBackPhrases::test_switchback_phrases_produce_handoff[pass me back to mom]": "PASSED",
+    "TestSwitchBackPhrases::test_switchback_phrases_produce_handoff[can i talk to mom]": "PASSED",
+    "TestSwitchBackPhrases::test_switchback_phrases_produce_handoff[put mom on]": "PASSED (regex 'put <X> on' fix verified)",
+    "TestNormalVoiceTurn::test_no_handoff_no_segments": "PASSED",
+    "TestRelayStillReturnsSegments::test_ask_your_mom_returns_segments": "PASSED"
+  },
+  "code_review_verification": [
+    "ai_characters.py:785 — _wants_passphone now has regex r'\\bput\\s+\\w+\\s+(back\\s+)?on\\b' covering 'put mom on' / 'put hope back on' ✓",
+    "ai_characters.py:1438 — pronoun fallback branch resolves sole relative when pass-phone intent + pronoun present and no name matched ✓",
+    "ai_characters.py:653,656,1450 — _char_available now accepts tz_fallback and is called with tz_fallback=body.tz so relatives without state.tz are still gated via host tz ✓"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "n/a"},
+  "test_credentials": "Founder semidiepie@gmail.com / Semi123! via /api/auth/login (access_token) — verified working.",
+  "seed_data_creation": "Tests create TEST_-prefixed Hope/Juliette character pairs ephemerally and purge them + their state/convos/messages on teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iteration_65 fixes are fully verified. All 8 pass-phone / schedule-gating cases green. Audio_url may be null in preview (ElevenLabs voice access limited) — tests correctly assert only on key presence, not on bytes. Safe to proceed to next feature.",
+  "rca of the issue": ""
+}

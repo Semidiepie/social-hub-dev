@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 65 backend-only verification of the pass-the-phone handoff contract on /voice-turn (fix for 'Hope → pass to mom Juliette' bug). 6 of 8 pytest cases PASSED. Core handoff contract works (handoff.character_id = relative's id; reply+audio_url present), schedule-gating works (asleep relative returns NO handoff), relay regression ('ask your mom …' → segments) and normal voice-turn regression (no mention → reply+audio_url, no handoff/segments) both still pass. 2 of 4 switch-back phrase variants FAILED: 'put her back on' and 'put mom on' are NOT currently detected as pass-the-phone intents, which is a legitimate gap vs. the stated user requirement.",
+  "platforms_tested": ["backend"],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/ai-characters/{char_id}/voice-turn",
+       "issue": "Switch-back phrase 'put her back on' does NOT produce a handoff — _match_relative requires an explicit relative token (name or relation word) in the SAME utterance, and 'her' alone is a pronoun that doesn't match. In the stated UX (Hope has been passed back; user then says 'put her back on' expecting to return to Juliette), there is no mom/juliette token in the utterance, so the pass-phone branch is skipped and the response falls through to a plain reply (observed: 'Oh, you mean my mom! Sorry, let me grab her…'). Needs pronoun → recently-active-speaker resolution in _match_relative, or a parallel path that uses the active-speaker context."},
+      {"endpoint": "POST /api/ai-characters/{char_id}/voice-turn",
+       "issue": "Switch-back phrase 'put mom on' does NOT produce a handoff — _wants_passphone (ai_characters.py:783) lists only 'put her on'/'put him on'/'put her back'/'put him back' but no generic 'put <name/relation> on'. Add a 'put ' + relation/name heuristic (e.g. 'put mom on', 'put juliette on')."}
+    ]
+  },
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration65_passphone_schedule.py",
+    "/app/test_reports/pytest/iteration65_passphone.xml"
+  ],
+  "action_items": [
+    "Fix _wants_passphone (ai_characters.py:783) to also match 'put <X> on' / 'put <X> back on' where <X> is a name or relation word — e.g. add a regex like r\\\"\\\\bput\\\\s+(\\\\w+)\\\\s+(back\\\\s+)?on\\\\b\\\" OR add tokens 'put mom on', 'put dad on', generic 'put ... on'.",
+    "Fix _match_relative (ai_characters.py:774) to resolve pronouns ('her', 'him') to the most-recently-mentioned relative in the current call context, so 'put her back on' routes to the previously-handed-off relative. Alternatively, feed the active-speaker (activeCharRef on the frontend) back into voice-turn as an optional body field and use it as the pronoun antecedent."
+  ],
+  "critical_code_review_comments": [
+    "ai_characters.py is now 2280 lines — still exceeds 700-line threshold; the voice-turn + relative/handoff logic (lines ~617-820 + 1414-1504) is a clean candidate to split into routes/ai_characters_voice.py (non-blocking, maintainability).",
+    "voice_turn (line 1414) correctly stores the hand-off line as role='ai' but does NOT persist the greeting line from the relative character to any thread (greeting is only returned transiently). This is intentional per 'UI stays anchored to host' but means the user can't scroll back and see what Juliette said after the pass. Consider logging the greeting as a role='system' pill ('📞 Juliette joined the call') for continuity — matches iter-62 call-event pill style.",
+    "_char_available (line 653) depends on the RELATIVE's ai_char_state row having a tz field. The voice-turn endpoint only writes tz to the HOST's state row (line 1428-1431). If a relative character has never been chatted with, their state row has no tz → _local_now returns None → sleep/busy gating is BYPASSED. Add a one-liner on first create to seed state with the admin's current tz, or default to the host's tz for gating."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration65_passphone_schedule.py"
+  ],
+  "success_rate": {"backend": "75% (6/8)", "frontend": "n/a (not tested)"},
+  "test_credentials": "founder: semidiepie@gmail.com / Semi123! via POST /api/auth/login → access_token",
+  "seed_data_creation": "Creates 2 TEST_-prefixed AI characters per module (TEST_Hope_<hex> + TEST_Juliette_<hex>) with mutual mother/daughter relationships; teardown deletes both characters, their ai_char_messages, ai_char_state and ai_char_convos rows for the pair.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pass-the-phone handoff core contract on POST /voice-turn is wired correctly: when _match_relative matches AND _wants_passphone matches AND _char_available(rc) returns True → response includes {reply, audio_url, handoff:{character_id, name, avatar_url, greeting_text, greeting_audio}}. Gating is confirmed: forcing the relative's sleep_start=0 / sleep_end=23 AND seeding ai_char_state.tz for the relative under the super-admin's id suppresses the handoff and returns a plain {reply, audio_url} excuse. Two switch-back variants are still not detected (see minor issues). Also note the gating path requires the relative's state row to have a tz (see critical code review comment 3). Reusable at /app/backend/tests/test_iteration65_passphone_schedule.py.",
+  "rca of the issue": "Switch-back failures RCA: (1) 'put her back on' — _match_relative loops over _relatives(c) and checks word-boundary matches against first-name + relation + synonyms; 'her' is NOT in the token set (name/relation/synonym only), so no match ⇒ pass-phone branch skipped. (2) 'put mom on' — _wants_passphone keyword list has 'put her on'/'put him on'/'put her back'/'put him back' but no literal 'put mom on'/'put <X> on', so _wants_passphone returns False even though _match_relative DID match 'mom'. Both failures are reproducible deterministically — the branch gates are evaluated before any LLM call."
+}

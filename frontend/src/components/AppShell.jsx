@@ -21,6 +21,7 @@ import {
   User,
   Coins,
   Gamepad2,
+  MessagesSquare,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
@@ -52,6 +53,7 @@ const NAV = [
   { to: "/blogs", label: "Blogs", icon: BookText, testId: "nav-blogs" },
   { to: "/discover", label: "Discover", icon: Compass, testId: "nav-discover" },
   { to: "/messages", label: "Messages", icon: MessageSquare, testId: "nav-messages" },
+  { to: "/livechat", label: "Live Chat", icon: MessagesSquare, testId: "nav-livechat" },
   { to: "/notifications", label: "Notifications", icon: Bell, testId: "nav-notifications" },
 ];
 

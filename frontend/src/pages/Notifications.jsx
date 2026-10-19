@@ -48,7 +48,7 @@ export default function NotificationsPage() {
     setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
     if (n.type === "live") navigate(n.link || `/live/${n.live_stream_id || ""}`);
     else if (n.type === "pet") navigate("/pet");
-    else if (n.type === "update") navigate("/");
+    else if (n.type === "update") navigate(n.link || "/");
     else if (n.link) navigate(n.link);
     else if (n.video_id) navigate(`/videos/${n.video_id}`);
     else if (n.post_id) navigate(`/posts/${n.post_id}`);

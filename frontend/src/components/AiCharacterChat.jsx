@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/lib/format";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { VoiceRecorder, AudioBubble } from "@/components/VoiceNote";
+import { ReactionPicker, ReactionChips } from "@/components/MessageReactions";
 import { toast } from "sonner";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -126,18 +127,20 @@ export function AiCharacterChat({ characterId, onBack }) {
     e.target.value = "";
     if (!file) return;
     const isVideo = file.type.startsWith("video");
-    const maxMb = isVideo ? 1024 : 250;
+    const isAudioFile = file.type.startsWith("audio");
+    const kind = isVideo ? "video" : isAudioFile ? "audio_file" : "image";
+    const maxMb = isVideo ? 1024 : isAudioFile ? 100 : 250;
     if (file.size > maxMb * 1024 * 1024) {
-      toast.error(`${isVideo ? "Video" : "Photo"} too large (max ${isVideo ? "1 GB" : "250 MB"}).`);
+      toast.error(`File too large (max ${isVideo ? "1 GB" : isAudioFile ? "100 MB" : "250 MB"}).`);
       return;
     }
     setUploading(true);
     const localPreview = URL.createObjectURL(file);
     const tmpId = `tmp-${Date.now()}`;
-    setMessages((m) => [...m, { id: tmpId, role: "user", text: "", media_url: localPreview, media_type: isVideo ? "video" : "image", created_at: new Date().toISOString() }]);
+    setMessages((m) => [...m, { id: tmpId, role: "user", text: "", media_url: localPreview, media_type: kind, created_at: new Date().toISOString() }]);
     try {
-      const up = await uploadToCloudinary(file, { resourceType: isVideo ? "video" : "image" });
-      await api.post(`/ai-characters/${characterId}/send`, { text: "", media_url: up.secure_url, media_type: isVideo ? "video" : "image", ...gatherContext() });
+      const up = await uploadToCloudinary(file, { resourceType: isAudioFile ? "video" : kind });
+      await api.post(`/ai-characters/${characterId}/send`, { text: "", media_url: up.secure_url, media_type: kind, ...gatherContext() });
       setTimeout(poll, 2500);
       setTimeout(poll, 6000);
     } catch (err) {
@@ -165,6 +168,28 @@ export function AiCharacterChat({ characterId, onBack }) {
       toast.error(err.message || "Couldn't send that voice message");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const deleteMsg = async (id) => {
+    const prev = messages;
+    setMessages((rows) => rows.filter((m) => m.id !== id));
+    try {
+      await api.del(`/ai-characters/${characterId}/messages/${id}`);
+    } catch (err) {
+      setMessages(prev);
+      toast.error(err.message || "Failed to delete");
+    }
+  };
+
+  const toggleReaction = async (id, emoji, hasMine) => {
+    try {
+      const res = hasMine
+        ? await api.del(`/ai-characters/${characterId}/messages/${id}/reactions`)
+        : await api.post(`/ai-characters/${characterId}/messages/${id}/reactions`, { emoji });
+      setMessages((rows) => rows.map((m) => (m.id === id ? { ...m, reactions: res.reactions } : m)));
+    } catch (err) {
+      toast.error(err.message || "Couldn't react");
     }
   };
 
@@ -223,24 +248,40 @@ export function AiCharacterChat({ characterId, onBack }) {
                 </div>
               );
             }
+            const isTmp = String(m.id).startsWith("tmp-");
             const mine = m.role === "user";
-            const isAudio = m.media_url && m.media_type === "audio";
+            const isAudio = m.media_url && (m.media_type === "audio" || m.media_type === "audio_file");
+            const ctrls = !isTmp && (
+              <div className="mb-3 flex items-center gap-0.5">
+                <ReactionPicker side={mine ? "right" : "left"} onPick={(e) => toggleReaction(m.id, e, false)} />
+                <button onClick={() => deleteMsg(m.id)} title="Delete message" aria-label="Delete message"
+                  className="rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                  data-testid={`aichar-msg-delete-${m.id}`}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );
             return (
-              <div key={m.id} className={`flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
+              <div key={m.id} className={`group flex items-end gap-1 ${mine ? "justify-end" : "justify-start"}`}>
                 {!mine && <Avatar src={character.avatar_url} size={28} className="mb-4" />}
-                <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"}`} data-testid={`aichar-msg-${m.role}`}>
-                  {m.media_url && m.media_type === "image" && (
-                    <img src={m.media_url} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" data-testid="aichar-msg-image" />
-                  )}
-                  {m.media_url && m.media_type === "video" && (
-                    <video src={m.media_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="aichar-msg-video" />
-                  )}
-                  {isAudio && (
-                    <AudioBubble url={m.media_url} duration={m.audio_duration} mine={mine} />
-                  )}
-                  {m.text && !isAudio ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
-                  <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
+                {mine && ctrls}
+                <div className="flex max-w-[78%] flex-col">
+                  <div className={`rounded-2xl px-3 py-2 text-sm ${mine ? "self-end bg-primary text-primary-foreground" : "self-start bg-secondary text-foreground"}`} data-testid={`aichar-msg-${m.role}`}>
+                    {m.media_url && m.media_type === "image" && (
+                      <img src={m.media_url} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" data-testid="aichar-msg-image" />
+                    )}
+                    {m.media_url && m.media_type === "video" && (
+                      <video src={m.media_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="aichar-msg-video" />
+                    )}
+                    {isAudio && (
+                      <AudioBubble url={m.media_url} duration={m.audio_duration} mine={mine} />
+                    )}
+                    {m.text && !isAudio ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
+                    <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
+                  </div>
+                  <ReactionChips reactions={m.reactions} myId={null} mine={mine} onToggle={(e, h) => toggleReaction(m.id, e, h)} />
                 </div>
+                {!mine && ctrls}
               </div>
             );
           })
@@ -258,9 +299,9 @@ export function AiCharacterChat({ characterId, onBack }) {
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
-        <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={sendMedia} data-testid="aichar-file-input" />
+        <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={sendMedia} data-testid="aichar-file-input" />
         {!recordingVoice && (
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} title="Send a photo or video"
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} title="Send a photo, video or audio file"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="aichar-attach">
             {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={19} />}
           </button>
@@ -311,6 +352,9 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
   const vadTimerRef = useRef(null);
   const micSrcRef = useRef(null);
   const stopSendRef = useRef(null);
+  // Who is actually on the line right now. The on-screen profile ALWAYS stays the
+  // host (initialCharacter); only this routing id changes on a "pass the phone".
+  const activeCharRef = useRef(initialCharacter.id);
 
   const ensureAC = () => {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -458,13 +502,14 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
         return;
       }
       setCaption(text);
-      const r = await api.post(`/ai-characters/${char.id}/voice-turn`, { text, speakers: speaker_note || "", ...gatherContext() });
+      const r = await api.post(`/ai-characters/${activeCharRef.current}/voice-turn`, { text, speakers: speaker_note || "", ...gatherContext() });
       if (endedRef.current) return;
       if (r.handoff) {
-        // "Pass the phone to your mom" — play the hand-off line, then the call
-        // becomes the other character (their voice/personality takes over).
+        // "Pass the phone to your mom" — play the hand-off line in the current
+        // voice, then whoever picks up becomes the active speaker. The on-screen
+        // profile (name/avatar) stays the HOST — only the voice/personality change.
         setCaption(r.reply); await playAudio(r.audio_url);
-        setChar({ id: r.handoff.character_id, name: r.handoff.name, avatar_url: r.handoff.avatar_url });
+        activeCharRef.current = r.handoff.character_id;
         if (r.handoff.greeting_text) setCaption(r.handoff.greeting_text);
         if (r.handoff.greeting_audio) await playAudio(r.handoff.greeting_audio);
       } else if (r.segments && r.segments.length) {

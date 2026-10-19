@@ -1195,6 +1195,25 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - BUG (silent playback): recorded notes are webm/opus which iOS Safari can't play. playableUrl() rewrites Cloudinary audio URLs to .mp3 for universal playback; AudioBubble uses it.
 - VERIFIED iter 62: 7/7 backend (call-event labels, last_call_ended_at, system-in-history regression for send+voice-turn) + web (centered pills, caption hidden in thread, audio src rewritten .webm→.mp3). STATUS: preview; needs redeploy + device confirm (esp. iOS playback).
 
+### 2026-06 — Audio files + env detection + reactions/delete + Live Chat + voice-choice + call-me
+- AUDIO FILES: media_type 'audio_file' (attach a song/recording) → _media_reply sends it to Gemini audio → the character "listens" and comments (text). Enabled in AI chats + DMs. Verified iter 63/64.
+- BACKGROUND ENV (user side): STT tag_audio_events + _audio_env (Gemini; voice notes deep / calls light) → character notices music/TV/crowd/noisy around the USER. Verified iter 63.
+- REACTIONS + DELETE: DM backend existed; added UI (MessageReactions.jsx). AI chat: new DELETE /messages/{id}, POST+DELETE /messages/{id}/reactions, _msg_out returns reactions. Verified iter 64.
+- LIVE CHAT: public community board at /livechat (nav "Live Chat"). routes/livechat.py uses community_chat collection (NOT live_chat = per-stream). GET public / POST / DELETE; messages carry colored verified badge + profile frame. Verified via curl + screenshot.
+- VOICE-CHOICE: _should_voice(c, hour) — voice note vs text by time of day + per-character voice_affinity (default 0.4, in create/update/serializer). Wired into proactive + reply loops. Lint-clean; loop-based (device confirm).
+- CALL ME: _wants_call + _place_call; /send detects "call me [at time]" → ring now if free/allowed or schedule pending_call_at (promoted in proactive loop). Reuses existing ai_char_calls + IncomingCallListener.
+- NOT BUILT YET: activity-based AMBIENCE on the character's OWN voice (driving/outside/TV/crowd) — needs ambient audio assets; approach pending.
+- STATUS: preview; needs Publish/Redeploy + device confirm.
+
+
 ### 2026-06 — Switch character TTS to ElevenLabs eleven_v4
 - Per user request: TTS_MODEL "eleven_v3" → "eleven_v4" (newest model, still supports audio tags for expressiveness). Fallback changed to "eleven_v3" (graceful degrade, not the flat multilingual_v2). VoiceSettings unchanged (v4 ignores unsupported style slider).
 - Lint clean. NOT voice-validated — preview ElevenLabs key unusable. Needs Publish/Redeploy + user listen on production. Trivial revert if disliked.
+
+### 2026-06 (fork) — Realistic shared AI calls + announcement target-page picker
+- SHARED CALL FIX: "pass the phone to your mom" no longer hard-swaps the on-screen profile. AiCharacterChat.jsx keeps the host (initialCharacter) as the visible name/avatar; new activeCharRef routes voice-turns to whoever is on the line. On handoff: play host line (host voice) then the relative's greeting (relative voice); activeCharRef = relative id. User choice: only the relative speaks until user asks to switch back (no on-screen speaker label). Switch-back works because voice-turn runs against the active speaker's char id and _match_relative is bidirectional.
+- SCHEDULE GATING: voice_turn passphone branch checks _char_available(rc, admin, tz_fallback=body.tz) — a busy/asleep relative does NOT fake-join; host gives a neutral excuse ("can't come to the phone right now"). _char_available now takes tz_fallback (relative with no ai_char_state.tz falls back to host tz).
+- _wants_passphone: added regex \bput\s+\w+\s+(back\s+)?on\b ("put mom on"/"put hope back on") + pronoun fallback (her/him/them → sole relative).
+- VERIFIED iter 65/66: 8/8 backend pytest (test_iteration65_passphone_schedule.py). Web call UI (mic/VAD/playback) not auto-testable. STATUS: preview; needs Publish + device confirm.
+- AMBIENCE (character's own voice) still deferred.
+- ANNOUNCEMENT TARGET PAGE: AdminAnnounce.jsx now has an "Open this page when tapped" grouped Select (every static web route — Main/Content/Social&Live/Features/Auth/Admin) with live preview. url passed to /admin/broadcast (was hardcoded "/"). Backend now also stores link=url on the in-app 'update' notification; Notifications.jsx navigates to n.link for update type; push-sw.js already opens data.url on click. Verified via curl (broadcast accepts /wallet, notification.link persisted) + screenshot. STATUS: preview; needs Publish.

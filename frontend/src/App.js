@@ -35,6 +35,7 @@ import WalletPage from "@/pages/Wallet";
 import ThemeLayer from "@/components/ThemeLayer";
 import DiscoverPage from "@/pages/Discover";
 import MessagesPage from "@/pages/Messages";
+import LiveChatPage from "@/pages/LiveChatPage";
 import NotificationsPage from "@/pages/Notifications";
 import ProfilePage from "@/pages/Profile";
 import PostDetailPage from "@/pages/PostDetail";
@@ -134,6 +135,8 @@ export default function App() {
               path="/messages/:convId"
               element={<ProtectedRoute><MessagesPage /></ProtectedRoute>}
             />
+            <Route path="/livechat" element={<LiveChatPage />} />
+
             <Route
               path="/notifications"
               element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>}

@@ -268,6 +268,7 @@ class CreateCharacterBody(BaseModel):
     sleep_end: Optional[int] = Field(default=None, ge=0, le=23)    # wake hour override (0-23)
     schedule: list[ScheduleBlock] = Field(default_factory=list)    # full day timetable
     allow_calls: bool = False                                      # may this character call the user?
+    voice_affinity: float = Field(default=0.4, ge=0.0, le=1.0)     # how often they choose to send a voice note vs text
     allow_live: bool = True                                        # may this character join & comment on the user's lives?
     relationships: list[RelationItem] = Field(default_factory=list)  # links to other characters
 
@@ -438,6 +439,10 @@ class CallEventBody(BaseModel):
     duration: int = 0  # seconds (for "end")
 
 
+class ReactionBody(BaseModel):
+    emoji: str = Field(default="", max_length=16)
+
+
 class VoiceTurnBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     greeting: bool = False
@@ -482,6 +487,7 @@ def build_router(ctx) -> APIRouter:
             "sleep_end": c.get("sleep_end"),
             "schedule": c.get("schedule", []),
             "allow_calls": bool(c.get("allow_calls")),
+            "voice_affinity": float(c.get("voice_affinity", 0.4)),
             "allow_live": bool(c.get("allow_live", True)),
             "relationships": c.get("relationships", []),
             "memories": c.get("memories", []),
@@ -644,10 +650,10 @@ def build_router(ctx) -> APIRouter:
                 "and already know it — reference it naturally, never act surprised about it):\n"
                 + "\n".join(lines))
 
-    async def _char_available(c: dict, admin_id: str) -> bool:
+    async def _char_available(c: dict, admin_id: str, tz_fallback: str = "") -> bool:
         st = await db.ai_char_state.find_one(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
-        ln = _local_now(st.get("tz"))
+        ln = _local_now(st.get("tz") or tz_fallback)
         ss, se = _sleep_window(c)
         if ln is not None and _is_asleep(ln.hour, ss, se):
             return False
@@ -776,10 +782,13 @@ def build_router(ctx) -> APIRouter:
 
     def _wants_passphone(text: str) -> bool:
         low = (text or "").lower()
+        if re.search(r"\bput\s+\w+\s+(back\s+)?on\b", low):  # "put mom on", "put hope back on"
+            return True
         return any(k in low for k in (
-            "pass the phone", "pass it to", "pass me to", "hand the phone", "hand it to",
-            "give the phone", "put your", "put her on", "put him on", "let me talk to",
-            "let me speak to", "can i talk to", "can i speak to", "talk to your", "speak to your"))
+            "pass the phone", "pass it to", "pass me to", "pass me back", "hand the phone", "hand it to",
+            "give the phone", "put your", "put her on", "put him on", "put her back", "put him back",
+            "back on the phone", "switch back", "let me talk to", "let me speak to",
+            "can i talk to", "can i speak to", "talk to your", "speak to your"))
 
     def _wants_relay(text: str) -> bool:
         low = (text or "").lower()
@@ -896,12 +905,14 @@ def build_router(ctx) -> APIRouter:
             session_id=f"aichar-media-{c['id']}-{admin_id}",
             system_message=_system(c, spoken=False, context=context),
         ).with_model("gemini", "gemini-2.5-flash")
-        kind = "video" if media_type == "video" else "photo"
+        kind = {"video": "video", "audio_file": "audio clip"}.get(media_type, "photo")
+        verb = "listen to" if media_type == "audio_file" else "look at"
+        sense = "hear in it (music, sounds, a voice, the vibe)" if media_type == "audio_file" else "see in it"
         prompt = ((f"Recent conversation:\n{transcript}\n\n" if transcript else "")
-                  + (f'They just sent you a {kind} and said: "{user_text}"\n\n' if user_text.strip()
-                     else f"They just sent you a {kind} (no caption).\n\n")
-                  + f"Actually look at the {kind} and react naturally, warmly and in-character as {c['name']} — "
-                  + "comment on what you genuinely see in it. Keep it to a text message, no stage directions.")
+                  + (f'They just sent you {("an " + kind) if kind == "audio clip" else ("a " + kind)} and said: "{user_text}"\n\n' if user_text.strip()
+                     else f"They just sent you {('an ' + kind) if kind == 'audio clip' else ('a ' + kind)} (no caption).\n\n")
+                  + f"Actually {verb} the {kind} and react naturally, warmly and in-character as {c['name']} — "
+                  + f"comment on what you genuinely {sense}. Keep it to a text message, no stage directions.")
         tmp = None
         try:
             async with httpx.AsyncClient(timeout=120) as client:
@@ -912,6 +923,13 @@ def build_router(ctx) -> APIRouter:
                     os.write(fd, rr.content)
                     os.close(fd)
                     files = [FileContentWithMimeType(file_path=tmp, mime_type=_video_mime(media_url))]
+                elif media_type == "audio_file":
+                    rr = await client.get(media_url)
+                    rr.raise_for_status()
+                    fd, tmp = tempfile.mkstemp(suffix=os.path.splitext(media_url.split("?")[0])[1] or ".mp3")
+                    os.write(fd, rr.content)
+                    os.close(fd)
+                    files = [FileContentWithMimeType(file_path=tmp, mime_type=_audio_mime_from_url(media_url))]
                 else:
                     rr = await client.get(_cloudinary_resized(media_url))
                     rr.raise_for_status()
@@ -989,9 +1007,98 @@ def build_router(ctx) -> APIRouter:
         from elevenlabs.client import ElevenLabs
         client = ElevenLabs(api_key=settings_store.get("ELEVENLABS_API_KEY"))
         try:
-            return client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1", diarize=True)
+            return client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1",
+                                                  diarize=True, tag_audio_events=True)
         except Exception:
             return client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1")
+
+    def _should_voice(c: dict, local_hour) -> bool:
+        """Decide (per character) whether to send a VOICE note instead of text — weighted by
+        the character's voice tendency + time of day, so it feels like a real personal choice."""
+        if not (c.get("voice_id") and settings_store.get("ELEVENLABS_API_KEY")):
+            return False
+        p = float(c.get("voice_affinity", 0.4))
+        try:
+            h = local_hour if isinstance(local_hour, int) else local_hour.hour
+        except Exception:
+            h = 12
+        if 6 <= h <= 10 or h >= 21 or h == 0:   # morning / late night → more voice notes
+            p += 0.2
+        elif 11 <= h <= 17:                       # midday → more likely to just text
+            p -= 0.15
+        return random.random() < max(0.0, min(0.95, p))
+
+    def _audio_mime_from_url(url: str) -> str:
+        u = (url or "").split("?")[0].lower()
+        if u.endswith(".webm"):
+            return "audio/webm"
+        if u.endswith((".m4a", ".mp4", ".aac")):
+            return "audio/mp4"
+        if u.endswith(".ogg"):
+            return "audio/ogg"
+        if u.endswith(".wav"):
+            return "audio/wav"
+        return "audio/mpeg"
+
+    def _audio_event_tags(r) -> list:
+        tags = []
+        try:
+            for w in (getattr(r, "words", None) or []):
+                if getattr(w, "type", "") == "audio_event":
+                    t = (getattr(w, "text", "") or "").strip("() ").lower()
+                    if t and t not in tags:
+                        tags.append(t)
+        except Exception:
+            pass
+        return tags
+
+    async def _audio_env(content: bytes, mime: str = "audio/mpeg", stt_resp=None, deep: bool = True) -> str:
+        """Short note about the BACKGROUND environment of an audio clip (music / TV /
+        crowded / noisy), empty when quiet. Free STT audio-event tags always; a quick
+        Gemini 'listen' only when deep=True (used for voice notes, not live-call turns)."""
+        tags = _audio_event_tags(stt_resp)
+        desc = ""
+        if deep and content:
+            import os
+            import tempfile
+            from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
+            suffix = {"audio/webm": ".webm", "audio/mp4": ".m4a", "audio/mpeg": ".mp3",
+                      "audio/aac": ".aac", "audio/ogg": ".ogg", "audio/wav": ".wav"}.get(mime, ".mp3")
+            tmp = None
+            try:
+                fd, tmp = tempfile.mkstemp(suffix=suffix)
+                os.write(fd, content)
+                os.close(fd)
+                chat = LlmChat(
+                    api_key=settings_store.get("EMERGENT_LLM_KEY"), session_id="audio-env",
+                    system_message="You classify the BACKGROUND audio of a clip, ignoring the main speaker's words."
+                ).with_model("gemini", "gemini-2.5-flash")
+                prompt = ("Listen to the BACKGROUND of this audio (not what the main person is saying). "
+                          "Reply with ONE short phrase for the environment: e.g. 'music playing', "
+                          "'TV or a show on in the background', 'crowded, lots of chatter', 'noisy/loud', "
+                          "'outdoors/wind', or exactly 'quiet' if nothing notable. 6 words max.")
+                resp = await chat.send_message(UserMessage(
+                    text=prompt, file_contents=[FileContentWithMimeType(file_path=tmp, mime_type=mime)]))
+                desc = (resp or "").strip().strip('"').lower()
+            except Exception as e:
+                logger.warning(f"audio-env error: {e}")
+            finally:
+                if tmp and os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+        notable = ""
+        if desc and desc not in ("quiet", "silence", "silent", "nothing", "none", ""):
+            notable = desc
+        elif "music" in tags:
+            notable = "music playing in the background"
+        elif any(t in tags for t in ("laughter", "applause", "crowd", "chatter", "cheering")):
+            notable = "other people and sounds in the background"
+        if not notable:
+            return ""
+        return (f"BACKGROUND AUDIO around them right now: {notable}. If it fits, react naturally "
+                "(ask about the music, notice the TV, or that it's loud/crowded) — don't force it.")
 
     def _parse_diarization(r, owner: str = "") -> tuple:
         """From an STT response, return (plain_text, speaker_note). speaker_note is a
@@ -1038,7 +1145,7 @@ def build_router(ctx) -> APIRouter:
 
     async def _transcribe_url(url: str, owner: str = "") -> tuple:
         """Download a hosted voice note and transcribe it (so the character 'hears' it).
-        Returns (plain_text, speaker_note)."""
+        Returns (plain_text, note) where note carries speaker + background-environment context."""
         eleven_key = settings_store.get("ELEVENLABS_API_KEY")
         if not eleven_key or not url:
             return "", ""
@@ -1049,7 +1156,10 @@ def build_router(ctx) -> APIRouter:
             return "", ""
         try:
             r = await asyncio.to_thread(_diarize_convert, content)
-            return _parse_diarization(r, owner)
+            text, spk = _parse_diarization(r, owner)
+            env = await _audio_env(content, _audio_mime_from_url(url), r, deep=True)
+            note = "\n".join(n for n in (spk, env) if n)
+            return text, note
         except Exception as e:
             logger.warning(f"ai-char voice-note stt error: {e}")
             return "", ""
@@ -1071,6 +1181,7 @@ def build_router(ctx) -> APIRouter:
         return {"id": doc["id"], "role": doc["role"], "text": doc["text"],
                 "media_url": doc.get("media_url"), "media_type": doc.get("media_type"),
                 "audio_duration": doc.get("audio_duration"),
+                "reactions": doc.get("reactions", []),
                 "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at")}
 
     # ---------- Character CRUD (admin) ----------
@@ -1117,6 +1228,7 @@ def build_router(ctx) -> APIRouter:
             "sleep_end": body.sleep_end,
             "schedule": [b.model_dump() for b in body.schedule][:30],
             "allow_calls": bool(body.allow_calls),
+            "voice_affinity": float(body.voice_affinity),
             "allow_live": bool(body.allow_live),
             "relationships": [r.model_dump() for r in body.relationships][:12],
             "memories": [],
@@ -1147,6 +1259,7 @@ def build_router(ctx) -> APIRouter:
             "sleep_end": body.sleep_end,
             "schedule": [b.model_dump() for b in body.schedule][:30],
             "allow_calls": bool(body.allow_calls),
+            "voice_affinity": float(body.voice_affinity),
             "allow_live": bool(body.allow_live),
             "relationships": [r.model_dump() for r in body.relationships][:12],
             "voice_id": voice_id,
@@ -1199,6 +1312,37 @@ def build_router(ctx) -> APIRouter:
         await db.ai_char_messages.delete_many({"character_id": char_id, "admin_id": current["id"]})
         return {"status": "cleared"}
 
+    @router.delete("/api/ai-characters/{char_id}/messages/{message_id}")
+    async def delete_char_message(char_id: str, message_id: str, current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        res = await db.ai_char_messages.delete_one(
+            {"id": message_id, "character_id": char_id, "admin_id": current["id"]})
+        if not res.deleted_count:
+            raise HTTPException(404, "Message not found")
+        return {"status": "deleted"}
+
+    @router.post("/api/ai-characters/{char_id}/messages/{message_id}/reactions")
+    async def react_char_message(char_id: str, message_id: str, body: ReactionBody,
+                                 current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        q = {"id": message_id, "character_id": char_id, "admin_id": current["id"]}
+        await db.ai_char_messages.update_one(q, {"$pull": {"reactions": {"user_id": current["id"]}}})
+        r = await db.ai_char_messages.update_one(
+            q, {"$push": {"reactions": {"user_id": current["id"], "emoji": body.emoji, "at": _now().isoformat()}}})
+        if not r.matched_count:
+            raise HTTPException(404, "Message not found")
+        doc = await db.ai_char_messages.find_one(q, {"_id": 0, "reactions": 1})
+        return {"reactions": (doc or {}).get("reactions", [])}
+
+    @router.delete("/api/ai-characters/{char_id}/messages/{message_id}/reactions")
+    async def unreact_char_message(char_id: str, message_id: str,
+                                   current: Annotated[dict, Depends(get_current_user)]):
+        _require_admin(current)
+        q = {"id": message_id, "character_id": char_id, "admin_id": current["id"]}
+        await db.ai_char_messages.update_one(q, {"$pull": {"reactions": {"user_id": current["id"]}}})
+        doc = await db.ai_char_messages.find_one(q, {"_id": 0, "reactions": 1})
+        return {"reactions": (doc or {}).get("reactions", [])}
+
     async def _capture_promise(char_id: str, admin_id: str, ai_text: str, tz: str):
         """If the character's own reply promises a next contact time ('I'll text you at
         8:30am', 'at lunch', 'after school'), schedule a proactive text for then (free, no LLM)."""
@@ -1226,9 +1370,9 @@ def build_router(ctx) -> APIRouter:
         c = await _get_char(char_id)
         if not body.text.strip() and not body.media_url:
             raise HTTPException(400, "Message must have text or a photo/video")
-        media_type = body.media_type if body.media_type in ("image", "video", "audio") else None
+        media_type = body.media_type if body.media_type in ("image", "video", "audio", "audio_file") else None
         await _store(char_id, current["id"], "user", body.text, body.media_url, media_type,
-                     audio_duration=body.audio_duration if media_type == "audio" else None)
+                     audio_duration=body.audio_duration if media_type in ("audio", "audio_file") else None)
         # Decide WHEN the character replies — like a real person: sometimes within seconds,
         # sometimes a few minutes. If they're busy on their schedule, they reply only once
         # free. The reply itself is generated + delivered later by the reply loop, which
@@ -1254,6 +1398,19 @@ def build_router(ctx) -> APIRouter:
         # conversation between them (runs in the background; the relative will "already know").
         if body.text.strip():
             asyncio.create_task(_maybe_relay_to_relative(c, current["id"], body.text.strip()))
+        # If the user asked to be CALLED and this character is allowed to call, ring them now
+        # (when free); if busy, they'll reach out when free via their normal reply/call flow.
+        if body.text.strip() and c.get("allow_calls") and _wants_call(body.text):
+            if local_now is not None and not busy:
+                when = _parse_next_contact(body.text, local_now, *_sleep_window(c))
+                if when and when > now + timedelta(minutes=2):
+                    await db.ai_char_state.update_one(
+                        {"character_id": char_id, "admin_id": current["id"]},
+                        {"$set": {"pending_call_at": when}}, upsert=True)
+                else:
+                    await _place_call(c, current["id"])
+            elif local_now is None:
+                await _place_call(c, current["id"])
         return {"pending": True, "reply_at": reply_at.isoformat(), "busy": busy}
 
     @router.post("/api/ai-characters/{char_id}/voice-turn")
@@ -1276,11 +1433,28 @@ def build_router(ctx) -> APIRouter:
                     {"$set": {"tz": body.tz}}, upsert=True)
             # ---- Inter-character voice behaviors: pass the phone / overhear ----
             rel_match = await _match_relative(c, body.text)
+            if not rel_match and _wants_passphone(body.text) and \
+                    re.search(r"\b(her|him|them)\b", (body.text or "").lower()):
+                # Pronoun pass-phone ("put her back on") with no name — resolve to the
+                # sole relative if there's exactly one.
+                _rels = await _relatives(c)
+                if len(_rels) == 1:
+                    rel_match = _rels[0]
             if rel_match:
                 rc, _rel = rel_match
                 first = (rc.get("nickname") or rc["name"].split()[0])
                 if _wants_passphone(body.text):
                     import random
+                    # Honor the relative's schedule — a busy/asleep person doesn't
+                    # come to the phone; the host explains naturally instead of faking it.
+                    if not await _char_available(rc, current["id"], tz_fallback=body.tz):
+                        excuse = random.choice([
+                            f"[softly] {first} can't come to the phone right now — want me to pass along a message?",
+                            f"{first}'s tied up at the moment, but I'll let them know you called.",
+                            f"[gently] {first} isn't free to talk right now — I can have them call you back.",
+                        ])
+                        await _store(char_id, current["id"], "ai", _strip_tags(excuse))
+                        return {"reply": _strip_tags(excuse), "audio_url": await _tts(c, excuse)}
                     line = random.choice([
                         f"[warmly] Okay, hold on — let me grab {first}.",
                         f"Sure, one sec… [calling out] {first}! Phone's for you!",
@@ -1350,11 +1524,13 @@ def build_router(ctx) -> APIRouter:
         try:
             r = await asyncio.to_thread(_diarize_convert, content)
             text, speaker_note = _parse_diarization(r)
+            env = await _audio_env(content, audio.content_type or "audio/mpeg", r, deep=False)
+            note = "\n".join(n for n in (speaker_note, env) if n)
         except Exception as e:
             logger.warning(f"ai-char stt error: {e}")
             await _flag_elevenlabs(e)
             raise HTTPException(502, "Couldn't understand the audio")
-        return {"text": (text or "").strip(), "speaker_note": speaker_note}
+        return {"text": (text or "").strip(), "speaker_note": note}
 
     @router.post("/api/ai-characters/{char_id}/call-event")
     async def call_event(char_id: str, body: CallEventBody, current: Annotated[dict, Depends(get_current_user)]):
@@ -1476,6 +1652,25 @@ def build_router(ctx) -> APIRouter:
             v = v.replace(tzinfo=timezone.utc)
         return v if isinstance(v, datetime) else None
 
+    def _wants_call(text: str) -> bool:
+        low = (text or "").lower()
+        return any(k in low for k in ("call me", "give me a call", "ring me", "phone me",
+                                      "can you call", "could you call", "call me back",
+                                      "hop on a call", "voice call me", "give me a ring"))
+
+    async def _place_call(c: dict, admin_id: str) -> None:
+        """Make the character RING the user (incoming-call screen + push)."""
+        now = _now()
+        call = {"id": str(uuid.uuid4()), "character_id": c["id"], "admin_id": admin_id,
+                "status": "ringing", "created_at": now, "expires_at": now + timedelta(seconds=120)}
+        await db.ai_char_calls.insert_one(call)
+        await _store(c["id"], admin_id, "ai", f"📞 {c['name']} tried to call you")
+        try:
+            await send_web_push(admin_id, f"📞 {c['name']} is calling you", "Tap to answer",
+                                url=f"/messages/ai_{c['id']}?incoming=1", extra={"incomingCall": True})
+        except Exception:
+            pass
+
     async def _proactive_decide(c: dict, transcript: str, idle_min: int, unanswered: int, time_ctx: str = "", can_call: bool = False):
         """Ask the character (in-character) whether a real person with their personality
         would reach out right now, HOW (text or voice call), what they'd say, AND when
@@ -1579,6 +1774,15 @@ def build_router(ctx) -> APIRouter:
                 local_now = _local_now(state.get("tz"))
                 sleep_start, sleep_end = _sleep_window(c)
                 schedule = c.get("schedule") or []
+                # A call the user scheduled ("call me at 8") that's now due → ring them when free.
+                pending_call = await _coerce_dt(state.get("pending_call_at"))
+                if pending_call is not None and now >= pending_call and c.get("allow_calls"):
+                    if not (schedule and local_now is not None and _busy_now(schedule, local_now)[0]):
+                        await _place_call(c, admin_id)
+                        await db.ai_char_state.update_one(
+                            {"character_id": c["id"], "admin_id": admin_id},
+                            {"$unset": {"pending_call_at": ""}})
+                        continue
                 attached = c.get("affection", "warm") in ("adores", "warm")
                 has_sched = bool(schedule) and local_now is not None
                 if has_sched:
@@ -1698,7 +1902,12 @@ def build_router(ctx) -> APIRouter:
                     await db.ai_char_state.update_one(
                         {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule(next_hours)}, upsert=True)
                     continue
-                await _store(c["id"], admin_id, "ai", message)
+                p_voice = _should_voice(c, local_now)
+                p_audio = await _tts_url(c, message) if p_voice else None
+                if p_audio:
+                    await _store(c["id"], admin_id, "ai", message, p_audio, "audio")
+                else:
+                    await _store(c["id"], admin_id, "ai", message)
                 upd = _schedule(next_hours)
                 upd["last_proactive_at"] = now
                 await db.ai_char_state.update_one(
@@ -1784,9 +1993,14 @@ def build_router(ctx) -> APIRouter:
                     clean = _strip_actions(_strip_tags(reply))
                     await _store(char_id, admin_id, "ai", clean)
                 else:
-                    reply = await _reply(c, admin_id, last.get("text", ""), spoken=False, context=context)
+                    voice = _should_voice(c, local_now)
+                    reply = await _reply(c, admin_id, last.get("text", ""), spoken=voice, context=context)
                     clean = _strip_actions(_strip_tags(reply))
-                    await _store(char_id, admin_id, "ai", clean)
+                    audio_url = await _tts_url(c, reply) if voice else None
+                    if audio_url:
+                        await _store(char_id, admin_id, "ai", clean, audio_url, "audio")
+                    else:
+                        await _store(char_id, admin_id, "ai", clean)
                 await db.ai_char_state.update_one({"_id": state["_id"]}, {"$unset": {"pending_reply_at": "", "pending_from": ""}})
                 await _capture_promise(char_id, admin_id, clean, state.get("tz"))
                 try:
