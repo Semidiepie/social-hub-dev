@@ -425,7 +425,8 @@ class MemoryBody(BaseModel):
 class SendBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     media_url: Optional[str] = None
-    media_type: Optional[str] = None  # "image" | "video"
+    media_type: Optional[str] = None  # "image" | "video" | "audio"
+    audio_duration: Optional[float] = None  # voice-note length in seconds
     local_time: str = Field(default="", max_length=80)   # time as shown on the user's device
     tz: str = Field(default="", max_length=60)
     lat: Optional[float] = None
@@ -435,6 +436,7 @@ class SendBody(BaseModel):
 class VoiceTurnBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     greeting: bool = False
+    speakers: str = Field(default="", max_length=2000)  # diarization note when >1 voice heard
     local_time: str = Field(default="", max_length=80)
     tz: str = Field(default="", max_length=60)
     lat: Optional[float] = None
@@ -649,47 +651,67 @@ def build_router(ctx) -> APIRouter:
             return False
         return (c.get("affection") or "").strip().lower() not in ("distant", "dislikes")
 
-    async def _run_char_exchange(admin_id: str, a: dict, b: dict, seed: str = "") -> int:
-        """Generate and store a short private text conversation between characters a and b.
-        One LLM call. Stored in ai_char_convos; never shown to the user, only used as context."""
+    async def _exchange_lines(a: dict, b: dict, seed: str = "", scenario: str = "catchup",
+                              user_name: str = "") -> list:
+        """Generate a short back-and-forth between two characters. Returns a list of
+        ('A'|'B', text) tuples (tags like [laughs] kept for voice performance)."""
         from emergentintegrations.llm.chat import LlmChat, UserMessage
-        rel_ba = _relation_of(a, b["id"]) or "someone they know"   # a is b's ___
-        rel_ab = _relation_of(b, a["id"]) or "someone they know"   # b is a's ___
-        user_name = a.get("your_name") or b.get("your_name") or "the person they both know"
+        rel_ba = _relation_of(a, b["id"]) or "someone they know"
+        rel_ab = _relation_of(b, a["id"]) or "someone they know"
+        un = user_name or a.get("your_name") or b.get("your_name") or "the person they both know"
         sys = (
-            "You write a short, natural private TEXT conversation between two people. Keep it real and "
-            "casual like phone texting.\n"
+            "You write a short, natural conversation between two people. Keep it real and casual.\n"
             f"Person A is {a['name']}: {a.get('persona', '')[:280]}\n"
             f"Person B is {b['name']}: {b.get('persona', '')[:280]}\n"
             f"{a['name']} is {b['name']}'s {rel_ba}. {b['name']} is {a['name']}'s {rel_ab}.\n"
-            "Write 4 to 6 short alternating lines, STARTING WITH A. Format every line EXACTLY as "
-            "'A: <message>' or 'B: <message>'. No stage directions, no quotes, no narration.")
-        task = (f"{a['name']} texts {b['name']}. "
-                + (f'{user_name} asked {a["name"]} to tell {b["name"]}: "{seed}". '
-                   f"Work that into the conversation naturally. "
-                   if seed else f"They catch up about their day and about {user_name}. ")
-                + "Write the conversation now.")
+            "Format EVERY line EXACTLY as 'A: <words>' or 'B: <words>'. No narration, no quotes. "
+            "You may add short spoken cues in brackets like [laughs] or [calling out].")
+        if scenario == "overhear":
+            task = (
+                f"{a['name']} is on a phone call with {un} right this second. {un} just asked {a['name']} to "
+                f"ask {b['name']}: \"{seed}\". Write {a['name']} calling out to {b['name']} (who is nearby, in "
+                f"another room), {b['name']} answering casually from a distance, a quick natural back-and-forth, "
+                f"and the FINAL line is {a['name']} turning back to the phone to tell {un} what {b['name']} said. "
+                "Start with A. 4 to 6 lines total.")
+        else:
+            task = (f"{a['name']} texts {b['name']}. "
+                    + (f'{un} asked {a["name"]} to tell {b["name"]}: "{seed}". Work it in naturally. '
+                       if seed else f"They catch up about their day and about {un}. ")
+                    + "Write 4 to 6 short alternating lines, starting with A.")
         try:
             chat = LlmChat(api_key=settings_store.get("EMERGENT_LLM_KEY"),
-                           session_id=f"xchar-{a['id']}-{b['id']}",
+                           session_id=f"xchar-{a['id']}-{b['id']}-{scenario}",
                            system_message=sys).with_model("anthropic", "claude-sonnet-4-6")
             resp = await chat.send_message(UserMessage(text=task))
         except Exception as e:
-            logger.warning(f"char-exchange error {a['id']}/{b['id']}: {e}")
-            return 0
-        base = _now()
-        docs = []
-        i = 0
+            logger.warning(f"exchange-lines error {a['id']}/{b['id']}: {e}")
+            return []
+        out = []
         for raw in (resp or "").splitlines():
             line = raw.strip()
             up = line.upper()
             if up.startswith("A:"):
-                frm, to = a, b
+                who = "A"
             elif up.startswith("B:"):
-                frm, to = b, a
+                who = "B"
             else:
                 continue
-            text = _strip_actions(_strip_tags(line[2:].strip())).strip().strip('"')[:500]
+            text = _strip_actions(line[2:].strip()).strip().strip('"')[:500]
+            if text:
+                out.append((who, text))
+        return out
+
+    async def _run_char_exchange(admin_id: str, a: dict, b: dict, seed: str = "") -> int:
+        """Generate + store a short private conversation between a and b (context only,
+        never shown to the user)."""
+        lines = await _exchange_lines(a, b, seed=seed)
+        if not lines:
+            return 0
+        base = _now()
+        docs = []
+        for i, (who, raw) in enumerate(lines):
+            frm, to = (a, b) if who == "A" else (b, a)
+            text = _strip_tags(raw)
             if not text:
                 continue
             docs.append({
@@ -698,7 +720,6 @@ def build_router(ctx) -> APIRouter:
                 "from_id": frm["id"], "from_name": frm["name"],
                 "to_id": to["id"], "to_name": to["name"],
                 "text": text, "created_at": base + timedelta(seconds=i)})
-            i += 1
         if docs:
             await db.ai_char_convos.insert_many(docs)
         return len(docs)
@@ -739,9 +760,70 @@ def build_router(ctx) -> APIRouter:
                     toks.update(syns)
         return [t for t in toks if len(t) >= 2]
 
+    async def _match_relative(c: dict, text: str):
+        """Return (rc, rel) if the user's text refers to one of c's relatives, else None."""
+        low = (text or "").lower()
+        for rc, rel in await _relatives(c):
+            for t in _relation_tokens(rc, rel):
+                if re.search(rf"\b{re.escape(t)}\b", low):
+                    return rc, rel
+        return None
+
+    def _wants_passphone(text: str) -> bool:
+        low = (text or "").lower()
+        return any(k in low for k in (
+            "pass the phone", "pass it to", "pass me to", "hand the phone", "hand it to",
+            "give the phone", "put your", "put her on", "put him on", "let me talk to",
+            "let me speak to", "can i talk to", "can i speak to", "talk to your", "speak to your"))
+
+    def _wants_relay(text: str) -> bool:
+        low = (text or "").lower()
+        return any(k in low for k in (
+            "ask your", "ask her", "ask him", "tell your", "tell her", "tell him",
+            "message your", "text your", "let your", "check with", "find out from", "ask my"))
+
+    async def _gen_message(c: dict, admin_id: str, instruction: str, context: str = "") -> str:
+        """One-off in-character generation (e.g. a relative proactively texting the user)."""
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        st = await db.ai_char_state.find_one(
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
+        ctx = _now_context(st.get("tz")) + (("\n" + context) if context else "")
+        _rt = await _relatives_text(c)
+        if _rt:
+            ctx += "\n" + _rt
+        chat = LlmChat(api_key=settings_store.get("EMERGENT_LLM_KEY"),
+                       session_id=f"aichar-{c['id']}-{admin_id}",
+                       system_message=_system(c, False, ctx)).with_model("anthropic", "claude-sonnet-4-6")
+        resp = await chat.send_message(UserMessage(text=instruction))
+        return (resp or "").strip()
+
+    async def _relative_pings_user(admin_id: str, relayer: dict, relative: dict, user_text: str):
+        """After a relay, the RELATIVE reaches out to the user ('Hope said you messaged me')."""
+        try:
+            rel_word = _relation_of(relative, relayer["id"]) or "family"
+            instr = (
+                f"Your {rel_word} {relayer['name']} just reached out to you to pass along a message from "
+                f"{relative.get('your_name') or 'the person you both love'}, who said: \"{user_text}\". "
+                f"Now YOU send that person a short, warm text — let them know {relayer['name'].split()[0]} "
+                "passed it on. Write ONLY the text message, nothing else.")
+            msg = _strip_actions(_strip_tags(await _gen_message(relative, admin_id, instr)))
+            if not msg:
+                return
+            await _store(relative["id"], admin_id, "ai", msg)
+            await db.ai_char_state.update_one(
+                {"character_id": relative["id"], "admin_id": admin_id},
+                {"$set": {"last_proactive_at": _now()}}, upsert=True)
+            try:
+                await send_web_push(admin_id, relative["name"], msg,
+                                    url=f"/messages/ai_{relative['id']}", extra={"suppressIfFocused": True})
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning(f"relative-ping error: {e}")
+
     async def _maybe_relay_to_relative(c: dict, admin_id: str, user_text: str):
         """If the user told this character to pass a message to one of its relatives, start a
-        private conversation between them carrying that message."""
+        private conversation between them AND have the relative reach out to the user."""
         rels = await _relatives(c)
         if not rels:
             return
@@ -752,6 +834,7 @@ def build_router(ctx) -> APIRouter:
             toks = _relation_tokens(rc, rel)
             if any(re.search(rf"\b{re.escape(t)}\b", low) for t in toks):
                 await _run_char_exchange(admin_id, c, rc, seed=user_text)
+                await _relative_pings_user(admin_id, c, rc, user_text)
                 return
 
     async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "") -> str:
@@ -831,7 +914,7 @@ def build_router(ctx) -> APIRouter:
                 except OSError:
                     pass
 
-    async def _tts(c: dict, text: str) -> Optional[str]:
+    async def _tts_bytes(c: dict, text: str) -> Optional[bytes]:
         eleven_key = settings_store.get("ELEVENLABS_API_KEY")
         voice_id = c.get("voice_id")
         if not eleven_key or not voice_id:
@@ -851,30 +934,132 @@ def build_router(ctx) -> APIRouter:
             return b"".join(stream)
 
         try:
-            audio = await asyncio.to_thread(_synth, TTS_MODEL)
+            return await asyncio.to_thread(_synth, TTS_MODEL)
         except Exception as e:
             logger.warning(f"ai-char v4 tts failed, falling back to {TTS_FALLBACK_MODEL}: {e}")
             try:
-                audio = await asyncio.to_thread(_synth, TTS_FALLBACK_MODEL)
+                return await asyncio.to_thread(_synth, TTS_FALLBACK_MODEL)
             except Exception as e2:
                 logger.warning(f"ai-char tts error: {e2}")
                 await _flag_elevenlabs(e2)
                 return None
-        return "data:audio/mpeg;base64," + base64.b64encode(audio).decode()
+
+    async def _tts(c: dict, text: str) -> Optional[str]:
+        """Inline data-URI (used by live voice calls)."""
+        audio = await _tts_bytes(c, text)
+        return ("data:audio/mpeg;base64," + base64.b64encode(audio).decode()) if audio else None
+
+    async def _upload_audio(data: bytes) -> Optional[str]:
+        """Upload mp3 bytes to Cloudinary (unsigned) and return the hosted URL."""
+        cloud = settings_store.get("CLOUDINARY_CLOUD_NAME")
+        preset = settings_store.get("CLOUDINARY_UPLOAD_PRESET")
+        if not cloud or not preset:
+            return None
+        data_uri = "data:audio/mpeg;base64," + base64.b64encode(data).decode()
+        try:
+            async with httpx.AsyncClient(timeout=60) as cl:
+                r = await cl.post(
+                    f"https://api.cloudinary.com/v1_1/{cloud}/video/upload",
+                    data={"upload_preset": preset, "file": data_uri})
+            return r.json().get("secure_url")
+        except Exception as e:
+            logger.warning(f"ai-char audio upload failed: {e}")
+            return None
+
+    async def _tts_url(c: dict, text: str) -> Optional[str]:
+        """Synthesize a voice note and host it on Cloudinary (stored in a message)."""
+        audio = await _tts_bytes(c, text)
+        return await _upload_audio(audio) if audio else None
+
+    def _diarize_convert(content: bytes):
+        """Blocking ElevenLabs STT with speaker diarization. Returns the raw response
+        (falls back to a plain transcript if diarization isn't available)."""
+        import io
+        from elevenlabs.client import ElevenLabs
+        client = ElevenLabs(api_key=settings_store.get("ELEVENLABS_API_KEY"))
+        try:
+            return client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1", diarize=True)
+        except Exception:
+            return client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1")
+
+    def _parse_diarization(r, owner: str = "") -> tuple:
+        """From an STT response, return (plain_text, speaker_note). speaker_note is a
+        short in-context instruction, non-empty only when MORE THAN ONE voice is heard —
+        so the character knows someone else is in the room and can greet them."""
+        full = (getattr(r, "text", "") or "").strip()
+        words = getattr(r, "words", None) or []
+        segments, cur_sp, cur = [], None, []
+        for w in words:
+            sp = getattr(w, "speaker_id", None)
+            txt = getattr(w, "text", "") or ""
+            if getattr(w, "type", "word") == "spacing":
+                cur.append(txt)
+                continue
+            if cur_sp is not None and sp is not None and sp != cur_sp:
+                segments.append((cur_sp, "".join(cur).strip()))
+                cur = []
+            if sp is not None:
+                cur_sp = sp
+            cur.append(txt)
+        if cur and cur_sp is not None:
+            segments.append((cur_sp, "".join(cur).strip()))
+        order = []
+        for sp, _ in segments:
+            if sp not in order:
+                order.append(sp)
+        if len(order) <= 1:
+            return full, ""
+
+        def _label(sp):
+            idx = order.index(sp)
+            if idx == 0:
+                return f"{owner or 'the person you were talking to'} (the main voice)"
+            if idx == 1:
+                return "someone else in the room (a 2nd person)"
+            return f"another person (voice #{idx + 1})"
+        lines = [f'- {_label(sp)}: "{t}"' for sp, t in segments if t]
+        note = ("MORE THAN ONE person was heard in this audio (the mic picked up multiple voices):\n"
+                + "\n".join(lines)
+                + "\n- The main voice is the person you know. A different voice is someone else there with them. "
+                "If that other person said hi or spoke to you, warmly greet and answer them too, like meeting "
+                "your person's friend. If someone introduces themselves or is introduced by name, remember that name.")
+        return full, note
+
+    async def _transcribe_url(url: str, owner: str = "") -> tuple:
+        """Download a hosted voice note and transcribe it (so the character 'hears' it).
+        Returns (plain_text, speaker_note)."""
+        eleven_key = settings_store.get("ELEVENLABS_API_KEY")
+        if not eleven_key or not url:
+            return "", ""
+        try:
+            async with httpx.AsyncClient(timeout=60) as cl:
+                content = (await cl.get(url)).content
+        except Exception:
+            return "", ""
+        try:
+            r = await asyncio.to_thread(_diarize_convert, content)
+            return _parse_diarization(r, owner)
+        except Exception as e:
+            logger.warning(f"ai-char voice-note stt error: {e}")
+            return "", ""
 
     async def _store(char_id: str, admin_id: str, role: str, text: str,
-                     media_url: str = None, media_type: str = None) -> dict:
+                     media_url: str = None, media_type: str = None,
+                     audio_duration: float = None) -> dict:
         doc = {"id": str(uuid.uuid4()), "character_id": char_id, "admin_id": admin_id,
                "role": role, "text": text, "created_at": _now()}
         if media_url:
             doc["media_url"] = media_url
             doc["media_type"] = media_type
+            if audio_duration is not None:
+                doc["audio_duration"] = audio_duration
         await db.ai_char_messages.insert_one(doc)
         return doc
 
     def _msg_out(doc: dict) -> dict:
         return {"id": doc["id"], "role": doc["role"], "text": doc["text"],
                 "media_url": doc.get("media_url"), "media_type": doc.get("media_type"),
+                "audio_duration": doc.get("audio_duration"),
                 "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at")}
 
     # ---------- Character CRUD (admin) ----------
@@ -986,7 +1171,8 @@ def build_router(ctx) -> APIRouter:
         c = await _get_char(char_id)
         rows = await db.ai_char_messages.find(
             {"character_id": char_id, "admin_id": current["id"]}, {"_id": 0}
-        ).sort("created_at", 1).to_list(500)
+        ).sort("created_at", -1).to_list(500)
+        rows.reverse()  # newest 500 in chronological order (don't strand recent messages past 500)
         # opening the thread marks it read (clears the unread badge)
         await db.ai_char_state.update_one(
             {"character_id": char_id, "admin_id": current["id"]},
@@ -1026,8 +1212,9 @@ def build_router(ctx) -> APIRouter:
         c = await _get_char(char_id)
         if not body.text.strip() and not body.media_url:
             raise HTTPException(400, "Message must have text or a photo/video")
-        media_type = body.media_type if body.media_type in ("image", "video") else None
-        await _store(char_id, current["id"], "user", body.text, body.media_url, media_type)
+        media_type = body.media_type if body.media_type in ("image", "video", "audio") else None
+        await _store(char_id, current["id"], "user", body.text, body.media_url, media_type,
+                     audio_duration=body.audio_duration if media_type == "audio" else None)
         # Decide WHEN the character replies — like a real person: sometimes within seconds,
         # sometimes a few minutes. If they're busy on their schedule, they reply only once
         # free. The reply itself is generated + delivered later by the reply loop, which
@@ -1073,10 +1260,60 @@ def build_router(ctx) -> APIRouter:
                 await db.ai_char_state.update_one(
                     {"character_id": char_id, "admin_id": current["id"]},
                     {"$set": {"tz": body.tz}}, upsert=True)
+            # ---- Inter-character voice behaviors: pass the phone / overhear ----
+            rel_match = await _match_relative(c, body.text)
+            if rel_match:
+                rc, _rel = rel_match
+                first = (rc.get("nickname") or rc["name"].split()[0])
+                if _wants_passphone(body.text):
+                    import random
+                    line = random.choice([
+                        f"[warmly] Okay, hold on — let me grab {first}.",
+                        f"Sure, one sec… [calling out] {first}! Phone's for you!",
+                        f"[softly] Yeah of course — here, passing you to {first} now.",
+                    ])
+                    await _store(char_id, current["id"], "ai", _strip_tags(line))
+                    hand_audio = await _tts(c, line)
+                    greet = f"[warmly] Hey! It's {rc['name'].split()[0]}. So good to hear your voice."
+                    greet_audio = await _tts(rc, greet)
+                    return {"reply": _strip_tags(line), "audio_url": hand_audio,
+                            "handoff": {"character_id": rc["id"], "name": rc["name"],
+                                        "avatar_url": rc.get("avatar_url"),
+                                        "greeting_text": _strip_tags(greet), "greeting_audio": greet_audio}}
+                if _wants_relay(body.text):
+                    lines = await _exchange_lines(c, rc, seed=body.text, scenario="overhear",
+                                                  user_name=c.get("your_name") or "")
+                    segments = []
+                    for who, raw in lines:
+                        aud = await _tts(c if who == "A" else rc, raw)
+                        if aud:
+                            segments.append({"audio_url": aud, "distant": who == "B",
+                                             "text": _strip_tags(raw)})
+                    if segments:
+                        base = _now()
+                        convo = []
+                        for i, (who, raw) in enumerate(lines[:-1]):
+                            frm, to = (c, rc) if who == "A" else (rc, c)
+                            t = _strip_tags(raw)
+                            if t:
+                                convo.append({"id": str(uuid.uuid4()), "admin_id": current["id"],
+                                              "pair_key": "|".join(sorted([c["id"], rc["id"]])),
+                                              "from_id": frm["id"], "from_name": frm["name"],
+                                              "to_id": to["id"], "to_name": to["name"],
+                                              "text": t, "created_at": base + timedelta(seconds=i)})
+                        if convo:
+                            await db.ai_char_convos.insert_many(convo)
+                        closing = _strip_tags(lines[-1][1])
+                        if closing:
+                            await _store(char_id, current["id"], "ai", closing)
+                        return {"reply": closing, "segments": segments}
+            # ---- end inter-character ----
             context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
             _ln = _local_now(body.tz)
             if c.get("schedule") and _ln is not None:
                 context = (context + "\n" if context else "") + _schedule_now_ctx(c["schedule"], _ln)
+            if body.speakers.strip():
+                context = (context + "\n" if context else "") + body.speakers.strip()
             try:
                 spoken = await _reply(c, current["id"], body.text, spoken=True, context=context)
             except Exception as e:
@@ -1096,21 +1333,14 @@ def build_router(ctx) -> APIRouter:
         content = await audio.read()
         if not content:
             raise HTTPException(400, "Empty audio")
-
-        def _transcribe() -> str:
-            import io
-            from elevenlabs.client import ElevenLabs
-            client = ElevenLabs(api_key=eleven_key)
-            r = client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1")
-            return r.text if hasattr(r, "text") else str(r)
-
         try:
-            text = await asyncio.to_thread(_transcribe)
+            r = await asyncio.to_thread(_diarize_convert, content)
+            text, speaker_note = _parse_diarization(r)
         except Exception as e:
             logger.warning(f"ai-char stt error: {e}")
             await _flag_elevenlabs(e)
             raise HTTPException(502, "Couldn't understand the audio")
-        return {"text": (text or "").strip()}
+        return {"text": (text or "").strip(), "speaker_note": speaker_note}
 
     async def _is_live_speech_user_talking(text: str) -> bool:
         """Tell apart the streamer actually TALKING from background music / song lyrics /
@@ -1385,6 +1615,17 @@ def build_router(ctx) -> APIRouter:
                 elif anchor_due:
                     time_ctx += ("\n- This is one of your usual free moments to reach out (e.g. recess, lunch, "
                                  "after school, a break, or goodnight). Reach out now about what you're up to.")
+                # Anti-duplicate claim: across multiple backend workers (each runs its own
+                # proactive loop in production), only ONE may send for this thread per ~10min
+                # window — otherwise two workers generate+send near-identical texts at once.
+                claim = await db.ai_char_state.find_one_and_update(
+                    {"character_id": c["id"], "admin_id": admin_id,
+                     "$or": [{"proactive_claim_at": {"$exists": False}},
+                             {"proactive_claim_at": None},
+                             {"proactive_claim_at": {"$lte": now - timedelta(minutes=10)}}]},
+                    {"$set": {"proactive_claim_at": now}})
+                if claim is None:
+                    continue  # another worker already claimed this thread this window
                 hist = await db.ai_char_messages.find(
                     {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
                 ).sort("created_at", -1).limit(30).to_list(30)
@@ -1455,6 +1696,13 @@ def build_router(ctx) -> APIRouter:
         states = await db.ai_char_state.find({"pending_reply_at": {"$lte": now}}).to_list(200)
         for state in states:
             char_id, admin_id = state.get("character_id"), state.get("admin_id")
+            # Atomic claim: across multiple backend workers, only ONE may deliver this
+            # deferred reply — otherwise two workers generate+store the same reply twice.
+            claimed = await db.ai_char_state.find_one_and_update(
+                {"_id": state["_id"], "pending_reply_at": {"$lte": now}},
+                {"$unset": {"pending_reply_at": ""}})
+            if not claimed:
+                continue
             try:
                 c = await db.ai_characters.find_one({"id": char_id})
                 if not c:
@@ -1480,13 +1728,29 @@ def build_router(ctx) -> APIRouter:
                 context = ""
                 if schedule and local_now is not None:
                     context = _schedule_now_ctx(schedule, local_now)
-                if last.get("media_url"):
+                if last.get("media_type") == "audio":
+                    # The user sent a VOICE note — hear it (with speaker diarization), then
+                    # reply with a voice note too; notice if someone else is in the room.
+                    owner_name = (c.get("nickname") or c.get("your_name") or "").strip()
+                    heard, spk_note = await _transcribe_url(last.get("media_url"), owner_name)
+                    actx = context + (("\n" + spk_note) if spk_note else "")
+                    spoken = await _reply(c, admin_id, heard or "(a voice message with no clear words)",
+                                          spoken=True, context=actx)
+                    clean = _strip_actions(_strip_tags(spoken))
+                    audio_url = await _tts_url(c, spoken)
+                    if audio_url:
+                        await _store(char_id, admin_id, "ai", clean, audio_url, "audio")
+                    else:
+                        await _store(char_id, admin_id, "ai", clean)
+                elif last.get("media_url"):
                     reply = await _media_reply(c, admin_id, last.get("text", ""),
                                                last["media_url"], last.get("media_type"), context)
+                    clean = _strip_actions(_strip_tags(reply))
+                    await _store(char_id, admin_id, "ai", clean)
                 else:
                     reply = await _reply(c, admin_id, last.get("text", ""), spoken=False, context=context)
-                clean = _strip_actions(_strip_tags(reply))
-                await _store(char_id, admin_id, "ai", clean)
+                    clean = _strip_actions(_strip_tags(reply))
+                    await _store(char_id, admin_id, "ai", clean)
                 await db.ai_char_state.update_one({"_id": state["_id"]}, {"$unset": {"pending_reply_at": "", "pending_from": ""}})
                 await _capture_promise(char_id, admin_id, clean, state.get("tz"))
                 try:

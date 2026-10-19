@@ -1169,6 +1169,25 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - STATUS: preview, testing-agent verified end-to-end. Needs Publish/Redeploy for production. NOT yet user-confirmed on production/device.
 - Backlog: PRD.md now >1100 lines — split into PRD.md + CHANGELOG.md + ROADMAP.md next housekeeping pass.
 
+### 2026-06 — ElevenLabs v4 + "message not updating" + duplicate proactive fixes
+- TTS_MODEL 'eleven_v3' → 'eleven_v4' (fallback 'eleven_v3'); refactored _tts into _tts_bytes/_tts/_tts_url/_upload_audio (Cloudinary host for stored voice notes).
+- BUG (message not updating): GET /thread (ai) AND GET /conversations/{id}/messages (DM) capped at the OLDEST 500 (sort asc + limit) → new messages past 500 were stranded (list preview showed newer than the open thread). FIX: sort desc, take newest 500, reverse. (messages.py + ai_characters.py).
+- BUG (duplicate proactive texts): production runs MULTIPLE uvicorn workers, each ran its own proactive/reply loop → two workers generated+sent near-identical texts. FIX: atomic claims — proactive uses proactive_claim_at (find_one_and_update, 10-min window); reply loop claims via find_one_and_update unsetting pending_reply_at. Single-worker preview never reproduced it.
+- STATUS: preview; v4 voice + fixes need Publish/Redeploy + user/device confirmation.
+
+### 2026-06 — Voice/audio messages + speaker diarization (testing-agent verified, iter 60)
+- Human↔human DM voice notes: SendMessageBody.audio_url+audio_duration; send_message stores them, preview '🎤 Voice message'; list_messages setdefaults. Web: VoiceNote.jsx (VoiceRecorder hold/tap mic + AudioBubble player), wired into Messages.jsx DM composer; 2-min max; Cloudinary resourceType 'video'.
+- AI character voice-for-voice: SendBody.audio_url+media_type 'audio'; reply loop transcribes the user's voice note (ElevenLabs STT) and replies with its OWN voice note (TTS→Cloudinary), stored media_type='audio'. Wired into AiCharacterChat.jsx.
+- Diarization: _diarize_convert (scribe_v1 diarize=True) + _parse_diarization → speaker_note when >1 voice; voice notes & calls (/stt returns {text, speaker_note}; voice-turn accepts body.speakers). Character notices a 2nd person in the room, greets them, remembers names.
+- VERIFIED iter 60: DM audio round-trip, 500-cap, /stt speaker_note, AI voice reply (Cloudinary url), web recorder UI. STATUS: preview; needs redeploy + device confirm.
+
+### 2026-06 — Inter-character voice: relay reply-back + overhear + pass the phone (testing-agent verified, iter 61)
+- Relay reply-back: _maybe_relay_to_relative now also calls _relative_pings_user → after A relays, relative B proactively TEXTS the user ("Hope said you messaged me"). (+_gen_message helper.)
+- Overhear on a call: voice-turn detects _wants_relay + _match_relative → _exchange_lines(scenario='overhear') → returns ordered 'segments' [{audio_url, distant, text}] (A close, B distant); frontend playSegments plays them back-to-back, distant at 0.4 gain. Between-them lines persisted to ai_char_convos.
+- Pass the phone: voice-turn detects _wants_passphone → returns 'handoff' {character_id,name,avatar_url,greeting_text,greeting_audio}; CharacterCall switches activeChar (char state) to the relative mid-call; say "pass it back"/hang up to return/end.
+- Refactored _run_char_exchange to use shared _exchange_lines. Approximation noted: overhearing is sequential clips w/ volume, not true overlapping room audio.
+- VERIFIED iter 61: 5/5 (relay reply-back, overhear segments w/ real audio, handoff, 2 regressions). STATUS: preview; voice-call behaviors need DEVICE confirmation after redeploy.
+
 ### 2026-06 — Switch character TTS to ElevenLabs eleven_v4
 - Per user request: TTS_MODEL "eleven_v3" → "eleven_v4" (newest model, still supports audio tags for expressiveness). Fallback changed to "eleven_v3" (graceful degrade, not the flat multilingual_v2). VoiceSettings unchanged (v4 ignores unsupported style slider).
 - Lint clean. NOT voice-validated — preview ElevenLabs key unusable. Needs Publish/Redeploy + user listen on production. Trivial revert if disliked.

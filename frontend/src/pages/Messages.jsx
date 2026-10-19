@@ -12,6 +12,7 @@ import { timeAgo, frameOf, badgeCls, badgeStyle } from "@/lib/format";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { SageChat, SAGE } from "@/components/SageChat";
 import { AiCharacterChat } from "@/components/AiCharacterChat";
+import { VoiceRecorder, AudioBubble } from "@/components/VoiceNote";
 import { toast } from "sonner";
 
 // Compact "active Xm ago" label from an ISO timestamp.
@@ -578,6 +579,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   const listRef = useRef(null);
   const dmFileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [recordingVoice, setRecordingVoice] = useState(false);
 
   const load = useCallback(async () => {
     if (!conv) return;
@@ -652,6 +654,22 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
       setMessages((prev) => [...prev, m]);
     } catch (err) {
       toast.error(err.message || "Couldn't send that");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const sendVoice = async (blob, duration) => {
+    if (!conv) return;
+    setUploading(true);
+    try {
+      const ext = (blob.type.includes("mp4") || blob.type.includes("aac")) ? "m4a" : "webm";
+      const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type });
+      const up = await uploadToCloudinary(file, { resourceType: "video" });
+      const m = await api.post(`/conversations/${conv.id}/messages`, { audio_url: up.secure_url, audio_duration: duration });
+      setMessages((prev) => [...prev, m]);
+    } catch (err) {
+      toast.error(err.message || "Couldn't send that voice message");
     } finally {
       setUploading(false);
     }
@@ -740,6 +758,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
                   )}
                   {m.image_url && <img src={m.image_url} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" data-testid="dm-msg-image" />}
                   {m.video_url && <video src={m.video_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="dm-msg-video" />}
+                  {m.audio_url && <AudioBubble url={m.audio_url} duration={m.audio_duration} mine={mine} />}
                   {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
                   <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
                 </div>
@@ -760,16 +779,23 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
         <input ref={dmFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={sendMedia} data-testid="chat-file-input" />
-        <button type="button" onClick={() => dmFileRef.current?.click()} disabled={uploading} title="Send a photo or video"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="chat-attach">
-          {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={18} />}
-        </button>
-        <input value={text} onChange={onType} placeholder="Type a message…"
-          className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="chat-input" />
-        <Button type="submit" disabled={sending || !text.trim()}
-          className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="chat-send">
-          {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-        </Button>
+        {!recordingVoice && (
+          <button type="button" onClick={() => dmFileRef.current?.click()} disabled={uploading} title="Send a photo or video"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="chat-attach">
+            {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={18} />}
+          </button>
+        )}
+        {!recordingVoice && (
+          <input value={text} onChange={onType} placeholder="Type a message…"
+            className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="chat-input" />
+        )}
+        <VoiceRecorder onSend={sendVoice} busy={uploading} onRecordingChange={setRecordingVoice} />
+        {!recordingVoice && (
+          <Button type="submit" disabled={sending || !text.trim()}
+            className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="chat-send">
+            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </Button>
+        )}
       </form>
 
       {showSettings && (

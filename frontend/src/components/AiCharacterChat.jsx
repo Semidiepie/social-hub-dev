@@ -5,6 +5,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/lib/format";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { VoiceRecorder, AudioBubble } from "@/components/VoiceNote";
 import { toast } from "sonner";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -50,6 +51,7 @@ export function AiCharacterChat({ characterId, onBack }) {
   const [phase, setPhase] = useState("idle"); // idle | typing (brief flourish when a reply lands)
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [recordingVoice, setRecordingVoice] = useState(false);
   const busy = sending;
   const [inCall, setInCall] = useState(false);
   const listRef = useRef(null);
@@ -146,6 +148,26 @@ export function AiCharacterChat({ characterId, onBack }) {
     }
   };
 
+  const sendVoice = async (blob, duration) => {
+    setUploading(true);
+    const ext = (blob.type.includes("mp4") || blob.type.includes("aac")) ? "m4a" : "webm";
+    const tmpId = `tmp-${Date.now()}`;
+    const localPreview = URL.createObjectURL(blob);
+    setMessages((m) => [...m, { id: tmpId, role: "user", text: "", media_url: localPreview, media_type: "audio", audio_duration: duration, created_at: new Date().toISOString() }]);
+    try {
+      const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type });
+      const up = await uploadToCloudinary(file, { resourceType: "video" });
+      await api.post(`/ai-characters/${characterId}/send`, { media_url: up.secure_url, media_type: "audio", audio_duration: duration, ...gatherContext() });
+      setTimeout(poll, 2500);
+      setTimeout(poll, 6000);
+    } catch (err) {
+      setMessages((m) => m.filter((x) => x.id !== tmpId));
+      toast.error(err.message || "Couldn't send that voice message");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const clearThread = async () => {
     if (!window.confirm("Clear this conversation?")) return;
     try { await api.del(`/ai-characters/${characterId}/thread`); setMessages([]); toast.success("Cleared"); }
@@ -205,6 +227,9 @@ export function AiCharacterChat({ characterId, onBack }) {
                   {m.media_url && m.media_type === "video" && (
                     <video src={m.media_url} controls playsInline className="mb-1 max-h-72 w-full rounded-xl" data-testid="aichar-msg-video" />
                   )}
+                  {m.media_url && m.media_type === "audio" && (
+                    <AudioBubble url={m.media_url} duration={m.audio_duration} mine={mine} />
+                  )}
                   {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
                   <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
                 </div>
@@ -226,15 +251,22 @@ export function AiCharacterChat({ characterId, onBack }) {
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
         <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={sendMedia} data-testid="aichar-file-input" />
-        <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} title="Send a photo or video"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="aichar-attach">
-          {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={19} />}
-        </button>
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${character.name}…`}
-          className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="aichar-input" />
-        <Button type="submit" disabled={busy || !text.trim()} className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="aichar-send">
-          {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-        </Button>
+        {!recordingVoice && (
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} title="Send a photo or video"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="aichar-attach">
+            {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={19} />}
+          </button>
+        )}
+        {!recordingVoice && (
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${character.name}…`}
+            className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary/60" data-testid="aichar-input" />
+        )}
+        <VoiceRecorder onSend={sendVoice} busy={uploading} onRecordingChange={setRecordingVoice} />
+        {!recordingVoice && (
+          <Button type="submit" disabled={busy || !text.trim()} className="h-11 w-11 rounded-full bg-primary p-0 text-primary-foreground hover:bg-primary/90" data-testid="aichar-send">
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </Button>
+        )}
       </form>
 
       {inCall && <CharacterCall character={character} autoListen onEnd={() => { setInCall(false); load(); }} />}
@@ -245,7 +277,8 @@ export function AiCharacterChat({ characterId, onBack }) {
 // Push-to-talk voice call (same UX as Sage): greeting → tap mic to talk → tap to
 // send → character replies with voice. When `autoListen` is on (answered incoming
 // calls) it greets first, then listens hands-free and replies after you stop talking.
-export function CharacterCall({ character, onEnd, autoListen = false }) {
+export function CharacterCall({ character: initialCharacter, onEnd, autoListen = false }) {
+  const [char, setChar] = useState(initialCharacter);
   const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
   const [caption, setCaption] = useState("");
   const [speaker, setSpeaker] = useState(true);
@@ -283,7 +316,7 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
 
   // Play the reply through a GainNode so the volume slider actually controls
   // loudness on iOS Safari (which ignores <audio>.volume).
-  const playAudio = useCallback((url) => new Promise((resolve) => {
+  const playAudio = useCallback((url, gainMul = 1) => new Promise((resolve) => {
     if (!url) return resolve();
     let done = false; let watchdog;
     const finish = () => { if (done) return; done = true; clearTimeout(watchdog); resolve(); };
@@ -296,7 +329,7 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
         const src = ac.createBufferSource();
         src.buffer = decoded;
         const gain = ac.createGain();
-        gain.gain.value = speakerRef.current ? volumeRef.current : 0;
+        gain.gain.value = (speakerRef.current ? volumeRef.current : 0) * gainMul;
         src.connect(gain); gain.connect(ac.destination);
         gainRef.current = gain;
         srcNodeRef.current = src;
@@ -307,6 +340,17 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
       } catch { finish(); }
     })();
   }), []);
+
+  // Play a short multi-voice scene (e.g. you overhearing the character ask their
+  // mom): clips play back-to-back; "distant" voices (the other person in another
+  // room) are quieter so it feels like you're overhearing them.
+  const playSegments = useCallback(async (segments) => {
+    for (const s of segments || []) {
+      if (endedRef.current) break;
+      if (s.text) setCaption(s.text);
+      await playAudio(s.audio_url, s.distant ? 0.4 : 1);
+    }
+  }, [playAudio]);
 
   const stopVad = () => {
     if (vadTimerRef.current) { clearInterval(vadTimerRef.current); vadTimerRef.current = null; }
@@ -395,7 +439,7 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
         method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd,
       });
       if (!sttRes.ok) throw new Error("stt");
-      const { text } = await sttRes.json();
+      const { text, speaker_note } = await sttRes.json();
       if (endedRef.current) return;
       if (!text) {
         // nothing heard — in hands-free mode just keep listening, else prompt a tap
@@ -404,10 +448,22 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
         return;
       }
       setCaption(text);
-      const r = await api.post(`/ai-characters/${character.id}/voice-turn`, { text, ...gatherContext() });
+      const r = await api.post(`/ai-characters/${char.id}/voice-turn`, { text, speakers: speaker_note || "", ...gatherContext() });
       if (endedRef.current) return;
-      setCaption(r.reply);
-      await playAudio(r.audio_url);
+      if (r.handoff) {
+        // "Pass the phone to your mom" — play the hand-off line, then the call
+        // becomes the other character (their voice/personality takes over).
+        setCaption(r.reply); await playAudio(r.audio_url);
+        setChar({ id: r.handoff.character_id, name: r.handoff.name, avatar_url: r.handoff.avatar_url });
+        if (r.handoff.greeting_text) setCaption(r.handoff.greeting_text);
+        if (r.handoff.greeting_audio) await playAudio(r.handoff.greeting_audio);
+      } else if (r.segments && r.segments.length) {
+        setCaption(r.reply || "");
+        await playSegments(r.segments);
+      } else {
+        setCaption(r.reply);
+        await playAudio(r.audio_url);
+      }
       if (!endedRef.current) { setStatus("idle"); if (autoListen) startRecording(); } // keep the call flowing
     } catch {
       // A hiccup (STT/network) shouldn't dead-end a hands-free call — keep listening.
@@ -424,7 +480,7 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
     primeGeo();
     (async () => {
       try {
-        const r = await api.post(`/ai-characters/${character.id}/voice-turn`, { greeting: true });
+        const r = await api.post(`/ai-characters/${char.id}/voice-turn`, { greeting: true });
         if (endedRef.current) return;
         setCaption(r.reply);
         await playAudio(r.audio_url);
@@ -463,16 +519,16 @@ export function CharacterCall({ character, onEnd, autoListen = false }) {
   const busy = status === "connecting" || status === "thinking" || status === "speaking";
   const statusText = {
     connecting: "Connecting…", idle: autoListen ? "Just speak…" : "Tap the mic and talk",
-    recording: autoListen ? "Listening…" : "Listening… tap to send", thinking: `${character.name} is thinking…`, speaking: `${character.name} is speaking…`,
+    recording: autoListen ? "Listening…" : "Listening… tap to send", thinking: `${char.name} is thinking…`, speaking: `${char.name} is speaking…`,
   }[status];
 
   return (
     <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-neutral-950 px-6 text-center" style={{ height: "100dvh" }} data-testid="aichar-call-screen">
       <div className={`relative flex h-44 w-44 items-center justify-center rounded-full ${status === "speaking" ? "animate-pulse" : ""}`}>
         <div className={`absolute inset-0 rounded-full blur-xl transition-colors ${status === "speaking" ? "bg-green-400/30" : recording ? "bg-primary/40" : "bg-white/10"}`} />
-        <Avatar src={character.avatar_url} size={150} />
+        <Avatar src={char.avatar_url} size={150} />
       </div>
-      <div className="mt-6 flex items-center justify-center gap-1 text-2xl font-black text-white">{character.name}</div>
+      <div className="mt-6 flex items-center justify-center gap-1 text-2xl font-black text-white">{char.name}</div>
       <div className="mt-1 text-sm text-white/60" data-testid="aichar-call-status">{statusText}</div>
       {caption && <p className="mt-6 max-w-md text-sm leading-relaxed text-white/80" data-testid="aichar-caption">“{caption}”</p>}
 

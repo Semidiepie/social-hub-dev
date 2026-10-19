@@ -29,6 +29,8 @@ class SendMessageBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     image_url: Optional[str] = None
     video_url: Optional[str] = None
+    audio_url: Optional[str] = None
+    audio_duration: Optional[float] = None
 
 
 class ReactionBody(BaseModel):
@@ -163,7 +165,8 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(404, "Conversation not found")
         rows = await db.messages.find(
             {"conversation_id": conv_id}, {"_id": 0}
-        ).sort("created_at", 1).to_list(500)
+        ).sort("created_at", -1).to_list(500)
+        rows.reverse()  # newest 500 in chronological order (don't strand recent messages)
         sender_ids = list({m.get("sender_id") for m in rows if m.get("sender_id")})
         senders: dict = {}
         if sender_ids:
@@ -177,6 +180,8 @@ def build_router(ctx) -> APIRouter:
                 m["created_at"] = m["created_at"].isoformat()
             m.setdefault("image_url", None)
             m.setdefault("video_url", None)
+            m.setdefault("audio_url", None)
+            m.setdefault("audio_duration", None)
             m.setdefault("reactions", [])
             m.setdefault("read_by", [])
             u = senders.get(m.get("sender_id"), {})
@@ -206,8 +211,8 @@ def build_router(ctx) -> APIRouter:
         c = await db.conversations.find_one({"id": conv_id})
         if not c or current["id"] not in c["member_ids"]:
             raise HTTPException(404, "Conversation not found")
-        if not body.text.strip() and not body.image_url and not body.video_url:
-            raise HTTPException(400, "Message must have text, a photo or a video")
+        if not body.text.strip() and not body.image_url and not body.video_url and not body.audio_url:
+            raise HTTPException(400, "Message must have text, a photo, a video or a voice message")
         msg = {
             "id": str(uuid.uuid4()),
             "conversation_id": conv_id,
@@ -222,6 +227,8 @@ def build_router(ctx) -> APIRouter:
             "text": body.text,
             "image_url": body.image_url,
             "video_url": body.video_url,
+            "audio_url": body.audio_url,
+            "audio_duration": body.audio_duration,
             "reactions": [],
             "read_by": [current["id"]],
             "created_at": now(),
@@ -229,7 +236,8 @@ def build_router(ctx) -> APIRouter:
         await db.messages.insert_one(msg)
         msg.pop("_id", None)
         incs = {f"unread.{m}": 1 for m in c["member_ids"] if m != current["id"]}
-        preview = body.text[:200] if body.text.strip() else ("🎥 Video" if body.video_url else "📷 Photo")
+        preview = body.text[:200] if body.text.strip() else (
+            "🎤 Voice message" if body.audio_url else ("🎥 Video" if body.video_url else "📷 Photo"))
         update_doc: dict = {
             "$set": {
                 "updated_at": now(),

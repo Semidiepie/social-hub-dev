@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration-61 backend testing of inter-character communication behaviors on AI characters: (1) RELAY WITH REPLY-BACK, (2) OVERHEAR DURING A CALL (multi-voice segments), (3) PASS THE PHONE (handoff), plus 2 regressions. 5/5 pytest cases PASS on the live preview backend against founder/semidiepie. ElevenLabs voices Rachel/Bella are valid on this account — audio bytes are actually returned (not null) for handoff greeting_audio and all 5 overhear segments. _maybe_relay_to_relative + _relative_pings_user background task runs and completes well inside the 90s polling budget.",
+  "platforms_tested": ["backend"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration61_inter_character.py",
+    "/app/test_reports/pytest/iteration61_inter_char.xml"
+  ],
+  "backend_tests_detail": {
+    "TestRelayReplyBack::test_relay_creates_convo_and_pings_user": "PASS — POST /api/ai-characters/A/send {text:'tell your mom I love her'} returns 200 {pending:true}. Background _maybe_relay_to_relative populated db.ai_char_convos (pair_key = sorted(A.id|B.id)) AND B's GET /thread grew by one ai-role message with non-empty text within 90s poll budget.",
+    "TestOverhear::test_voice_turn_overhear_returns_segments": "PASS — POST /voice-turn {text:'can you ask your mom what is for dinner'} returned 200 with 5 segments, each having (audio_url, distant:bool, text:str). Observed interleave A/B/A/B/A → distant=[False,True,False,True,False]; both distant=true and distant=false segments present. 'reply' = closing A line ('Okay Sam, she says pasta sounds good…'). ai_char_convos grew (between-them lines persisted). All segments returned real audio bytes (data:audio/mpeg;base64, ~>50KB each).",
+    "TestPassThePhone::test_voice_turn_pass_the_phone_returns_handoff": "PASS — POST /voice-turn {text:'pass the phone to your mom'} returned 200 with handoff.character_id==B.id, handoff.name==B.name, avatar_url present, greeting_text non-empty ('Hey! It\\'s <B first-name>…'), greeting_audio = data URI (~151KB). audio_url = A's hand-off line (~59KB). No 'segments' key (correctly mutually exclusive).",
+    "TestRegressionPlainVoiceTurn::test_normal_voice_turn_no_handoff_no_segments": "PASS — POST /voice-turn {text:'how was your day?'} returned 200 {reply, audio_url} with NO 'segments' and NO 'handoff'. Normal single-voice path intact.",
+    "TestRegressionRelativeMentionNoIntent::test_mention_relative_without_intent_no_handoff_no_segments": "PASS — POST /voice-turn {text:'I miss your mom'} matches a relative via _match_relative but neither _wants_passphone nor _wants_relay fires, so route falls through to the normal reply. No 'segments', no 'handoff'. Gating via _wants_passphone/_wants_relay works."
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ai_characters.py is now 2038 lines — still well past the 700-line guideline. The new inter-character block inside voice_turn (lines 1263-1310) is a prime candidate to extract into a helpers module alongside _exchange_lines/_maybe_relay_to_relative.",
+    "voice_turn handoff path (lines 1268-1282) calls _tts twice sequentially (hand-off line, then B's greeting). On a slow ElevenLabs these two awaits add up — consider asyncio.gather to parallelise them to cut end-user latency in a live call.",
+    "The handoff.greeting_text template is hardcoded to \"Hey! It's {rc['name'].split()[0]}. So good to hear your voice.\" — a bit robotic and doesn't vary. Consider letting the relative character actually generate a short in-persona greeting via _gen_message (same as _relative_pings_user) so it matches their persona.",
+    "_wants_relay keyword list contains 'ask my' which is a user-POV phrase (\"ask my mom\"). On an AI-character thread the user is talking TO the character, so 'ask YOUR mom' is correct and 'ask MY mom' would never semantically apply to the character's relatives — minor dead-code smell.",
+    "_maybe_relay_to_relative uses a bare `low = user_text.lower()` pre-filter list (lines 831) that includes 'know' — this will match the word 'know' anywhere (e.g. 'I don't know what to do') and then still require a relation-token match, so it's not a bug but the pre-filter is nearly a no-op. A tighter word-boundary check would be clearer.",
+    "voice_turn pass-the-phone branch stores only A's hand-off line via _store but does NOT store B's greeting in B's thread. If the client crashes mid-call after handoff, the greeting the user heard is never in B's chat history. Consider _store(rc['id'], ..., 'ai', greet).",
+    "Overhear path persists convo lines (lines[:-1]) and stores lines[-1] in A's thread, but does not store any part of the exchange in B's thread. If parity matters for B's unread/last_message, nothing shows up there."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration61_inter_character.py (new, 5 pytest cases — all passing)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "not tested (per request)"},
+  "test_credentials": "founder email login (/api/auth/login): semidiepie@gmail.com / Semi123! (used because the test runs non-interactively and needs is_super_admin). PIN login is also available.",
+  "seed_data_creation": "Per test module: 2 TEST_-prefixed ai-characters (TEST_Alice_* with Rachel voice 21m00Tcm4TlvDq8ikWAM, TEST_Barbara_* with Bella voice EXAVITQu4vr4xnSDxMaL) with mutual mother/daughter relationships and your_name='Sam'. Teardown deletes both characters via DELETE /api/ai-characters/{id}, then prunes ai_char_convos (pair_key), ai_char_state and ai_char_messages for those two ids directly via pymongo. The user's real characters (Hope, Amara, Juliette, Nova, Sage AI) are NOT touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_iteration61_inter_character.py -v --junitxml=/app/test_reports/pytest/iteration61_inter_char.xml  (~30s). The test uses pymongo directly against MONGO_URL/DB_NAME to verify ai_char_convos (there's no public API for that collection). TTS is working on this account for both premade voices — if it ever starts returning null bytes, assertions already allow audio_url to be None; only structural keys are asserted. The 90s poll budget for the relay path is generous — in practice it completed well under 30s. ElevenLabs quota: this suite runs ~8 TTS calls total (handoff: 2, overhear: 5, plus relative_pings_user: 0 — it's text only).",
+  "rca of the issue": "N/A — all three new behaviors (pass-the-phone handoff, overhear segments, relay reply-back) work end-to-end on the live preview backend and the two regression paths still work. The two gating helpers (_wants_passphone / _wants_relay) correctly distinguish 'pass the phone to your mom' / 'ask your mom …' from a passive mention like 'I miss your mom'."
+}
