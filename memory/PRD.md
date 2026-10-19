@@ -1228,3 +1228,11 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - PUSH NAV BUG (prod report: "doesn't bring them to the right spot"): push-sw.js notificationclick previously only called WindowClient.navigate() on the focused tab — unsupported on iOS Safari, so an already-open PWA never routed. Fix: SW now postMessages {type:'pmp-navigate', url} to the open client (navigate() kept as best-effort fallback); App.js usePushNavigation() hook listens on navigator.serviceWorker 'message' and react-router navigates. openWindow(target) still used when the app isn't open. SW updates on next load after redeploy.
 - LIVE CHAT NAV: already present in AppShell.jsx NAV (/livechat, testId nav-livechat) in preview — verified in DOM. Missing on production = that deploy predates it; resolved by redeploy.
 - STATUS: both fixed in preview; require Publish/Redeploy to reach production.
+
+### 2026-06 (fork) — Shared-call: mom was silent → TTS model-compat fallback + faster handoff
+- SYMPTOM (prod): "pass the phone to mom" → daughter says "hold on, let me grab her" (audible) but mom never speaks; user kept waiting. Daughter's voice works, mom's doesn't.
+- DIAGNOSIS: backend handoff verified correct + fast in preview (handoff returned, mom greeting+reply audio present). Daughter speaking but linked mom silent ⇒ mom's ElevenLabs voice isn't compatible with eleven_v4/eleven_v3 (common for Instant Voice Clones / legacy voices) → _tts_bytes returned None → silence.
+- FIX: _tts_bytes now tries a model CHAIN: eleven_v4 → eleven_v3 → eleven_multilingual_v2 (final, universally-supported; tags stripped since it reads them literally). Guarantees any configured voice is audible. Per-model failure now logged with voice prefix.
+- ALSO: handoff's two TTS calls (daughter line + mom greeting) now run via asyncio.gather → ~2.4s→1.3s. Single-relative pass-phone fallback broadened (fires even if relation label is unusual, as long as the character has exactly one relative).
+- Both call entry points (in-chat + IncomingCallListener) use the same CharacterCall component. Regression: normal voice-turn still returns audio (curl). Mom's specific failing voice can't be reproduced in preview (preview voices are v4-compatible).
+- STATUS: preview; needs Publish/Redeploy + user re-test on production.

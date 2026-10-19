@@ -949,7 +949,7 @@ def build_router(ctx) -> APIRouter:
         if not eleven_key or not voice_id:
             return None
 
-        def _synth(model_id: str) -> bytes:
+        def _synth(model_id: str, synth_text: str) -> bytes:
             from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
@@ -957,21 +957,27 @@ def build_router(ctx) -> APIRouter:
             # Faithful to the pasted voice, NO added accent/theatrical drift:
             # max similarity to the source voice + zero style keeps delivery neutral.
             stream = client.text_to_speech.convert(
-                text=text, voice_id=voice_id, model_id=model_id, output_format="mp3_44100_128",
+                text=synth_text, voice_id=voice_id, model_id=model_id, output_format="mp3_44100_128",
                 voice_settings=VoiceSettings(stability=0.5, similarity_boost=1.0, style=0.0, use_speaker_boost=True),
             )
             return b"".join(stream)
 
-        try:
-            return await asyncio.to_thread(_synth, TTS_MODEL)
-        except Exception as e:
-            logger.warning(f"ai-char v4 tts failed, falling back to {TTS_FALLBACK_MODEL}: {e}")
+        # Model chain. v4/v3 support the [expressive] audio tags; many cloned/legacy
+        # voices are NOT enabled for v4/v3 at all (they only work on multilingual_v2),
+        # which is why one character can speak while a linked one stays silent. The
+        # final multilingual_v2 attempt guarantees a configured voice is still audible
+        # (tags stripped, since that model would otherwise read them aloud).
+        attempts = [(TTS_MODEL, text), (TTS_FALLBACK_MODEL, text), ("eleven_multilingual_v2", _strip_tags(text))]
+        last_err = None
+        for model_id, synth_text in attempts:
             try:
-                return await asyncio.to_thread(_synth, TTS_FALLBACK_MODEL)
-            except Exception as e2:
-                logger.warning(f"ai-char tts error: {e2}")
-                await _flag_elevenlabs(e2)
-                return None
+                return await asyncio.to_thread(_synth, model_id, synth_text)
+            except Exception as e:
+                last_err = e
+                logger.warning(f"ai-char tts failed on {model_id} (voice {str(voice_id)[:8]}): {e}")
+        if last_err:
+            await _flag_elevenlabs(last_err)
+        return None
 
     async def _tts(c: dict, text: str) -> Optional[str]:
         """Inline data-URI (used by live voice calls)."""
@@ -1433,10 +1439,10 @@ def build_router(ctx) -> APIRouter:
                     {"$set": {"tz": body.tz}}, upsert=True)
             # ---- Inter-character voice behaviors: pass the phone / overhear ----
             rel_match = await _match_relative(c, body.text)
-            if not rel_match and _wants_passphone(body.text) and \
-                    re.search(r"\b(her|him|them)\b", (body.text or "").lower()):
-                # Pronoun pass-phone ("put her back on") with no name — resolve to the
-                # sole relative if there's exactly one.
+            if not rel_match and _wants_passphone(body.text):
+                # Clear "pass the phone" intent but the relation word didn't match a
+                # stored label (e.g. an unusual/custom relation). If this character has
+                # exactly one relative, that's unambiguously who they mean — hand off.
                 _rels = await _relatives(c)
                 if len(_rels) == 1:
                     rel_match = _rels[0]
@@ -1461,9 +1467,10 @@ def build_router(ctx) -> APIRouter:
                         f"[softly] Yeah of course — here, passing you to {first} now.",
                     ])
                     await _store(char_id, current["id"], "ai", _strip_tags(line))
-                    hand_audio = await _tts(c, line)
                     greet = f"[warmly] Hey! It's {rc['name'].split()[0]}. So good to hear your voice."
-                    greet_audio = await _tts(rc, greet)
+                    # Generate both voices in parallel so the user isn't left waiting
+                    # (daughter's hand-off line + mother's greeting at once).
+                    hand_audio, greet_audio = await asyncio.gather(_tts(c, line), _tts(rc, greet))
                     return {"reply": _strip_tags(line), "audio_url": hand_audio,
                             "handoff": {"character_id": rc["id"], "name": rc["name"],
                                         "avatar_url": rc.get("avatar_url"),
