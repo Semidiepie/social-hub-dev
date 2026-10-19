@@ -37,6 +37,37 @@ def _local_now(tz: str):
     return None
 
 
+def _now_context(tz: str) -> str:
+    """Authoritative, unambiguous current date + time built from the user's timezone.
+    Injected into every prompt so characters never guess or drift to a stale date."""
+    ln = _local_now(tz)
+    label = tz
+    if ln is None:
+        ln = datetime.now(timezone.utc)
+        label = "UTC"
+    try:
+        today = ln.strftime("%A, %B %-d, %Y")
+        timestr = ln.strftime("%-I:%M %p")
+        tomorrow = (ln + timedelta(days=1)).strftime("%A, %B %-d")
+    except Exception:
+        today = ln.strftime("%A, %B %d, %Y")
+        timestr = ln.strftime("%I:%M %p")
+        tomorrow = (ln + timedelta(days=1)).strftime("%A, %B %d")
+    days_to_sun = ((6 - ln.weekday()) % 7) or 7  # upcoming Sunday (never "today")
+    sunday = (ln + timedelta(days=days_to_sun))
+    try:
+        sunday_s = sunday.strftime("%A, %B %-d")
+    except Exception:
+        sunday_s = sunday.strftime("%A, %B %d")
+    return (
+        f"Today's date is {today}. The current local time is {timestr}"
+        + (f" ({label})" if label else "") + ". "
+        f"Tomorrow is {tomorrow}. The upcoming Sunday is {sunday_s}. "
+        "This is the REAL, authoritative current date and time — always use it; "
+        "never state a different date/day/time and never guess the date."
+    )
+
+
 def _next_local_hour_utc(local_now, target_hour: int):
     """UTC datetime of the next time the user's local clock hits target_hour."""
     target = local_now.replace(hour=target_hour, minute=random.randint(0, 30), second=0, microsecond=0)
@@ -217,6 +248,11 @@ class ScheduleBlock(BaseModel):
     weekdays_only: bool = False                    # school/work etc. — skipped on weekends
 
 
+class RelationItem(BaseModel):
+    character_id: str = Field(min_length=1, max_length=60)
+    relation: str = Field(min_length=1, max_length=40)   # e.g. "mother", "daughter", "sister", "friend"
+
+
 class CreateCharacterBody(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     username: str = Field(min_length=1, max_length=30)
@@ -233,6 +269,7 @@ class CreateCharacterBody(BaseModel):
     schedule: list[ScheduleBlock] = Field(default_factory=list)    # full day timetable
     allow_calls: bool = False                                      # may this character call the user?
     allow_live: bool = True                                        # may this character join & comment on the user's lives?
+    relationships: list[RelationItem] = Field(default_factory=list)  # links to other characters
 
 
 def _age_sleep_default(age: Optional[int]):
@@ -439,6 +476,7 @@ def build_router(ctx) -> APIRouter:
             "schedule": c.get("schedule", []),
             "allow_calls": bool(c.get("allow_calls")),
             "allow_live": bool(c.get("allow_live", True)),
+            "relationships": c.get("relationships", []),
             "memories": c.get("memories", []),
             "voice_id": c.get("voice_id", ""),
             "voice_enabled": bool(c.get("voice_id") and settings_store.get("ELEVENLABS_API_KEY")),
@@ -563,8 +601,170 @@ def build_router(ctx) -> APIRouter:
                     parts.append(wx)
         return "\n".join(parts)
 
+    async def _relatives(c: dict):
+        """Other characters this character is linked to, as (char_doc, relation) pairs."""
+        out = []
+        for r in (c.get("relationships") or []):
+            rc = await db.ai_characters.find_one({"id": r.get("character_id")}, {"_id": 0})
+            if rc:
+                out.append((rc, (r.get("relation") or "").strip()))
+        return out
+
+    def _relation_of(a: dict, b_id: str) -> str:
+        for r in (a.get("relationships") or []):
+            if r.get("character_id") == b_id:
+                return (r.get("relation") or "").strip()
+        return ""
+
+    async def _relatives_text(c: dict) -> str:
+        rels = await _relatives(c)
+        if not rels:
+            return ""
+        parts = [f"your {rel or 'friend'} {rc['name']} (@{rc['username']})" for rc, rel in rels]
+        return ("People in your life — real people you actually know and text with (mention them "
+                "naturally and remember what they tell you): " + "; ".join(parts) + ".")
+
+    async def _convo_context(admin_id: str, char_id: str) -> str:
+        msgs = await db.ai_char_convos.find(
+            {"admin_id": admin_id, "$or": [{"from_id": char_id}, {"to_id": char_id}]},
+            {"_id": 0, "from_name": 1, "to_name": 1, "text": 1}
+        ).sort("created_at", -1).limit(10).to_list(10)
+        if not msgs:
+            return ""
+        msgs.reverse()
+        lines = [f"{m['from_name']} → {m['to_name']}: {m['text']}" for m in msgs]
+        return ("Recent PRIVATE texts you exchanged with people in your life (you remember all of this "
+                "and already know it — reference it naturally, never act surprised about it):\n"
+                + "\n".join(lines))
+
+    async def _char_available(c: dict, admin_id: str) -> bool:
+        st = await db.ai_char_state.find_one(
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
+        ln = _local_now(st.get("tz"))
+        ss, se = _sleep_window(c)
+        if ln is not None and _is_asleep(ln.hour, ss, se):
+            return False
+        sched = c.get("schedule") or []
+        if sched and ln is not None and _busy_now(sched, ln)[0]:
+            return False
+        return (c.get("affection") or "").strip().lower() not in ("distant", "dislikes")
+
+    async def _run_char_exchange(admin_id: str, a: dict, b: dict, seed: str = "") -> int:
+        """Generate and store a short private text conversation between characters a and b.
+        One LLM call. Stored in ai_char_convos; never shown to the user, only used as context."""
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        rel_ba = _relation_of(a, b["id"]) or "someone they know"   # a is b's ___
+        rel_ab = _relation_of(b, a["id"]) or "someone they know"   # b is a's ___
+        user_name = a.get("your_name") or b.get("your_name") or "the person they both know"
+        sys = (
+            "You write a short, natural private TEXT conversation between two people. Keep it real and "
+            "casual like phone texting.\n"
+            f"Person A is {a['name']}: {a.get('persona', '')[:280]}\n"
+            f"Person B is {b['name']}: {b.get('persona', '')[:280]}\n"
+            f"{a['name']} is {b['name']}'s {rel_ba}. {b['name']} is {a['name']}'s {rel_ab}.\n"
+            "Write 4 to 6 short alternating lines, STARTING WITH A. Format every line EXACTLY as "
+            "'A: <message>' or 'B: <message>'. No stage directions, no quotes, no narration.")
+        task = (f"{a['name']} texts {b['name']}. "
+                + (f'{user_name} asked {a["name"]} to tell {b["name"]}: "{seed}". '
+                   f"Work that into the conversation naturally. "
+                   if seed else f"They catch up about their day and about {user_name}. ")
+                + "Write the conversation now.")
+        try:
+            chat = LlmChat(api_key=settings_store.get("EMERGENT_LLM_KEY"),
+                           session_id=f"xchar-{a['id']}-{b['id']}",
+                           system_message=sys).with_model("anthropic", "claude-sonnet-4-6")
+            resp = await chat.send_message(UserMessage(text=task))
+        except Exception as e:
+            logger.warning(f"char-exchange error {a['id']}/{b['id']}: {e}")
+            return 0
+        base = _now()
+        docs = []
+        i = 0
+        for raw in (resp or "").splitlines():
+            line = raw.strip()
+            up = line.upper()
+            if up.startswith("A:"):
+                frm, to = a, b
+            elif up.startswith("B:"):
+                frm, to = b, a
+            else:
+                continue
+            text = _strip_actions(_strip_tags(line[2:].strip())).strip().strip('"')[:500]
+            if not text:
+                continue
+            docs.append({
+                "id": str(uuid.uuid4()), "admin_id": admin_id,
+                "pair_key": "|".join(sorted([a["id"], b["id"]])),
+                "from_id": frm["id"], "from_name": frm["name"],
+                "to_id": to["id"], "to_name": to["name"],
+                "text": text, "created_at": base + timedelta(seconds=i)})
+            i += 1
+        if docs:
+            await db.ai_char_convos.insert_many(docs)
+        return len(docs)
+
+    _RELATION_SYNONYMS = {
+        "mother": ["mom", "mum", "mommy", "mama", "momma", "ma"],
+        "father": ["dad", "daddy", "papa", "pa", "pops"],
+        "daughter": ["girl"],
+        "son": ["boy"],
+        "sister": ["sis"],
+        "brother": ["bro"],
+        "grandmother": ["grandma", "granny", "nana", "gran"],
+        "grandfather": ["grandpa", "gramps", "grandad", "granddad"],
+        "wife": ["wifey"],
+        "husband": ["hubby"],
+        "girlfriend": ["gf"],
+        "boyfriend": ["bf"],
+        "partner": [],
+        "friend": ["bestie", "bff"],
+        "aunt": ["auntie"],
+        "uncle": [],
+        "cousin": [],
+    }
+
+    def _relation_tokens(rc: dict, relation: str) -> list:
+        """Words the user might use to refer to this relative: their first name, the relation,
+        and common synonyms (so 'tell my mom' matches a 'mother' relation)."""
+        toks = set()
+        first = (rc.get("name", "").split() or [""])[0].lower()
+        if len(first) >= 2:
+            toks.add(first)
+        rel = (relation or "").strip().lower()
+        if len(rel) >= 2:
+            toks.add(rel)
+            for canon, syns in _RELATION_SYNONYMS.items():
+                if rel == canon or rel in syns:
+                    toks.add(canon)
+                    toks.update(syns)
+        return [t for t in toks if len(t) >= 2]
+
+    async def _maybe_relay_to_relative(c: dict, admin_id: str, user_text: str):
+        """If the user told this character to pass a message to one of its relatives, start a
+        private conversation between them carrying that message."""
+        rels = await _relatives(c)
+        if not rels:
+            return
+        low = user_text.lower()
+        if not any(v in low for v in ("tell ", "message ", "text ", "ask ", "let ", "know", "remind", "send ", "talk to", "reach out")):
+            return
+        for rc, rel in rels:
+            toks = _relation_tokens(rc, rel)
+            if any(re.search(rf"\b{re.escape(t)}\b", low) for t in toks):
+                await _run_char_exchange(admin_id, c, rc, seed=user_text)
+                return
+
     async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "") -> str:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
+        st = await db.ai_char_state.find_one(
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
+        context = _now_context(st.get("tz")) + ("\n" + context if context else "")
+        _rt = await _relatives_text(c)
+        if _rt:
+            context += "\n" + _rt
+        _cc = await _convo_context(admin_id, c["id"])
+        if _cc:
+            context += "\n" + _cc
         history = await db.ai_char_messages.find(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
         ).sort("created_at", -1).limit(40).to_list(40)
@@ -589,6 +789,9 @@ def build_router(ctx) -> APIRouter:
         import os
         import tempfile
         from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent, FileContentWithMimeType
+        st = await db.ai_char_state.find_one(
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
+        context = _now_context(st.get("tz")) + ("\n" + context if context else "")
         history = await db.ai_char_messages.find(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
         ).sort("created_at", -1).limit(20).to_list(20)
@@ -716,6 +919,7 @@ def build_router(ctx) -> APIRouter:
             "schedule": [b.model_dump() for b in body.schedule][:30],
             "allow_calls": bool(body.allow_calls),
             "allow_live": bool(body.allow_live),
+            "relationships": [r.model_dump() for r in body.relationships][:12],
             "memories": [],
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
@@ -745,6 +949,7 @@ def build_router(ctx) -> APIRouter:
             "schedule": [b.model_dump() for b in body.schedule][:30],
             "allow_calls": bool(body.allow_calls),
             "allow_live": bool(body.allow_live),
+            "relationships": [r.model_dump() for r in body.relationships][:12],
             "voice_id": voice_id,
             "voice_valid": await _voice_exists(voice_id),
         }
@@ -844,6 +1049,10 @@ def build_router(ctx) -> APIRouter:
         await db.ai_char_state.update_one(
             {"character_id": char_id, "admin_id": current["id"]},
             {"$set": setfields}, upsert=True)
+        # If the user asked this character to pass a message to a relative, kick off a private
+        # conversation between them (runs in the background; the relative will "already know").
+        if body.text.strip():
+            asyncio.create_task(_maybe_relay_to_relative(c, current["id"], body.text.strip()))
         return {"pending": True, "reply_at": reply_at.isoformat(), "busy": busy}
 
     @router.post("/api/ai-characters/{char_id}/voice-turn")
@@ -1138,11 +1347,10 @@ def build_router(ctx) -> APIRouter:
                             nxt = a
                     return {"last_checked_at": now, "next_eval_at": nxt, "promised_at": None}
 
-                time_ctx = ""
+                time_ctx = _now_context(state.get("tz"))
                 if local_now is not None:
                     lh = local_now.hour
-                    time_ctx = (f"- It is currently {local_now.strftime('%A %I:%M %p')} where they are. "
-                                f"Your usual bedtime is about {sleep_start:02d}:00 and you wake around {sleep_end:02d}:00.")
+                    time_ctx += (f"\n- Your usual bedtime is about {sleep_start:02d}:00 and you wake around {sleep_end:02d}:00.")
                     if _is_asleep(lh, sleep_start, sleep_end):
                         wake_utc = _next_local_hour_utc(local_now, sleep_end)
                         await db.ai_char_state.update_one(
@@ -1312,7 +1520,9 @@ def build_router(ctx) -> APIRouter:
         broadcaster just spoke to this character by name — reply directly to them.
         Cheap single Claude call."""
         from emergentintegrations.llm.chat import LlmChat, UserMessage
-        sys = _system(c, spoken=False)
+        st = await db.ai_char_state.find_one(
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
+        sys = _system(c, spoken=False, context=_now_context(st.get("tz")))
         them = c.get("nickname") or c.get("your_name") or "them"
         sys += (
             f"\n\nRIGHT NOW {them} is livestreaming on PostMePlex (stream title: \"{title}\"). "
@@ -1501,6 +1711,54 @@ def build_router(ctx) -> APIRouter:
                 logger.warning(f"ai-char live_loop error: {e}")
             await asyncio.sleep(LIVE_TICK_SEC)
 
+    async def _convos_once():
+        """Autonomously let related characters text each other now and then, so they stay in
+        each other's lives. Rate-limited (>=3h cooldown per pair, one exchange per admin per
+        tick) and gated by availability + affection to keep it realistic and cheap."""
+        chars = await db.ai_characters.find(
+            {"relationships": {"$exists": True, "$not": {"$size": 0}}}, {"_id": 0}).to_list(300)
+        by_admin = {}
+        for c in chars:
+            by_admin.setdefault(c.get("created_by"), []).append(c)
+        for admin_id, clist in by_admin.items():
+            if not admin_id:
+                continue
+            cmap = {c["id"]: c for c in clist}
+            pairs = []
+            seen = set()
+            for a in clist:
+                for r in (a.get("relationships") or []):
+                    b = cmap.get(r.get("character_id")) or await db.ai_characters.find_one(
+                        {"id": r.get("character_id")}, {"_id": 0})
+                    if not b:
+                        continue
+                    key = "|".join(sorted([a["id"], b["id"]]))
+                    if key not in seen:
+                        seen.add(key)
+                        pairs.append((a, b, key))
+            random.shuffle(pairs)
+            for a, b, key in pairs:
+                last = await db.ai_char_convos.find_one({"pair_key": key}, sort=[("created_at", -1)])
+                if last and last.get("created_at") and (_now() - last["created_at"]).total_seconds() < 3 * 3600:
+                    continue
+                if random.random() > 0.5:
+                    continue
+                if not (await _char_available(a, admin_id) and await _char_available(b, admin_id)):
+                    continue
+                n = await _run_char_exchange(admin_id, a, b)
+                if n:
+                    break  # at most one exchange per admin per tick (cost control)
+
+    async def convo_loop():
+        await asyncio.sleep(90)
+        while True:
+            try:
+                if settings_store.get("EMERGENT_LLM_KEY"):
+                    await _convos_once()
+            except Exception as e:
+                logger.warning(f"ai-char convo_loop error: {e}")
+            await asyncio.sleep(1200)  # every ~20 min
+
     router.proactive_loop = proactive_loop
     router.proactive_once = _proactive_once
     router.reply_loop = reply_loop
@@ -1508,4 +1766,9 @@ def build_router(ctx) -> APIRouter:
     router.live_loop = live_loop
     router.live_comments_once = _live_comments_once
     router.live_state = live_state
+    router.convo_loop = convo_loop
+    router.convos_once = _convos_once
+    router.run_char_exchange = _run_char_exchange
+    router.relation_tokens = _relation_tokens
+    router.maybe_relay_to_relative = _maybe_relay_to_relative
     return router

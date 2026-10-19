@@ -1,0 +1,41 @@
+{
+  "summary": "Verified the iteration-59 narrow change: natural relation-word synonym matching in _maybe_relay_to_relative. Added a focused pytest file (test_relation_synonyms.py, 28 cases) covering: (a) the new _relation_tokens() mapping for every synonym the main agent registered — mom/mum/mommy/mama/ma (mother), dad/daddy/papa/pa/pops (father), sis (sister), bro (brother), grandma/nana/granny/gran (grandmother), grandpa/gramps/grandad/granddad (grandfather), daughter→girl, son→boy, wife→wifey, husband→hubby — plus reverse mapping (stored relation 'mom' → canonical 'mother' and all its synonyms), short-token (<2 chars) suppression, and unknown-relation passthrough; (b) real end-to-end relay via router.maybe_relay_to_relative() against the live DB + LLM for the SYNONYM path (stored 'mother' + user text 'tell your mom …' now fires), the EXACT-RELATION regression path ('ask your mother to call'), the FIRST-NAME regression path ('message Juliette …'), and a NEGATIVE case where a relay keyword appears without any relation token (must NOT fire); (c) shared-knowledge regression — the recipient's context query (from_id OR to_id == recipient_id) surfaces the exchange so her next reply 'already knows'. All 28 new tests pass (18s). Iteration-58's three REST tests still pass (10s) and the direct-DB test_char_relationships.py still passes. One tiny test-only exposure was added to ai_characters.py: `router.relation_tokens = _relation_tokens` and `router.maybe_relay_to_relative = _maybe_relay_to_relative` (mirrors the existing `router.run_char_exchange` pattern).",
+  "platforms_tested": ["backend"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_relation_synonyms.py",
+    "/app/backend/tests/test_relationships_rest.py",
+    "/app/backend/tests/test_char_relationships.py",
+    "/app/test_reports/pytest/iteration59_relation_synonyms.xml",
+    "/app/test_reports/pytest/iteration59_relationships_regression.xml"
+  ],
+  "action_items": [
+    "(Non-blocking) The pytest-asyncio tests must be run with session-scoped event loop or motor hits 'Event loop is closed' between tests. The suite is invoked with `-o asyncio_default_test_loop_scope=session -o asyncio_default_fixture_loop_scope=session`. Consider pinning this via pyproject.toml / pytest.ini for future contributors so they don't have to pass the flag.",
+    "(Doc) The relay matcher now matches on any of: relative's first-name token (≥2 chars), the stored relation word verbatim, OR any registered spoken synonym for the stored relation's canonical. Future reviewers can rely on 'tell your mom', 'ask your sis', 'text your dad', 'message your grandma' etc."
+  ],
+  "critical_code_review_comments": [
+    "ai_characters.py is now 1773 lines (was 1737) — continues to exceed the 700-line guideline; still worth splitting out helpers/background loops at the next refactor.",
+    "_RELATION_SYNONYMS has NO entry for 'partner', 'uncle', 'cousin' (empty synonym lists). That's intentional per the main agent but worth documenting — those relations will only match the first-name OR the exact word (no spoken alternates). If 'nephew'/'niece'/'stepmom'/'stepdad'/'mother-in-law' etc. are ever used as stored relations, no spoken synonyms will match either; a lemmatiser or a slightly broader map could help.",
+    "_relation_tokens drops first-name tokens shorter than 2 chars — but a very common 2-char first name like 'Al' or 'Jo' would still match and could cause false positives in long user texts; low risk, mentioning for completeness.",
+    "The matcher iterates relatives in insertion order and returns at the FIRST match (early return). If a user text mentions two different relatives (e.g. 'tell mom and dad'), only the first one gets a relay. Likely acceptable for v1 but worth noting."
+  ],
+  "updated_files": [
+    "/app/backend/routes/ai_characters.py (added test-only exposures: router.relation_tokens, router.maybe_relay_to_relative — mirrors existing router.run_char_exchange)",
+    "/app/backend/tests/test_relation_synonyms.py (new, 28 test cases)"
+  ],
+  "success_rate": {"backend": "100% (28/28 new + 3/3 iter-58 REST + direct-DB sanity = 31/31)", "frontend": "N/A (backend-only testing per request)"},
+  "test_credentials": "Direct-DB tests use throwaway admin ids (`test-synonym-<uuid>`). REST tests use founder PIN login (identifier=semidiepie, pin=7455).",
+  "seed_data_creation": "test_relation_synonyms.py creates a throwaway admin and two characters (Hope with relation 'mother'→Juliette, Juliette with relation 'daughter'→Hope) per test, then deletes the admin, both characters, ai_char_convos, ai_char_messages, ai_char_state in teardown. No persistent data remains.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run with: `cd /app/backend && python -m pytest tests/test_relation_synonyms.py -v --asyncio-mode=auto -o asyncio_default_test_loop_scope=session -o asyncio_default_fixture_loop_scope=session` (session-scoped loop is required because motor binds to the first event loop; without it function-scoped loops after the first test raise 'Event loop is closed'). Takes ~18s. The 4 integration tests each make one real Claude LLM call via EMERGENT_LLM_KEY; if that key is removed/rate-limited, those four will fail — the 24 unit tests for `router.relation_tokens` are LLM-free and will still prove the synonym mapping. The direct-DB test at /app/backend/tests/test_char_relationships.py still works and is the fastest smoke (<10s).",
+  "rca of the issue": "N/A — the iteration-59 synonym addition works. The one authoring gotcha worth preserving: pytest-asyncio 1.4 defaults to function-scoped loops, which incompatible with the motor client cached inside the imported `server` module (bound to the first loop). Session-scoped loop fixes it; documented in context_for_next_testing_agent + action_items."
+}

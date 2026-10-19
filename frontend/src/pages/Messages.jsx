@@ -320,6 +320,8 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
   const [allowCalls, setAllowCalls] = useState(character?.allow_calls || false);
   const [allowLive, setAllowLive] = useState(character?.allow_live ?? true);
   const [schedule, setSchedule] = useState(character?.schedule || []);
+  const [relationships, setRelationships] = useState(character?.relationships || []);
+  const [allChars, setAllChars] = useState([]);
   const [memories, setMemories] = useState(character?.memories || []);
   const [newMem, setNewMem] = useState("");
   const [voice, setVoice] = useState(character?.voice_id || "");
@@ -331,6 +333,14 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
   const addBlock = () => setSchedule((s) => [...s, { start: "", end: "", activity: "", busy: false, weekdays_only: false }]);
   const updateBlock = (i, patch) => setSchedule((s) => s.map((b, j) => (j === i ? { ...b, ...patch } : b)));
   const removeBlock = (i) => setSchedule((s) => s.filter((_, j) => j !== i));
+
+  useEffect(() => {
+    api.get("/ai-characters").then((list) => setAllChars(list || [])).catch(() => {});
+  }, []);
+  const otherChars = allChars.filter((x) => x.id !== character?.id);
+  const addRel = () => setRelationships((r) => [...r, { character_id: "", relation: "" }]);
+  const updateRel = (i, patch) => setRelationships((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const removeRel = (i) => setRelationships((r) => r.filter((_, j) => j !== i));
 
   const addMemory = async () => {
     if (!newMem.trim() || !editing) return;
@@ -368,6 +378,7 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
         sleep_end: sleepEnd === "" ? null : parseInt(sleepEnd, 10),
         allow_calls: allowCalls,
         allow_live: allowLive,
+        relationships: relationships.filter((r) => r.character_id && r.relation.trim()).map((r) => ({ character_id: r.character_id, relation: r.relation.trim() })),
         schedule: schedule.filter((b) => b.start && b.activity).map((b) => ({ start: b.start, end: b.end || "", activity: b.activity, busy: !!b.busy, weekdays_only: !!b.weekdays_only })) };
       if (editing) await api.put(`/ai-characters/${character.id}`, body);
       else await api.post("/ai-characters", body);
@@ -498,6 +509,24 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
           <input type="checkbox" checked={allowLive} onChange={(e) => setAllowLive(e.target.checked)} className="h-5 w-5 accent-primary" data-testid="aichar-allow-live" />
         </label>
         <p className="mt-1 text-[10px] text-muted-foreground">When on, they&apos;ll drop by your livestreams during their free time and comment in the live chat (only if they feel warmly toward you). Viewers see their name but can&apos;t open a profile.</p>
+
+        <div className="mt-3 rounded-xl border border-border p-2.5" data-testid="aichar-relationships">
+          <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-muted-foreground"><Users size={12} className="text-primary" /> Family &amp; friends — link to other characters</label>
+          <p className="mt-1 text-[10px] text-muted-foreground">Link this character to others and say how they&apos;re related (e.g. mother, daughter, sister, friend). Linked characters know each other, text privately on their own, and if you ask this character to message a relative, they will.</p>
+          <div className="mt-2 space-y-1.5">
+            {relationships.map((r, i) => (
+              <div key={i} className="flex items-center gap-2" data-testid={`aichar-rel-${i}`}>
+                <select value={r.character_id} onChange={(e) => updateRel(i, { character_id: e.target.value })} className="flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-xs" data-testid={`aichar-rel-char-${i}`}>
+                  <option value="">Select character…</option>
+                  {otherChars.map((oc) => <option key={oc.id} value={oc.id}>{oc.name} (@{oc.username})</option>)}
+                </select>
+                <input value={r.relation} onChange={(e) => updateRel(i, { relation: e.target.value })} placeholder="is my… (e.g. mother)" className="w-32 rounded-lg border border-border bg-background px-2 py-1.5 text-xs" data-testid={`aichar-rel-type-${i}`} />
+                <button type="button" onClick={() => removeRel(i)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive" data-testid={`aichar-rel-remove-${i}`}><X size={14} /></button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addRel} className="mt-2 flex items-center gap-1 text-xs font-semibold text-primary" data-testid="aichar-rel-add"><Plus size={13} /> Add relationship</button>
+        </div>
 
         {editing ? (
           <div className="mt-3 rounded-xl border border-border p-2.5">

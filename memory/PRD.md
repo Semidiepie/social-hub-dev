@@ -1137,3 +1137,34 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - FIX (ai_characters.py live-speech endpoint): new _is_live_speech_user_talking(text) classifies each transcribed chunk as TALK vs MUSIC (claude-sonnet-4-6, one-word answer). Only TALK chunks are stored into live_speech; MUSIC/lyrics/singing are dropped so the loop never reacts to them. On classifier error, defaults to TALK (never lose real speech).
 - Verified: "Hey Nova how are you" -> TALK (kept); "cause baby you're a firework", "ooh la la baby baby" -> MUSIC (dropped); "welcome back to my stream" -> TALK.
 - Cost: adds one cheap classification call per ~12s speech chunk (on top of STT), only while live with characters. STATUS: preview, agent-tested. Needs Publish/Redeploy.
+
+### 2026-10 — FIX: AI characters now know the real date/time (testing-agent verified, iter 57)
+- Bug: characters used stale/guessed dates (thought it was Oct 11), wrong day/time, didn't know next Sunday.
+- Fix: new top-level _now_context(tz) builds authoritative block (today full date+weekday+year, current local time, tomorrow, upcoming Sunday, "never guess"). Injected server-side into _reply + _media_reply (self-fetch stored tz from ai_char_state), proactive time_ctx, and _live_comment. Frontend already sends tz=Intl timezone on every send/voice-turn; tz persisted in ai_char_state.
+- Verified (iter_57): voice-turn replies correct for America/New_York AND Asia/Tokyo (rolls to next day), no stale Oct 11. 3/3 pytest (/app/backend/tests/test_datetime_awareness.py).
+
+### PENDING (user-requested, not yet built) — character relationships + inter-character messaging
+- Link characters & define how they're related (e.g., Hope's mom = Juliette).
+- Characters talk to each other: tell Hope to message her mom Juliette -> Hope messages Juliette; when user opens Juliette's thread she already knows (shared context).
+- Live promises: when a character promises to join the live, they do (partially handled by live loop + schedule gating).
+
+### 2026-10 — Character relationships + silent inter-character conversations (testing-agent verified, iter 58)
+- Feature: link characters & define relation; they talk to each other privately (explicit command + autonomous); conversations silently inform each character (not shown to user).
+- Backend (ai_characters.py):
+  - RelationItem + CreateCharacterBody.relationships; persisted on create/update; returned in _char_public.
+  - ai_char_convos collection stores private cross-character messages {admin_id, pair_key, from_id/name, to_id/name, text, created_at}.
+  - _run_char_exchange(admin_id, a, b, seed): one LLM call generates a 4-6 line A/B dialogue, parsed+stored. _relatives/_relation_of/_relatives_text/_convo_context helpers.
+  - _reply + _media_reply + _live_comment now inject _relatives_text + _convo_context so each character knows its relatives and remembers cross-talk ("already knows").
+  - Explicit relay: /send fires _maybe_relay_to_relative (background task) when user tells a character to contact a relative; matches first name + relation word + SYNONYMS (mom/mum/dad/sis/grandma/etc.).
+  - Autonomous: convo_loop (every ~20min, 3h/pair cooldown, availability+affection gated, 1 exchange/admin/tick) started in server.py.
+- Frontend (Messages.jsx CharacterFormDialog): "Family & friends" section — add relationship rows (select other character + relation text), persisted. testids aichar-relationships / aichar-rel-add / aichar-rel-char-N / aichar-rel-type-N.
+- VERIFIED iter 58: REST create/persist relationships, explicit relay creates ai_char_convos within ~10s, shared-knowledge query surfaces it, date/time regression still passes, web UI renders. Local tests: test_char_relationships.py, test_relationships_rest.py, test_datetime_awareness.py.
+- Deferred/non-blocking: ai_characters.py ~1770 lines (split recommended); dev-only select hydration warning (harmless).
+- STATUS: preview, agent-tested. Needs Publish/Redeploy.
+
+### 2026-06 — Relation-synonym relay matching re-verified (testing-agent, iter 59)
+- Narrow follow-up (added after iter 58): _RELATION_SYNONYMS map + _relation_tokens() so natural phrasings ("tell your mom …") trigger the relay even when the stored relation label is "mother".
+- VERIFIED iter 59 (/app/test_reports/iteration_59.json): 28/28 new synonym tests PASS + iter-58 regressions (REST + direct-DB) still PASS. Synonym path (mother→mom/mum/mama/ma, father→dad/papa, sister→sis, brother→bro, grandmother→grandma/nana, etc.), first-name path, exact-relation path, negative case, and shared-knowledge context all confirmed.
+- Testing agent added harmless test-only closure exposures on the router (relation_tokens, maybe_relay_to_relative, convo_loop, convos_once, run_char_exchange) — zero runtime effect, mirrors existing pattern.
+- STATUS: preview, testing-agent verified end-to-end. Needs Publish/Redeploy for production. NOT yet user-confirmed on production/device.
+- Backlog: PRD.md now >1100 lines — split into PRD.md + CHANGELOG.md + ROADMAP.md next housekeeping pass.
