@@ -1168,3 +1168,7 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Testing agent added harmless test-only closure exposures on the router (relation_tokens, maybe_relay_to_relative, convo_loop, convos_once, run_char_exchange) — zero runtime effect, mirrors existing pattern.
 - STATUS: preview, testing-agent verified end-to-end. Needs Publish/Redeploy for production. NOT yet user-confirmed on production/device.
 - Backlog: PRD.md now >1100 lines — split into PRD.md + CHANGELOG.md + ROADMAP.md next housekeeping pass.
+
+### 2026-06 — Switch character TTS to ElevenLabs eleven_v4
+- Per user request: TTS_MODEL "eleven_v3" → "eleven_v4" (newest model, still supports audio tags for expressiveness). Fallback changed to "eleven_v3" (graceful degrade, not the flat multilingual_v2). VoiceSettings unchanged (v4 ignores unsupported style slider).
+- Lint clean. NOT voice-validated — preview ElevenLabs key unusable. Needs Publish/Redeploy + user listen on production. Trivial revert if disliked.

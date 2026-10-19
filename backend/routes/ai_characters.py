@@ -159,8 +159,8 @@ def _parse_next_contact(text, local_now, sleep_start, sleep_end):
 
 import settings_store
 
-TTS_MODEL = "eleven_v3"  # most expressive — supports audio tags ([laughs], [sighs], [crying]…)
-TTS_FALLBACK_MODEL = "eleven_multilingual_v2"  # used if v3 is unavailable for the account/voice
+TTS_MODEL = "eleven_v4"  # newest, most expressive — supports audio tags ([laughs], [sighs], [crying]…)
+TTS_FALLBACK_MODEL = "eleven_v3"  # used if v4 is unavailable for the account/voice (still tag-expressive)
 
 # Proactive "human-like" texting. Cadence is PERSONALITY-PACED: each character picks
 # its own next check-in time — someone attached texts within hours (even daily), a
@@ -175,7 +175,7 @@ LIVE_TICK_SEC = 25               # live-chat comment loop cadence
 LIVE_MAX_COMMENTS = 6            # max AI comments per character per live session
 LIVE_MAX_CHARS_PER_LIVE = 3      # at most this many of a user's characters comment on one live
 
-# Emotion / non-verbal cues the character may embed in replies; performed by eleven_v3
+# Emotion / non-verbal cues the character may embed in replies; performed by eleven_v4
 # and stripped from the text shown on screen.
 AUDIO_TAG_RE = re.compile(r"\[[a-zA-Z][a-zA-Z '\-]{0,24}\]")
 
@@ -853,7 +853,7 @@ def build_router(ctx) -> APIRouter:
         try:
             audio = await asyncio.to_thread(_synth, TTS_MODEL)
         except Exception as e:
-            logger.warning(f"ai-char v3 tts failed, falling back to {TTS_FALLBACK_MODEL}: {e}")
+            logger.warning(f"ai-char v4 tts failed, falling back to {TTS_FALLBACK_MODEL}: {e}")
             try:
                 audio = await asyncio.to_thread(_synth, TTS_FALLBACK_MODEL)
             except Exception as e2:
