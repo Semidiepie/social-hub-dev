@@ -49,6 +49,7 @@ import AdminBlogsPage from "@/pages/AdminBlogs";
 import AdminAnnouncePage from "@/pages/AdminAnnounce";
 import AdminKeysPage from "@/pages/AdminKeys";
 import AdminGamesPage from "@/pages/AdminGames";
+import AdminAiCharactersPage from "@/pages/AdminAiCharacters";
 import GamesHubPage from "@/pages/GamesHub";
 import GameProfilePage from "@/pages/GameProfile";
 import GamePlayerPage from "@/pages/GamePlayer";
@@ -217,6 +218,7 @@ export default function App() {
             <Route path="/games/:id" element={<ProtectedRoute><GameProfilePage /></ProtectedRoute>} />
             <Route path="/games/:id/play" element={<ProtectedRoute><GamePlayerPage /></ProtectedRoute>} />
             <Route path="/admin/games" element={<ProtectedRoute><AdminGamesPage /></ProtectedRoute>} />
+            <Route path="/admin/ai-characters" element={<ProtectedRoute><AdminAiCharactersPage /></ProtectedRoute>} />
 
             {/* Clean channel-handle URLs: /@username and /@username/{videoId}.
                 Declared last so all static/specific routes win first. */}

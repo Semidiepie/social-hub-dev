@@ -435,6 +435,10 @@ class MemoryBody(BaseModel):
     text: str = Field(min_length=1, max_length=400)
 
 
+class ThoughtBody(BaseModel):
+    thought: str = Field(min_length=1, max_length=600)
+
+
 class SendBody(BaseModel):
     text: str = Field(default="", max_length=2000)
     media_url: Optional[str] = None
@@ -1404,6 +1408,67 @@ def build_router(ctx) -> APIRouter:
         await _get_char(char_id)
         await db.ai_characters.update_one({"id": char_id}, {"$pull": {"memories": {"id": mem_id}}})
         return _char_public(await _get_char(char_id))
+
+    @router.post("/api/ai-characters/{char_id}/thought")
+    async def plant_thought(char_id: str, body: ThoughtBody,
+                            current: Annotated[dict, Depends(get_current_user)]):
+        """Admin drops a thought into the character's head and she acts on it right away —
+        sends a text, a voice message, or places a call, exactly as the thought describes."""
+        _require_admin(current)
+        c = await _get_char(char_id)
+        admin_id = current["id"]
+        thought = body.thought.strip()
+        low = thought.lower()
+        if re.search(r"\b(voice|audio|voicemail|voice note|record)\b", low):
+            mode = "voice"
+        elif re.search(r"\b(call|phone|ring|facetime)\b", low):
+            mode = "call"
+        else:
+            mode = "text"
+
+        if mode == "call":
+            now = _now()
+            call = {"id": str(uuid.uuid4()), "character_id": c["id"], "admin_id": admin_id,
+                    "status": "ringing", "created_at": now, "expires_at": now + timedelta(seconds=120)}
+            await db.ai_char_calls.insert_one(call)
+            await _store(c["id"], admin_id, "ai", f"📞 {c['name']} tried to call you")
+            await db.ai_char_state.update_one(
+                {"character_id": c["id"], "admin_id": admin_id},
+                {"$set": {"last_proactive_at": now}}, upsert=True)
+            try:
+                await send_web_push(admin_id, f"📞 {c['name']} is calling you", "Tap to answer",
+                                    url=f"/messages/ai_{c['id']}?incoming=1", extra={"incomingCall": True})
+            except Exception:
+                pass
+            return {"ok": True, "mode": "call"}
+
+        instr = (f'Right this second, this thought just popped into your head: "{thought}". '
+                 "Act on it immediately — send the person a real message in your own voice, as if the "
+                 "feeling just hit you. Write ONLY the message itself (what you'd actually send), nothing else.")
+        try:
+            message = _strip_actions(_strip_tags(await _gen_message(c, admin_id, instr)))
+        except Exception as e:
+            logger.warning(f"ai-char thought gen error {char_id}: {e}")
+            raise HTTPException(502, "Couldn't act on that thought — try again")
+        if not message:
+            raise HTTPException(502, "Couldn't act on that thought — try again")
+
+        audio_url = await _tts_url(c, message) if mode == "voice" else None
+        if mode == "voice" and audio_url:
+            doc = await _store(c["id"], admin_id, "ai", message, audio_url, "audio")
+        else:
+            mode = "text"
+            doc = await _store(c["id"], admin_id, "ai", message)
+        await db.ai_char_state.update_one(
+            {"character_id": c["id"], "admin_id": admin_id},
+            {"$set": {"last_proactive_at": _now()}}, upsert=True)
+        try:
+            await send_web_push(admin_id, c["name"],
+                                "🎤 Voice message" if mode == "voice" else message,
+                                url=f"/messages/ai_{c['id']}", extra={"suppressIfFocused": True})
+        except Exception:
+            pass
+        return {"ok": True, "mode": mode, "message": message, "msg": _msg_out(doc)}
 
     @router.delete("/api/ai-characters/{char_id}")
     async def delete_character(char_id: str, current: Annotated[dict, Depends(get_current_user)]):
