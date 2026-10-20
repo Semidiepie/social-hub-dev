@@ -890,8 +890,11 @@ def build_router(ctx) -> APIRouter:
                 "fairly brief. React to what was just said, don't repeat what the others say, and NEVER "
                 "announce or say your own name.")
 
-    async def _gen_message(c: dict, admin_id: str, instruction: str, context: str = "") -> str:
-        """One-off in-character generation (e.g. a relative proactively texting the user)."""
+    async def _gen_message(c: dict, admin_id: str, instruction: str, context: str = "",
+                           spoken: bool = False) -> str:
+        """One-off in-character generation (e.g. a relative proactively texting the user).
+        spoken=True lets the model embed performable audio cues ([crying], [sighs]…) for a
+        voice message so the emotion is actually heard."""
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         st = await db.ai_char_state.find_one(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
@@ -901,7 +904,7 @@ def build_router(ctx) -> APIRouter:
             ctx += "\n" + _rt
         chat = LlmChat(api_key=settings_store.get("EMERGENT_LLM_KEY"),
                        session_id=f"aichar-{c['id']}-{admin_id}",
-                       system_message=_system(c, False, ctx)).with_model("anthropic", "claude-sonnet-4-6")
+                       system_message=_system(c, spoken, ctx)).with_model("anthropic", "claude-sonnet-4-6")
         resp = await chat.send_message(UserMessage(text=instruction))
         return (resp or "").strip()
 
@@ -941,8 +944,12 @@ def build_router(ctx) -> APIRouter:
         for rc, rel in rels:
             toks = _relation_tokens(rc, rel)
             if any(re.search(rf"\b{re.escape(t)}\b", low) for t in toks):
-                await _run_char_exchange(admin_id, c, rc, seed=user_text)
-                await _relative_pings_user(admin_id, c, rc, user_text)
+                # Only actually reach the relative if they're awake & free right now. If
+                # they're asleep/busy, we DON'T wake them — the host's own reply will say
+                # they'll pass it on later, and the relative won't message about it.
+                if await _char_available(rc, admin_id):
+                    await _run_char_exchange(admin_id, c, rc, seed=user_text)
+                    await _relative_pings_user(admin_id, c, rc, user_text)
                 return
 
     def _tline(cname: str, m: dict) -> str:
@@ -1445,15 +1452,25 @@ def build_router(ctx) -> APIRouter:
         instr = (f'Right this second, this thought just popped into your head: "{thought}". '
                  "Act on it immediately — send the person a real message in your own voice, as if the "
                  "feeling just hit you. Write ONLY the message itself (what you'd actually send), nothing else.")
+        if mode == "voice":
+            instr += (" This is a VOICE message, so truly FEEL and PERFORM the emotion out loud — if you're "
+                      "upset or crying, let your voice break and sob with cues like [crying], [sniffles], "
+                      "[voice breaking], [choked up], and broken words (\"I-I just...\"); if happy, [laughs]/"
+                      "[excited]. Put the emotion right into how it sounds.")
         try:
-            message = _strip_actions(_strip_tags(await _gen_message(c, admin_id, instr)))
+            # For a voice message, generate in SPOKEN mode so the model embeds performable
+            # audio cues ([crying], [sniffles], [voice breaking], [sighs]…) — then synthesize
+            # the TTS from that RAW tagged text so the emotion is actually heard. The caption
+            # we store/show is the clean, tag-free version.
+            raw = await _gen_message(c, admin_id, instr, spoken=(mode == "voice"))
         except Exception as e:
             logger.warning(f"ai-char thought gen error {char_id}: {e}")
             raise HTTPException(502, "Couldn't act on that thought — try again")
+        message = _strip_actions(_strip_tags(raw))
         if not message:
             raise HTTPException(502, "Couldn't act on that thought — try again")
 
-        audio_url = await _tts_url(c, message) if mode == "voice" else None
+        audio_url = await _tts_url(c, raw) if mode == "voice" else None
         if mode == "voice" and audio_url:
             doc = await _store(c["id"], admin_id, "ai", message, audio_url, "audio")
         else:
@@ -2206,7 +2223,22 @@ def build_router(ctx) -> APIRouter:
                         {"character_id": c["id"], "admin_id": admin_id}, {"$set": _schedule(next_hours)}, upsert=True)
                     continue
                 p_voice = _should_voice(c, local_now)
-                p_audio = await _tts_url(c, message) if p_voice else None
+                if p_voice:
+                    # Re-voice the line in spoken mode so any real emotion (crying, excitement)
+                    # is performed aloud; fall back to the plain line if that fails.
+                    try:
+                        spoken_line = await _gen_message(
+                            c, admin_id,
+                            f'Say this as a heartfelt voice message in your own voice, performing the real '
+                            f'emotion out loud with audio cues ([crying], [sniffles], [laughs], [sighs]…) '
+                            f'wherever it genuinely fits: "{message}". Write ONLY the spoken line.',
+                            spoken=True)
+                        spoken_line = spoken_line.strip() or message
+                    except Exception:
+                        spoken_line = message
+                    p_audio = await _tts_url(c, spoken_line)
+                else:
+                    p_audio = None
                 if p_audio:
                     await _store(c["id"], admin_id, "ai", message, p_audio, "audio")
                 else:
