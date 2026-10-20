@@ -109,7 +109,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="grid gap-0 grid-cols-1 md:grid-cols-[320px_1fr] min-w-0 h-full">
+    <div className="grid gap-0 grid-cols-1 md:grid-cols-[320px_1fr] grid-rows-1 min-w-0 h-[calc(100dvh_-_env(safe-area-inset-top)_-_12rem)] md:h-[calc(100dvh_-_8rem)]">
       <aside className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <h1 className="text-xl font-black">Messages</h1>
@@ -709,7 +709,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   }
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
       <header className="flex items-center gap-3 border-b border-border p-3">
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden">
           <ArrowLeft size={18} />

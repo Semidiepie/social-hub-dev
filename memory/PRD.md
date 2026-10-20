@@ -1260,3 +1260,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - User wanted less "thinking" lag on calls WITHOUT changing the v4 voice. The lag is the LLM reply step, not TTS.
 - _reply now takes fast=False default. voice_turn passes fast=True (both single + group paths). When fast: history limit 40→14 (less prefill) + prompt appends a "live phone call, reply in ONE sentence (two max)" directive (less output to generate AND shorter TTS). MODEL UNCHANGED (claude-sonnet-4-6). Text chats/proactive keep fast=False (full depth).
 - Verified: 1:1 call reply now ~1 short sentence (e.g. 14 words) vs prior multi-sentence; snappier. STATUS: preview; needs redeploy.
+
+### 2026-06 (fork) — Chat view bounded to viewport (long-thread scroll fix, round 2)
+- Prior h-full fix only worked for SHORT threads: the AppShell content wrapper uses min-h-screen (grows with content), so h-full on the chat didn't bound it — long AI/DM threads grew tall and pushed the input off-screen (user: "have to scroll all the way down to message").
+- FIX: Messages grid root + LiveChatPage root now use a viewport-bounded height: h-[calc(100dvh_-_env(safe-area-inset-top)_-_12rem)] md:h-[calc(100dvh_-_8rem)] (accounts for mobile top bar + pt + pb-24 bottom-nav space + safe area). Added grid-rows-1 so the single row fills; AiCharacterChat/ChatPane/SageChat sections got h-full. Internal list (flex-1 overflow-y-auto) scrolls; existing scrollTop=scrollHeight effect lands on newest.
+- Verified on 430x900 with a 30-message AI thread: list auto-scrolls to msg #30, aichar-input in view at y=728. STATUS: preview; needs redeploy.
+- PASS-THE-PHONE: re-verified in preview with the group-call code — "pass the phone to your mom / put your mom on / let me talk to your mom / pass the phone" ALL join (host says "Mom…" vocative, relative greets name-less). Works in preview; production needs the redeploy of the group-call build.

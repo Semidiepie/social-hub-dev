@@ -98,7 +98,7 @@ export function SageChat({ onBack }) {
   };
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
       <header className="flex items-center gap-3 border-b border-border p-3">
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden"><ArrowLeft size={18} /></button>
         <Avatar src={SAGE.avatar_url} size={38} />
