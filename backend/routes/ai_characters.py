@@ -1992,6 +1992,12 @@ def build_router(ctx) -> APIRouter:
             + (time_ctx + "\n" if time_ctx else "")
             + f"- It's been about {idle_min} minutes of silence. You've sent {unanswered} unanswered check-in(s); "
             "if they keep ignoring you and that's not your nature, give them space.\n"
+            "- Talk about YOUR OWN day, life and feelings. Do NOT invent or state specific recent events "
+            "involving your family members or anyone else — e.g. 'Hope woke me up', 'your daughter just "
+            "called me', 'we had dinner together', 'she told me about her bad dream'. Those conversations "
+            "happen privately and you genuinely DON'T know what did or didn't happen in them, so never claim "
+            "such events as fact — you'll contradict reality. You may mention family in general terms (how "
+            "you feel about them, missing them), but never fabricate concrete things they said or did.\n"
         )
         if can_call:
             sys += (

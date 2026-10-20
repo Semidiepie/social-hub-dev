@@ -1313,3 +1313,8 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - New super-admin page `/admin/ai-characters` (`AdminAiCharacters.jsx`), tab added to `AdminTabs.jsx` (BrainCircuit icon), route in `App.js`. Pick a character, type a thought, click "Send Thought" → she acts on it immediately.
 - Backend `POST /api/ai-characters/{id}/thought` ({thought}, admin only): detects modality from the thought text — "voice/audio/record" → voice message (TTS via `_tts_url`, stored media_type audio), "call/phone/ring/facetime" → places a ringing call (ai_char_calls + push), else → text. Message generated in-character via `_gen_message` (acts on the thought), stored to the admin's thread, web push sent.
 - Verified preview: text/voice/call all fire correctly; admin UI renders (screenshot). STATUS: needs redeploy.
+
+### Proactive messages: no fabricated cross-character events (2026 fork)
+- Bug: a relative's scheduled proactive message (built only from that relative's OWN thread) invented concrete events about the host character (e.g. Juliette texting "Hope woke me up") that contradicted what the host actually told the user in a separate thread.
+- Fix: added a guardrail to `_proactive_decide` system prompt — the character must talk about their OWN day/feelings and must NOT invent/state specific recent events involving family or others ("Hope woke me up", "she told me about her bad dream", etc.), since those private conversations are unknown to them. General family mentions (missing them) still allowed.
+- Verified preview: mother-with-daughter proactive runs now stay about her own life, no fabricated Hope events. STATUS: needs redeploy.
