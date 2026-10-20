@@ -15,7 +15,7 @@ import random
 import re
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Annotated, Optional
+from typing import Annotated, List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -451,6 +451,8 @@ class VoiceTurnBody(BaseModel):
     tz: str = Field(default="", max_length=60)
     lat: Optional[float] = None
     lon: Optional[float] = None
+    participants: List[str] = Field(default_factory=list)   # char ids currently on the call (incl. host)
+    active_speaker: str = Field(default="", max_length=80)   # last character who spoke (continuity)
 
 
 def build_router(ctx) -> APIRouter:
@@ -795,6 +797,50 @@ def build_router(ctx) -> APIRouter:
         return any(k in low for k in (
             "ask your", "ask her", "ask him", "tell your", "tell her", "tell him",
             "message your", "text your", "let your", "check with", "find out from", "ask my"))
+
+    _VOCATIVES = {
+        "mother": "Mom", "father": "Dad", "grandmother": "Grandma", "grandfather": "Grandpa",
+        "aunt": "Auntie", "uncle": "Uncle", "sister": "Sis", "brother": "Bro",
+        "wife": "Honey", "husband": "Honey", "girlfriend": "Babe", "boyfriend": "Babe",
+    }
+
+    def _vocative(host: dict, rc: dict) -> str:
+        """What the host would call this relative OUT LOUD (e.g. 'Mom') — never their name."""
+        rel = (_relation_of(host, rc["id"]) or "").strip().lower()
+        if rel in _VOCATIVES:
+            return _VOCATIVES[rel]
+        for canon, syns in _RELATION_SYNONYMS.items():
+            if (rel == canon or rel in syns) and canon in _VOCATIVES:
+                return _VOCATIVES[canon]
+        return rc["name"].split()[0]
+
+    def _addr_tokens(p: dict, host: dict) -> list:
+        """Words the user might use to address this participant on a group call."""
+        toks = set()
+        fn = (p.get("name", "").split() or [""])[0].lower()
+        if len(fn) >= 2:
+            toks.add(fn)
+        if p["id"] != host["id"]:
+            for t in _relation_tokens(p, _relation_of(host, p["id"])):
+                toks.add(t)
+        return [t for t in toks if len(t) >= 2]
+
+    def _wants_join(text: str) -> bool:
+        low = (text or "").lower()
+        if _wants_passphone(text):
+            return True
+        return any(k in low for k in (
+            "bring ", "get your", "get her on", "get him on", "can she join", "can he join",
+            "join the call", "join us", "add your", "on the call", "come say hi",
+            "both of you", "talk to both", "speak to both", "all of you on"))
+
+    def _group_sys(speaker: dict, others: list, user_name: str) -> str:
+        names = ", ".join(o["name"].split()[0] for o in others) or "others"
+        return (f"RIGHT NOW you are on a GROUP voice call with {names}"
+                + (f" and {user_name}" if user_name else "")
+                + ". Everyone hears everyone. Speak ONLY as yourself, in your own voice — natural and "
+                "fairly brief. React to what was just said, don't repeat what the others say, and NEVER "
+                "announce or say your own name.")
 
     async def _gen_message(c: dict, admin_id: str, instruction: str, context: str = "") -> str:
         """One-off in-character generation (e.g. a relative proactively texting the user)."""
@@ -1172,9 +1218,11 @@ def build_router(ctx) -> APIRouter:
 
     async def _store(char_id: str, admin_id: str, role: str, text: str,
                      media_url: str = None, media_type: str = None,
-                     audio_duration: float = None) -> dict:
+                     audio_duration: float = None, channel: str = None) -> dict:
         doc = {"id": str(uuid.uuid4()), "character_id": char_id, "admin_id": admin_id,
                "role": role, "text": text, "created_at": _now()}
+        if channel:
+            doc["channel"] = channel   # 'call' = kept for memory but hidden from the chat thread
         if media_url:
             doc["media_url"] = media_url
             doc["media_type"] = media_type
@@ -1199,14 +1247,15 @@ def build_router(ctx) -> APIRouter:
         for c in rows:
             pub = _char_public(c)
             last = await db.ai_char_messages.find_one(
-                {"character_id": c["id"], "admin_id": current["id"]}, sort=[("created_at", -1)])
+                {"character_id": c["id"], "admin_id": current["id"], "channel": {"$ne": "call"}},
+                sort=[("created_at", -1)])
             lm = _msg_out(last) if last else None
             if lm and lm.get("media_type") == "audio":
                 lm["text"] = "🎤 Voice message"
             pub["last_message"] = lm
             state = await db.ai_char_state.find_one({"character_id": c["id"], "admin_id": current["id"]}) or {}
             last_read = await _coerce_dt(state.get("last_read_at"))
-            q = {"character_id": c["id"], "admin_id": current["id"], "role": "ai"}
+            q = {"character_id": c["id"], "admin_id": current["id"], "role": "ai", "channel": {"$ne": "call"}}
             if last_read:
                 q["created_at"] = {"$gt": last_read}
             pub["unread"] = await db.ai_char_messages.count_documents(q)
@@ -1303,7 +1352,7 @@ def build_router(ctx) -> APIRouter:
         _require_admin(current)
         c = await _get_char(char_id)
         rows = await db.ai_char_messages.find(
-            {"character_id": char_id, "admin_id": current["id"]}, {"_id": 0}
+            {"character_id": char_id, "admin_id": current["id"], "channel": {"$ne": "call"}}, {"_id": 0}
         ).sort("created_at", -1).to_list(500)
         rows.reverse()  # newest 500 in chronological order (don't strand recent messages past 500)
         # opening the thread marks it read (clears the unread badge)
@@ -1422,102 +1471,171 @@ def build_router(ctx) -> APIRouter:
     @router.post("/api/ai-characters/{char_id}/voice-turn")
     async def voice_turn(char_id: str, body: VoiceTurnBody, current: Annotated[dict, Depends(get_current_user)]):
         _require_admin(current)
-        c = await _get_char(char_id)
+        host = await _get_char(char_id)   # the call owner — always the on-screen character
+
+        # Resolve everyone currently on the call (host is always included).
+        part_ids = [p for p in (body.participants or []) if p]
+        if char_id not in part_ids:
+            part_ids = [char_id] + part_ids
+        seen, participants = set(), []
+        for pid in part_ids:
+            if pid in seen:
+                continue
+            seen.add(pid)
+            try:
+                participants.append(await _get_char(pid))
+            except Exception:
+                pass
+        if not participants:
+            participants = [host]
+
+        # Greeting (call start / incoming call) — NOT stored, so the call stays out of the chat.
         if body.greeting:
-            import random
-            nick = (c.get("nickname") or c.get("your_name") or "").strip()
+            nick = (host.get("nickname") or host.get("your_name") or "").strip()
             word = random.choice(["Hey", "Hi", "Hiya", "Yo", "Heyy", "Hey there"])
             display = f"{word}, {nick}!" if nick else f"{word}!"
-            spoken = f"[warmly] {display}"  # performed by the voice, stripped from the caption
-        else:
-            if not body.text.strip():
-                raise HTTPException(400, "Nothing to respond to")
-            await _store(char_id, current["id"], "user", body.text)
-            if body.tz:
-                await db.ai_char_state.update_one(
-                    {"character_id": char_id, "admin_id": current["id"]},
-                    {"$set": {"tz": body.tz}}, upsert=True)
-            # ---- Inter-character voice behaviors: pass the phone / overhear ----
-            rel_match = await _match_relative(c, body.text)
-            if not rel_match and _wants_passphone(body.text):
-                # Clear "pass the phone" intent but the relation word didn't match a
-                # stored label (e.g. an unusual/custom relation). If this character has
-                # exactly one relative, that's unambiguously who they mean — hand off.
-                _rels = await _relatives(c)
-                if len(_rels) == 1:
-                    rel_match = _rels[0]
-            if rel_match:
-                rc, _rel = rel_match
-                first = (rc.get("nickname") or rc["name"].split()[0])
-                if _wants_passphone(body.text):
-                    import random
-                    # Honor the relative's schedule — a busy/asleep person doesn't
-                    # come to the phone; the host explains naturally instead of faking it.
-                    if not await _char_available(rc, current["id"], tz_fallback=body.tz):
-                        excuse = random.choice([
-                            f"[softly] {first} can't come to the phone right now — want me to pass along a message?",
-                            f"{first}'s tied up at the moment, but I'll let them know you called.",
-                            f"[gently] {first} isn't free to talk right now — I can have them call you back.",
-                        ])
-                        await _store(char_id, current["id"], "ai", _strip_tags(excuse))
-                        return {"reply": _strip_tags(excuse), "audio_url": await _tts(c, excuse)}
-                    line = random.choice([
-                        f"[warmly] Okay, hold on — let me grab {first}.",
-                        f"Sure, one sec… [calling out] {first}! Phone's for you!",
-                        f"[softly] Yeah of course — here, passing you to {first} now.",
-                    ])
-                    await _store(char_id, current["id"], "ai", _strip_tags(line))
-                    greet = f"[warmly] Hey! It's {rc['name'].split()[0]}. So good to hear your voice."
-                    # Generate both voices in parallel so the user isn't left waiting
-                    # (daughter's hand-off line + mother's greeting at once).
-                    hand_audio, greet_audio = await asyncio.gather(_tts(c, line), _tts(rc, greet))
-                    return {"reply": _strip_tags(line), "audio_url": hand_audio,
-                            "handoff": {"character_id": rc["id"], "name": rc["name"],
-                                        "avatar_url": rc.get("avatar_url"),
-                                        "greeting_text": _strip_tags(greet), "greeting_audio": greet_audio}}
-                if _wants_relay(body.text):
-                    lines = await _exchange_lines(c, rc, seed=body.text, scenario="overhear",
-                                                  user_name=c.get("your_name") or "")
-                    segments = []
-                    for who, raw in lines:
-                        aud = await _tts(c if who == "A" else rc, raw)
-                        if aud:
-                            segments.append({"audio_url": aud, "distant": who == "B",
-                                             "text": _strip_tags(raw)})
-                    if segments:
-                        base = _now()
-                        convo = []
-                        for i, (who, raw) in enumerate(lines[:-1]):
-                            frm, to = (c, rc) if who == "A" else (rc, c)
-                            t = _strip_tags(raw)
-                            if t:
-                                convo.append({"id": str(uuid.uuid4()), "admin_id": current["id"],
-                                              "pair_key": "|".join(sorted([c["id"], rc["id"]])),
-                                              "from_id": frm["id"], "from_name": frm["name"],
-                                              "to_id": to["id"], "to_name": to["name"],
-                                              "text": t, "created_at": base + timedelta(seconds=i)})
-                        if convo:
-                            await db.ai_char_convos.insert_many(convo)
-                        closing = _strip_tags(lines[-1][1])
-                        if closing:
-                            await _store(char_id, current["id"], "ai", closing)
-                        return {"reply": closing, "segments": segments}
-            # ---- end inter-character ----
-            context = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
-            _ln = _local_now(body.tz)
-            if c.get("schedule") and _ln is not None:
-                context = (context + "\n" if context else "") + _schedule_now_ctx(c["schedule"], _ln)
+            spoken = f"[warmly] {display}"
+            return {"reply": display, "audio_url": await _tts(host, spoken)}
+
+        if not body.text.strip():
+            raise HTTPException(400, "Nothing to respond to")
+        if body.tz:
+            await db.ai_char_state.update_one(
+                {"character_id": char_id, "admin_id": current["id"]},
+                {"$set": {"tz": body.tz}}, upsert=True)
+
+        # Call turns are stored with channel='call': kept for each character's MEMORY but
+        # hidden from the visible chat thread. Store the user's words for every participant.
+        for p in participants:
+            await _store(p["id"], current["id"], "user", body.text, channel="call")
+
+        _ln = _local_now(body.tz)
+        context_rw = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
+
+        # ---- JOIN: bring a relative onto the call (keeps the original character present) ----
+        rel_match = await _match_relative(host, body.text)
+        if not rel_match and _wants_join(body.text):
+            _rels = await _relatives(host)
+            if len(_rels) == 1:
+                rel_match = _rels[0]
+        present_ids = {p["id"] for p in participants}
+        if rel_match and _wants_join(body.text) and rel_match[0]["id"] not in present_ids:
+            rc = rel_match[0]
+            voc = _vocative(host, rc)
+            if not await _char_available(rc, current["id"], tz_fallback=body.tz):
+                excuse = random.choice([
+                    f"[softly] {voc} can't come to the phone right now — want me to pass along a message?",
+                    f"{voc}'s tied up at the moment, but I'll let them know you called.",
+                ])
+                await _store(host["id"], current["id"], "ai", _strip_tags(excuse), channel="call")
+                return {"reply": _strip_tags(excuse), "audio_url": await _tts(host, excuse),
+                        "participants": [p["id"] for p in participants]}
+            call_line = random.choice([
+                f"[warmly] Hold on — {voc}! Come say hi.",
+                f"One sec… [calling out] {voc}, come here, you're on the call!",
+                f"[softly] Yeah of course — {voc}, hang on, I'll get you.",
+            ])
+            rcnick = (rc.get("nickname") or "").strip()
+            greet = f"[warmly] Hey{(', ' + rcnick) if rcnick else ''}! So good to hear your voice."
+            host_audio, greet_audio = await asyncio.gather(_tts(host, call_line), _tts(rc, greet))
+            await _store(host["id"], current["id"], "ai", _strip_tags(call_line), channel="call")
+            await _store(rc["id"], current["id"], "user", body.text, channel="call")
+            await _store(rc["id"], current["id"], "ai", _strip_tags(greet), channel="call")
+            segments = []
+            if host_audio:
+                segments.append({"character_id": host["id"], "name": host["name"],
+                                 "audio_url": host_audio, "text": _strip_tags(call_line), "distant": False})
+            if greet_audio:
+                segments.append({"character_id": rc["id"], "name": rc["name"],
+                                 "audio_url": greet_audio, "text": _strip_tags(greet), "distant": False})
+            return {"reply": _strip_tags(greet), "segments": segments,
+                    "participants": [p["id"] for p in participants] + [rc["id"]],
+                    "active_speaker": rc["id"]}
+
+        # ---- RELAY (overhear) — only in a 1:1 call when the relative isn't on the line ----
+        if rel_match and _wants_relay(body.text) and len(participants) == 1:
+            rc = rel_match[0]
+            lines = await _exchange_lines(host, rc, seed=body.text, scenario="overhear",
+                                          user_name=host.get("your_name") or "")
+            segments = []
+            for who, raw in lines:
+                aud = await _tts(host if who == "A" else rc, raw)
+                if aud:
+                    segments.append({"audio_url": aud, "distant": who == "B", "text": _strip_tags(raw)})
+            if segments:
+                base = _now()
+                convo = []
+                for i, (who, raw) in enumerate(lines[:-1]):
+                    frm, to = (host, rc) if who == "A" else (rc, host)
+                    t = _strip_tags(raw)
+                    if t:
+                        convo.append({"id": str(uuid.uuid4()), "admin_id": current["id"],
+                                      "pair_key": "|".join(sorted([host["id"], rc["id"]])),
+                                      "from_id": frm["id"], "from_name": frm["name"],
+                                      "to_id": to["id"], "to_name": to["name"],
+                                      "text": t, "created_at": base + timedelta(seconds=i)})
+                if convo:
+                    await db.ai_char_convos.insert_many(convo)
+                closing = _strip_tags(lines[-1][1])
+                if closing:
+                    await _store(host["id"], current["id"], "ai", closing, channel="call")
+                return {"reply": closing, "segments": segments,
+                        "participants": [p["id"] for p in participants]}
+
+        def _turn_ctx(p: dict) -> str:
+            ctx = context_rw
+            if p.get("schedule") and _ln is not None:
+                ctx = (ctx + "\n" if ctx else "") + _schedule_now_ctx(p["schedule"], _ln)
             if body.speakers.strip():
-                context = (context + "\n" if context else "") + body.speakers.strip()
-            try:
-                spoken = await _reply(c, current["id"], body.text, spoken=True, context=context)
-            except Exception as e:
-                logger.warning(f"ai-char voice reply error: {e}")
-                raise HTTPException(502, f"{c['name']} is having trouble responding right now")
-            display = _strip_tags(spoken)
-            await _store(char_id, current["id"], "ai", display)
-        audio = await _tts(c, spoken)
-        return {"reply": display, "audio_url": audio}
+                ctx = (ctx + "\n" if ctx else "") + body.speakers.strip()
+            return ctx
+
+        # ---- GROUP call (2+ on the line): everyone's present, each speaks in their own voice ----
+        if len(participants) > 1:
+            low = body.text.lower()
+            addressed = [p for p in participants
+                         if any(re.search(rf"\b{re.escape(t)}\b", low) for t in _addr_tokens(p, host))]
+            collective = re.search(r"\b(both|you two|you guys|you all|y'all|everyone|you both|all of you)\b", low)
+            active = body.active_speaker if body.active_speaker in present_ids else host["id"]
+            if addressed:
+                responders = addressed
+            elif collective:
+                responders = participants
+            else:
+                responders = [p for p in participants if p["id"] == active] or [host]
+
+            async def _one(p: dict):
+                others = [o for o in participants if o["id"] != p["id"]]
+                ctx = _turn_ctx(p)
+                ctx = (ctx + "\n" if ctx else "") + _group_sys(p, others, host.get("your_name") or "")
+                try:
+                    txt = await _reply(p, current["id"], body.text, spoken=True, context=ctx)
+                except Exception as e:
+                    logger.warning(f"ai-char group reply error ({p['name']}): {e}")
+                    return None
+                disp = _strip_tags(txt)
+                await _store(p["id"], current["id"], "ai", disp, channel="call")
+                return {"character_id": p["id"], "name": p["name"],
+                        "audio_url": await _tts(p, txt), "text": disp, "distant": False}
+
+            segs = [s for s in await asyncio.gather(*[_one(p) for p in responders]) if s]
+            if not segs:
+                raise HTTPException(502, "Nobody could respond right now — try again")
+            return {"reply": segs[-1]["text"], "segments": segs,
+                    "participants": [p["id"] for p in participants],
+                    "active_speaker": segs[-1]["character_id"]}
+
+        # ---- SINGLE participant (normal 1:1 call) ----
+        try:
+            spoken = await _reply(host, current["id"], body.text, spoken=True, context=_turn_ctx(host))
+        except Exception as e:
+            logger.warning(f"ai-char voice reply error: {e}")
+            raise HTTPException(502, f"{host['name']} is having trouble responding right now")
+        display = _strip_tags(spoken)
+        await _store(host["id"], current["id"], "ai", display, channel="call")
+        return {"reply": display, "audio_url": await _tts(host, spoken),
+                "participants": [host["id"]], "active_speaker": host["id"]}
+
 
     @router.post("/api/ai-characters/stt")
     async def stt(audio: UploadFile = File(...), current: dict = Depends(get_current_user)):

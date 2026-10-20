@@ -327,7 +327,7 @@ export function AiCharacterChat({ characterId, onBack }) {
 // send → character replies with voice. When `autoListen` is on (answered incoming
 // calls) it greets first, then listens hands-free and replies after you stop talking.
 export function CharacterCall({ character: initialCharacter, onEnd, autoListen = false }) {
-  const [char, setChar] = useState(initialCharacter);
+  const [char] = useState(initialCharacter);
   const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
   const [caption, setCaption] = useState("");
   const [speaker, setSpeaker] = useState(true);
@@ -352,9 +352,10 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
   const vadTimerRef = useRef(null);
   const micSrcRef = useRef(null);
   const stopSendRef = useRef(null);
-  // Who is actually on the line right now. The on-screen profile ALWAYS stays the
-  // host (initialCharacter); only this routing id changes on a "pass the phone".
-  const activeCharRef = useRef(initialCharacter.id);
+  // The on-screen profile ALWAYS stays the host (initialCharacter). These track the
+  // live group call: who's on the line, and who spoke last (for conversational flow).
+  const participantsRef = useRef([initialCharacter.id]);
+  const activeSpeakerRef = useRef(initialCharacter.id);
 
   const ensureAC = () => {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -395,13 +396,14 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
     })();
   }), []);
 
-  // Play a short multi-voice scene (e.g. you overhearing the character ask their
-  // mom): clips play back-to-back; "distant" voices (the other person in another
-  // room) are quieter so it feels like you're overhearing them.
+  // Play multi-voice segments back-to-back, each in its own character's voice.
+  // Used for group calls (everyone present) and the "overhear" scene ("distant"
+  // voices are quieter). Tracks who spoke last for conversational continuity.
   const playSegments = useCallback(async (segments) => {
     for (const s of segments || []) {
       if (endedRef.current) break;
       if (s.text) setCaption(s.text);
+      if (s.character_id) activeSpeakerRef.current = s.character_id;
       await playAudio(s.audio_url, s.distant ? 0.4 : 1);
     }
   }, [playAudio]);
@@ -502,17 +504,18 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
         return;
       }
       setCaption(text);
-      const r = await api.post(`/ai-characters/${activeCharRef.current}/voice-turn`, { text, speakers: speaker_note || "", ...gatherContext() });
+      const r = await api.post(`/ai-characters/${initialCharacter.id}/voice-turn`, {
+        text, speakers: speaker_note || "",
+        participants: participantsRef.current,
+        active_speaker: activeSpeakerRef.current,
+        ...gatherContext(),
+      });
       if (endedRef.current) return;
-      if (r.handoff) {
-        // "Pass the phone to your mom" — play the hand-off line in the current
-        // voice, then whoever picks up becomes the active speaker. The on-screen
-        // profile (name/avatar) stays the HOST — only the voice/personality change.
-        setCaption(r.reply); await playAudio(r.audio_url);
-        activeCharRef.current = r.handoff.character_id;
-        if (r.handoff.greeting_text) setCaption(r.handoff.greeting_text);
-        if (r.handoff.greeting_audio) await playAudio(r.handoff.greeting_audio);
-      } else if (r.segments && r.segments.length) {
+      // Keep the live roster + last speaker in sync (group call state). The on-screen
+      // profile (name/avatar) always stays the host — only the voices change.
+      if (Array.isArray(r.participants)) participantsRef.current = r.participants;
+      if (r.active_speaker) activeSpeakerRef.current = r.active_speaker;
+      if (r.segments && r.segments.length) {
         setCaption(r.reply || "");
         await playSegments(r.segments);
       } else {
