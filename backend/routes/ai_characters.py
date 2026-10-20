@@ -998,11 +998,16 @@ def build_router(ctx) -> APIRouter:
         kind = {"video": "video", "audio_file": "audio clip"}.get(media_type, "photo")
         verb = "listen to" if media_type == "audio_file" else "look at"
         sense = "hear in it (music, sounds, a voice, the vibe)" if media_type == "audio_file" else "see in it"
+        audio_note = (" If there's singing or a speaking voice, listen carefully to the VOICE itself and "
+                      "get the singer's gender right — a higher/female voice is a woman ('she/her'), a "
+                      "lower/male voice is a man ('he/him'). Don't assume or guess the gender; go by what "
+                      "you actually hear." if media_type == "audio_file" else "")
         prompt = ((f"Recent conversation:\n{transcript}\n\n" if transcript else "")
                   + (f'They just sent you {("an " + kind) if kind == "audio clip" else ("a " + kind)} and said: "{user_text}"\n\n' if user_text.strip()
                      else f"They just sent you {('an ' + kind) if kind == 'audio clip' else ('a ' + kind)} (no caption).\n\n")
                   + f"Actually {verb} the {kind} and react naturally, warmly and in-character as {c['name']} — "
-                  + f"comment on what you genuinely {sense}. Keep it to a text message, no stage directions.")
+                  + f"comment on what you genuinely {sense}." + audio_note
+                  + " Keep it to a text message, no stage directions.")
         tmp = None
         try:
             async with httpx.AsyncClient(timeout=120) as client:
