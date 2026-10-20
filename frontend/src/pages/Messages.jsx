@@ -802,7 +802,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
-        <input ref={dmFileRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={sendMedia} data-testid="chat-file-input" />
+        <input ref={dmFileRef} type="file" accept="image/*,video/*,audio/*,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/ogg,.mp3,.m4a,.wav,.aac,.ogg,.oga,.flac" className="hidden" onChange={sendMedia} data-testid="chat-file-input" />
         {!recordingVoice && (
           <button type="button" onClick={() => dmFileRef.current?.click()} disabled={uploading} title="Send a photo or video"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="chat-attach">

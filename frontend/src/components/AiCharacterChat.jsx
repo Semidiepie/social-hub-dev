@@ -299,7 +299,7 @@ export function AiCharacterChat({ characterId, onBack }) {
       </div>
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-border p-3">
-        <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={sendMedia} data-testid="aichar-file-input" />
+        <input ref={fileRef} type="file" accept="image/*,video/*,audio/*,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/ogg,.mp3,.m4a,.wav,.aac,.ogg,.oga,.flac" className="hidden" onChange={sendMedia} data-testid="aichar-file-input" />
         {!recordingVoice && (
           <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} title="Send a photo, video or audio file"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-primary hover:bg-primary/10 disabled:opacity-50" data-testid="aichar-attach">
