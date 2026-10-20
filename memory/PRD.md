@@ -1308,3 +1308,8 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Call-mode STT now diarizes (was plain). `/stt` with `mode=call` runs `_diarize_convert(content, True)` so multiple human voices on one call are separated; it still SKIPS the `_audio_env` background-audio Gemini pass to stay fast (~0.77s measured). Voice notes still do both.
 - Flow was already wired: frontend forwards `speakers: speaker_note` → voice_turn injects it into context → `_parse_diarization` emits a "MORE THAN ONE person heard" note that tells the character to greet/answer the 2nd voice and remember an introduced name.
 - Verified preview: 2-voice clip split into main voice + 2nd person; Hope greeted introduced "Sarah" by name and answered "Dad" in the same turn. NOTE: diarization labels voices as speaker 1/2 — the character needs a quick verbal intro ("this is my wife Sarah") to use a real name. STATUS: needs redeploy.
+
+### Admin "AI Characters" tab — plant a thought (2026 fork)
+- New super-admin page `/admin/ai-characters` (`AdminAiCharacters.jsx`), tab added to `AdminTabs.jsx` (BrainCircuit icon), route in `App.js`. Pick a character, type a thought, click "Send Thought" → she acts on it immediately.
+- Backend `POST /api/ai-characters/{id}/thought` ({thought}, admin only): detects modality from the thought text — "voice/audio/record" → voice message (TTS via `_tts_url`, stored media_type audio), "call/phone/ring/facetime" → places a ringing call (ai_char_calls + push), else → text. Message generated in-character via `_gen_message` (acts on the thought), stored to the admin's thread, web push sent.
+- Verified preview: text/voice/call all fire correctly; admin UI renders (screenshot). STATUS: needs redeploy.
