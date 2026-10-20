@@ -573,11 +573,14 @@ def build_router(ctx) -> APIRouter:
             base += (" You are on a VOICE call, so answer the way a person naturally speaks out loud: "
                      "short warm sentences, no markdown, no bullet lists, no emojis, easy to say aloud. "
                      "To sound truly human, express real emotion with inline audio cues in square brackets "
-                     "that the voice will PERFORM (not say): [laughs], [giggles], [sighs], [whispers], "
+                     "that the voice will PERFORM (not say): [laughs], [giggles], [sighs], "
                      "[excited], [sad], [crying], [nervously], [gasps], [clears throat]. Use them naturally and "
                      "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
-                     "breathing and pauses. Never read a tag out loud or explain it. Keep each reply to 1-3 short "
-                     "sentences so you respond quickly and the call feels snappy.")
+                     "breathing and pauses. Speak in a normal voice by default — ONLY whisper (with [whispers]) "
+                     "if you genuinely need to be quiet right then (someone's asleep nearby, you're somewhere "
+                     "you have to keep your voice down); never whisper otherwise. Never read a tag out loud or "
+                     "explain it. Keep each reply to 1-3 short sentences so you respond quickly and the call "
+                     "feels snappy.")
         else:
             base += ("\n\nRIGHT NOW you are TEXTING — typed messages in a chat, NOT on a call. Write like a real "
                      "text message (casual, natural length). Do NOT use spoken audio cues like [laughs] or [sighs] "
@@ -1576,7 +1579,7 @@ def build_router(ctx) -> APIRouter:
             voc = _vocative(host, rc)
             if not await _char_available(rc, current["id"], tz_fallback=body.tz):
                 excuse = random.choice([
-                    f"[softly] {voc} can't come to the phone right now — want me to pass along a message?",
+                    f"[warmly] {voc} can't come to the phone right now — want me to pass along a message?",
                     f"{voc}'s tied up at the moment, but I'll let them know you called.",
                 ])
                 await _store(host["id"], current["id"], "ai", _strip_tags(excuse), channel="call")
@@ -1585,7 +1588,7 @@ def build_router(ctx) -> APIRouter:
             call_line = random.choice([
                 f"[warmly] Hold on — {voc}! Come say hi.",
                 f"One sec… [calling out] {voc}, come here, you're on the call!",
-                f"[softly] Yeah of course — {voc}, hang on, I'll get you.",
+                f"[warmly] Yeah of course — {voc}, hang on, I'll get you.",
             ])
             rcnick = (rc.get("nickname") or "").strip()
             greet = f"[warmly] Hey{(', ' + rcnick) if rcnick else ''}! So good to hear your voice."
