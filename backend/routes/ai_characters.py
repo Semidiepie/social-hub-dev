@@ -903,7 +903,8 @@ def build_router(ctx) -> APIRouter:
             return f"[{m.get('text', '')}]"
         return f"{'User' if m['role'] == 'user' else cname}: {m.get('text', '')}"
 
-    async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "") -> str:
+    async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "",
+                     fast: bool = False) -> str:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         st = await db.ai_char_state.find_one(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
@@ -914,9 +915,12 @@ def build_router(ctx) -> APIRouter:
         _cc = await _convo_context(admin_id, c["id"])
         if _cc:
             context += "\n" + _cc
+        # On live calls, read LESS back-history and answer SHORT so the reply comes back
+        # fast (less "thinking"). Same model/voice — just a lighter, snappier turn.
+        hist_limit = 14 if fast else 40
         history = await db.ai_char_messages.find(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
-        ).sort("created_at", -1).limit(40).to_list(40)
+        ).sort("created_at", -1).limit(hist_limit).to_list(hist_limit)
         history.reverse()
         transcript = "\n".join(_tline(c['name'], m) for m in history)
         chat = LlmChat(
@@ -924,8 +928,10 @@ def build_router(ctx) -> APIRouter:
             session_id=f"aichar-{c['id']}-{admin_id}",
             system_message=_system(c, spoken, context),
         ).with_model("anthropic", "claude-sonnet-4-6")
+        brief = ("\n\nThis is a live phone call — reply the way people actually talk on the phone: "
+                 "short and quick, usually ONE sentence (two at most). No long speeches." if fast else "")
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
-            f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.'
+            f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.' + brief
         )
         resp = await chat.send_message(UserMessage(text=prompt))
         return (resp or "").strip()
@@ -1609,7 +1615,7 @@ def build_router(ctx) -> APIRouter:
                 ctx = _turn_ctx(p)
                 ctx = (ctx + "\n" if ctx else "") + _group_sys(p, others, host.get("your_name") or "")
                 try:
-                    txt = await _reply(p, current["id"], body.text, spoken=True, context=ctx)
+                    txt = await _reply(p, current["id"], body.text, spoken=True, context=ctx, fast=True)
                 except Exception as e:
                     logger.warning(f"ai-char group reply error ({p['name']}): {e}")
                     return None
@@ -1627,7 +1633,7 @@ def build_router(ctx) -> APIRouter:
 
         # ---- SINGLE participant (normal 1:1 call) ----
         try:
-            spoken = await _reply(host, current["id"], body.text, spoken=True, context=_turn_ctx(host))
+            spoken = await _reply(host, current["id"], body.text, spoken=True, context=_turn_ctx(host), fast=True)
         except Exception as e:
             logger.warning(f"ai-char voice reply error: {e}")
             raise HTTPException(502, f"{host['name']} is having trouble responding right now")
