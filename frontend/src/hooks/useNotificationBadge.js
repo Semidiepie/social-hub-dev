@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { enableBrowserPush, isBrowserPushEnabled, pushSupported } from "@/lib/webpush";
+import { playNotificationChime } from "@/lib/sounds";
 
 const BASE_TITLE = "PostMePlex";
 const POLL_MS = 30000;
@@ -52,6 +53,7 @@ function setFaviconBadge(hasUnread) {
 export function useNotificationBadge() {
   const { user } = useAuth();
   const lastCountRef = useRef(0);
+  const initRef = useRef(false);
   const pushTriedRef = useRef(false);
 
   useEffect(() => {
@@ -59,6 +61,7 @@ export function useNotificationBadge() {
       document.title = BASE_TITLE;
       setFaviconBadge(false);
       lastCountRef.current = 0;
+      initRef.current = false;
       return;
     }
 
@@ -81,6 +84,12 @@ export function useNotificationBadge() {
         if (!alive) return;
         document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
         setFaviconBadge(count > 0);
+        // Play a distinct notification chime whenever NEW activity arrives (but not on
+        // the first poll after load, so we don't ding for pre-existing unread items).
+        if (initRef.current && count > lastCountRef.current) {
+          playNotificationChime();
+        }
+        initRef.current = true;
         // Foreground fallback: if new items arrived while the tab is hidden and
         // permission is granted, surface a quick browser notification.
         if (

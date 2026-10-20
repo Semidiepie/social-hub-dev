@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, Square, Volume2, VolumeX, Trash2, Brain, ImagePlus } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Phone, PhoneOff, Mic, MicOff, Square, Volume2, VolumeX, Trash2, Brain, ImagePlus } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -331,6 +331,9 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
   const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
   const [caption, setCaption] = useState("");
   const [speaker, setSpeaker] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+  mutedRef.current = muted;
   const [volume, setVolume] = useState(() => {
     const v = parseFloat(localStorage.getItem("aichar.volume"));
     return isNaN(v) ? 0.7 : Math.min(1, Math.max(0, v));
@@ -372,7 +375,7 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
   // Play the reply through a GainNode so the volume slider actually controls
   // loudness on iOS Safari (which ignores <audio>.volume).
   const playAudio = useCallback((url, gainMul = 1) => new Promise((resolve) => {
-    if (!url) return resolve();
+    if (!url || mutedRef.current) return resolve();
     let done = false; let watchdog;
     const finish = () => { if (done) return; done = true; clearTimeout(watchdog); resolve(); };
     (async () => {
@@ -428,7 +431,7 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
   };
 
   const startRecording = async () => {
-    if (endedRef.current) return;
+    if (endedRef.current || mutedRef.current) return;
     try {
       const stream = await ensureMic();
       let mime = "";
@@ -581,6 +584,24 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
     onEnd();
   };
   const toggleSpeaker = () => { const next = !speaker; setSpeaker(next); if (gainRef.current) gainRef.current.gain.value = next ? volumeRef.current : 0; };
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next); mutedRef.current = next;
+    if (next) {
+      // Muted: nobody can hear you (disable the mic) AND the character goes quiet —
+      // stop any reply mid-sentence and stop listening/sending until you unmute.
+      try { streamRef.current?.getAudioTracks().forEach((t) => { t.enabled = false; }); } catch { /* noop */ }
+      try { srcNodeRef.current?.stop(); } catch { /* noop */ }
+      stopVad();
+      try { if (recorderRef.current?.state === "recording") recorderRef.current.stop(); } catch { /* noop */ }
+      recorderRef.current = null;
+      setStatus("idle");
+    } else {
+      try { streamRef.current?.getAudioTracks().forEach((t) => { t.enabled = true; }); } catch { /* noop */ }
+      setStatus("idle");
+      if (autoListen && !endedRef.current) startRecording();
+    }
+  };
   const changeVolume = (v) => {
     setVolume(v);
     localStorage.setItem("aichar.volume", String(v));
@@ -589,7 +610,7 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
 
   const recording = status === "recording";
   const busy = status === "connecting" || status === "thinking" || status === "speaking";
-  const statusText = {
+  const statusText = muted ? "Muted — they can't hear you" : {
     connecting: "Connecting…", idle: autoListen ? "Just speak…" : "Tap the mic and talk",
     recording: autoListen ? "Listening…" : "Listening… tap to send", thinking: `${char.name} is thinking…`, speaking: `${char.name} is speaking…`,
   }[status];
@@ -607,11 +628,14 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
       <div className="mt-10 flex items-center gap-6">
         <button
           onClick={recording ? stopRecordingAndSend : startRecording}
-          disabled={busy}
+          disabled={busy || muted}
           className={`flex h-20 w-20 items-center justify-center rounded-full transition-colors ${recording ? "bg-white text-black" : "bg-primary text-white"} disabled:opacity-40`}
           data-testid="aichar-mic-btn"
         >
           {recording ? <Square size={26} /> : <Mic size={30} />}
+        </button>
+        <button onClick={toggleMute} className={`flex h-14 w-14 items-center justify-center rounded-full ${muted ? "bg-red-500 text-white" : "bg-white/15 text-white"}`} title={muted ? "Unmute" : "Mute"} data-testid="aichar-mute-toggle">
+          {muted ? <MicOff size={22} /> : <Mic size={22} />}
         </button>
         <button onClick={toggleSpeaker} className={`flex h-14 w-14 items-center justify-center rounded-full ${speaker ? "bg-green-500 text-white" : "bg-white/15 text-white"}`} title={speaker ? "Speaker on" : "Speaker off"} data-testid="aichar-speaker-toggle">
           {speaker ? <Volume2 size={22} /> : <VolumeX size={22} />}
