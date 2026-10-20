@@ -453,7 +453,7 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
           const data = new Uint8Array(analyser.frequencyBinCount);
           // Wait for a real, settled pause before deciding you're done — so breathing
           // or a mid-thought beat won't cut you off, but reply promptly once you stop.
-          const SILENCE_MS = 1400;      // continuous quiet that counts as "done talking"
+          const SILENCE_MS = 1000;      // continuous quiet that counts as "done talking"
           const MAX_TURN_MS = 60000;    // hard safety cap on a single turn
           let spoke = false; let silenceStart = 0; const started = Date.now();
           vadTimerRef.current = setInterval(() => {
@@ -491,6 +491,7 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
       const fd = new FormData();
       const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
       fd.append("audio", blob, `speech.${ext}`);
+      fd.append("mode", "call");
       const sttRes = await fetch(`${BACKEND_URL}/api/ai-characters/stt`, {
         method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: fd,
       });

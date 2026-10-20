@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Annotated, List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 try:
@@ -578,6 +578,12 @@ def build_router(ctx) -> APIRouter:
                      "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
                      "breathing and pauses. Never read a tag out loud or explain it. Keep each reply to 1-3 short "
                      "sentences so you respond quickly and the call feels snappy.")
+        else:
+            base += ("\n\nRIGHT NOW you are TEXTING — typed messages in a chat, NOT on a call. Write like a real "
+                     "text message (casual, natural length). Do NOT use spoken audio cues like [laughs] or [sighs] "
+                     "(those are only for calls). In the history, lines marked '(on the phone)' were things said "
+                     "out loud on an earlier voice call — remember them, and you can naturally reference 'when we "
+                     "talked on the phone' vs what was texted.")
         return base
 
     async def _realworld_context(local_time: str, tz: str, lat, lon) -> str:
@@ -923,10 +929,13 @@ def build_router(ctx) -> APIRouter:
                 return
 
     def _tline(cname: str, m: dict) -> str:
-        """Render one history line; system events (call started/ended) shown as [event]."""
+        """Render one history line; system events (call started/ended) shown as [event].
+        Lines spoken during a voice call are tagged so the character knows, later while
+        texting, that that part of the history happened ON THE PHONE (not typed)."""
         if m.get("role") == "system":
             return f"[{m.get('text', '')}]"
-        return f"{'User' if m['role'] == 'user' else cname}: {m.get('text', '')}"
+        tag = "(on the phone) " if m.get("channel") == "call" else ""
+        return f"{tag}{'User' if m['role'] == 'user' else cname}: {m.get('text', '')}"
 
     async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "",
                      fast: bool = False) -> str:
@@ -944,7 +953,7 @@ def build_router(ctx) -> APIRouter:
         # fast (less "thinking"). Same model/voice — just a lighter, snappier turn.
         hist_limit = 14 if fast else 40
         history = await db.ai_char_messages.find(
-            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
+            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1, "channel": 1}
         ).sort("created_at", -1).limit(hist_limit).to_list(hist_limit)
         history.reverse()
         transcript = "\n".join(_tline(c['name'], m) for m in history)
@@ -952,9 +961,13 @@ def build_router(ctx) -> APIRouter:
             api_key=settings_store.get("EMERGENT_LLM_KEY"),
             session_id=f"aichar-{c['id']}-{admin_id}",
             system_message=_system(c, spoken, context),
-        ).with_model("anthropic", "claude-sonnet-4-6")
-        brief = ("\n\nThis is a live phone call — reply the way people actually talk on the phone: "
-                 "short and quick, usually ONE sentence (two at most). No long speeches." if fast else "")
+        ).with_model("anthropic", "claude-haiku-4-5-20251001" if fast else "claude-sonnet-4-6")
+        if fast:
+            # Hard-cap the generation so the reply is genuinely short — this cuts BOTH the
+            # LLM time AND the voice-synth time (long replies were the real call lag).
+            chat = chat.with_params(max_tokens=64)
+        brief = ("\n\nThis is a live phone call — talk like a real phone call: ONE short sentence, "
+                 "reply instantly, no speeches, no lists, no rambling. Keep it under ~15 words." if fast else "")
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
             f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.' + brief
         )
@@ -1083,12 +1096,15 @@ def build_router(ctx) -> APIRouter:
         audio = await _tts_bytes(c, text)
         return await _upload_audio(audio) if audio else None
 
-    def _diarize_convert(content: bytes):
-        """Blocking ElevenLabs STT with speaker diarization. Returns the raw response
-        (falls back to a plain transcript if diarization isn't available)."""
+    def _diarize_convert(content: bytes, diarize: bool = True):
+        """Blocking ElevenLabs STT. With diarize=True it tags multiple speakers (voice
+        notes); with diarize=False it's a plain, faster transcription (live calls, where
+        there's only one known speaker and every millisecond of lag is felt)."""
         import io
         from elevenlabs.client import ElevenLabs
         client = ElevenLabs(api_key=settings_store.get("ELEVENLABS_API_KEY"))
+        if not diarize:
+            return client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1")
         try:
             return client.speech_to_text.convert(file=io.BytesIO(content), model_id="scribe_v1",
                                                   diarize=True, tag_audio_events=True)
@@ -1670,7 +1686,8 @@ def build_router(ctx) -> APIRouter:
 
 
     @router.post("/api/ai-characters/stt")
-    async def stt(audio: UploadFile = File(...), current: dict = Depends(get_current_user)):
+    async def stt(audio: UploadFile = File(...), mode: str = Form(""),
+                  current: dict = Depends(get_current_user)):
         _require_admin(current)
         eleven_key = settings_store.get("ELEVENLABS_API_KEY")
         if not eleven_key:
@@ -1678,11 +1695,14 @@ def build_router(ctx) -> APIRouter:
         content = await audio.read()
         if not content:
             raise HTTPException(400, "Empty audio")
+        # Live calls: plain (no-diarization) transcription + skip the background-audio
+        # pass. Fewer moving parts = the turn comes back noticeably faster.
+        fast = mode == "call"
         try:
-            r = await asyncio.to_thread(_diarize_convert, content)
+            r = await asyncio.to_thread(_diarize_convert, content, not fast)
             text, speaker_note = _parse_diarization(r)
-            env = await _audio_env(content, audio.content_type or "audio/mpeg", r, deep=False)
-            note = "\n".join(n for n in (speaker_note, env) if n)
+            note = speaker_note if fast else "\n".join(
+                n for n in (speaker_note, await _audio_env(content, audio.content_type or "audio/mpeg", r, deep=False)) if n)
         except Exception as e:
             logger.warning(f"ai-char stt error: {e}")
             await _flag_elevenlabs(e)

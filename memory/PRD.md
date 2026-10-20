@@ -1278,3 +1278,15 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Verified via curl: "Hope what do you think" / "I miss Hope" → stay Juliette; "can I talk to Hope" / "put Hope back on" / "pass me back to Hope" → Hope; "you both" → both.
 - LATENCY ("still a lot of thinking"): option-B speed fix (trim history to 14 + brevity, same Sonnet) applies to calls (fast=True). Remaining delay is mostly eleven_v4 TTS synth, which user wants kept. All preview; needs redeploy.
 - STILL PENDING: chat header (call button) hidden + page-scroll on device (screenshot was old prod build; dvh-calc fix is in preview, verify after redeploy; AppShell viewport-lock is the fallback if it still scrolls).
+
+### 2026-06 (fork) — Calls: fast model (no "thinking") + AI knows call vs text
+- v4 VOICE UNCHANGED (TTS_MODEL stays eleven_v4). The speedup is the TEXT model only.
+- _reply fast=True (calls only) now uses "claude-haiku-4-5-20251001"; fast=False (texting/proactive) stays "claude-sonnet-4-6". Haiku generation is ~instant so there's effectively no thinking lag; remaining call delay ≈ v4 TTS synth (kept per user).
+- CHANNEL AWARENESS: _system now explicitly tells the AI whether it's on a VOICE CALL (spoken) or TEXTING (typed) — and in texting mode, no spoken audio cues. _tline tags call history lines "(on the phone)" (channel=='call') so the character remembers what was said on a call vs texted; _reply projection now includes channel.
+- Verified: call turn → Haiku short reply + v4 audio (~3.4s, mostly TTS); text send works (Sonnet path). STATUS: preview; needs redeploy.
+
+### Call latency pass 2 (2026 fork) — faster call turns, v4 kept
+- `_reply` fast path now caps generation with `.with_params(max_tokens=64)` + a stricter one-short-sentence brief → call replies dropped from ~28 words to ~9-15, cutting BOTH Haiku gen time and v4 TTS synth time (the real lag was long replies). Text/proactive (Sonnet, fast=False) unchanged.
+- `/api/ai-characters/stt` accepts `mode` (Form). `mode=="call"` → plain scribe_v1 transcription (no diarize/tag_audio_events) and skips the `_audio_env` pass. `_diarize_convert(content, diarize)` added. Voice-notes/default still diarize + env.
+- Web call client (`AiCharacterChat.jsx`): sends `mode=call` to STT; VAD `SILENCE_MS` 1400→1000 (less end-of-turn dead air).
+- Measured preview: text turn ~2.1s (was ~2.3-2.4), STT call-mode ~0.7s (was ~0.8 diarized), -0.4s silence. Felt per-turn ≈ ~3.7s (was ~5s). Floor remaining = v4 synth (kept per user). STATUS: preview; needs redeploy + real-device feel confirmation.
