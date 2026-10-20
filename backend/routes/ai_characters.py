@@ -1671,7 +1671,42 @@ def build_router(ctx) -> APIRouter:
                 return {"character_id": p["id"], "name": p["name"],
                         "audio_url": await _tts(p, txt), "text": disp, "distant": False}
 
-            segs = [s for s in await asyncio.gather(*[_one(p) for p in responders]) if s]
+            # When the caller asks to be passed to someone else, the person being handed off
+            # normally just goes quiet (a clean handoff). They only chime in if there's a REAL
+            # reason right now — they genuinely have to get off the phone, or something just
+            # said bothers them — never a random "bye!" (that read as fake).
+            async def _handoff_interject(dep: dict):
+                others = [o for o in participants if o["id"] != dep["id"]]
+                leaving = not await _char_available(dep, current["id"], tz_fallback=body.tz)
+                ctx = _turn_ctx(dep)
+                ctx = (ctx + "\n" if ctx else "") + _group_sys(dep, others, host.get("your_name") or "")
+                ctx += ("\n\nThe caller just asked to be passed to someone else, so you're handing over "
+                        "the phone now. Do NOT chime in out of politeness or just to say goodbye. Stay "
+                        "quiet UNLESS you have a genuine reason this very second: "
+                        + ("you actually need to get off the phone right now (you're busy / it's your "
+                           "time to go), or " if leaving else "")
+                        + "the caller just said something that genuinely bothers, worries or annoys you "
+                        "and you can't let it pass. If there is NO real reason, reply with exactly the "
+                        "single word SILENT and nothing else. Otherwise reply with ONE short, natural "
+                        "spoken line.")
+                try:
+                    txt = await _reply(dep, current["id"], body.text, spoken=True, context=ctx, fast=True)
+                except Exception:
+                    return None
+                clean = _strip_tags(txt).strip()
+                if not clean or re.sub(r"[^a-z]", "", clean.lower()) == "silent":
+                    return None
+                await _store(dep["id"], current["id"], "ai", clean, channel="call")
+                return {"character_id": dep["id"], "name": dep["name"],
+                        "audio_url": await _tts(dep, txt), "text": clean, "distant": False}
+
+            addressed_ids = {a["id"] for a in addressed}
+            departing = (next((p for p in participants if p["id"] == active), None)
+                         if addressed and active not in addressed_ids else None)
+
+            resp_task = asyncio.gather(*[_one(p) for p in responders])
+            inter = await _handoff_interject(departing) if departing else None
+            segs = ([inter] if inter else []) + [s for s in await resp_task if s]
             if not segs:
                 raise HTTPException(502, "Nobody could respond right now — try again")
             return {"reply": segs[-1]["text"], "segments": segs,

@@ -1290,3 +1290,8 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - `/api/ai-characters/stt` accepts `mode` (Form). `mode=="call"` → plain scribe_v1 transcription (no diarize/tag_audio_events) and skips the `_audio_env` pass. `_diarize_convert(content, diarize)` added. Voice-notes/default still diarize + env.
 - Web call client (`AiCharacterChat.jsx`): sends `mode=call` to STT; VAD `SILENCE_MS` 1400→1000 (less end-of-turn dead air).
 - Measured preview: text turn ~2.1s (was ~2.3-2.4), STT call-mode ~0.7s (was ~0.8 diarized), -0.4s silence. Felt per-turn ≈ ~3.7s (was ~5s). Floor remaining = v4 synth (kept per user). STATUS: preview; needs redeploy + real-device feel confirmation.
+
+### Group-call handoff realism (2026 fork)
+- When the caller asks to be passed to someone (e.g. "pass me back to Hope"), the person being handed off (e.g. Juliette) now stays SILENT by default — a clean handoff, no fake "bye!" interjection.
+- New gated `_handoff_interject` in voice_turn group block: the departing speaker only chimes in when there's a GENUINE reason — they actually need to get off the phone (schedule shows them busy/unavailable → `leaving=True`) OR the caller just said something that genuinely bothers/worries them. Otherwise the model returns "SILENT" and is dropped. Interjection (if any) plays BEFORE the addressed responder; active_speaker ends on the addressed person.
+- Verified (preview, temp Hope/Juliette): available+neutral → Juliette silent; busy → silent handoff; caller "I crashed the car" → Juliette cuts in then Hope. STATUS: preview; needs redeploy. The random interrupt the user saw was likely OLD deployed code (preview already did clean handoff before this change).
