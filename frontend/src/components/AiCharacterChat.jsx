@@ -326,7 +326,7 @@ export function AiCharacterChat({ characterId, onBack }) {
 // Push-to-talk voice call (same UX as Sage): greeting → tap mic to talk → tap to
 // send → character replies with voice. When `autoListen` is on (answered incoming
 // calls) it greets first, then listens hands-free and replies after you stop talking.
-export function CharacterCall({ character: initialCharacter, onEnd, autoListen = false }) {
+export function CharacterCall({ character: initialCharacter, onEnd, autoListen = false, incoming = false }) {
   const [char] = useState(initialCharacter);
   const [status, setStatus] = useState("connecting"); // connecting | idle | recording | thinking | speaking
   const [caption, setCaption] = useState("");
@@ -543,11 +543,15 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
     api.post(`/ai-characters/${initialCharacter.id}/call-event`, { event: "start" }).catch(() => {});
     (async () => {
       try {
-        const r = await api.post(`/ai-characters/${char.id}/voice-turn`, { greeting: true });
-        if (endedRef.current) return;
-        setCaption(r.reply);
-        await playAudio(r.audio_url);
-        if (!endedRef.current) { setStatus("idle"); if (autoListen) startRecording(); } // they called you → listen for your reply
+        // Only the character SAYS hi first when THEY called you (incoming). When YOU
+        // place the call, they just pick up and wait for you to talk — no greeting.
+        if (incoming) {
+          const r = await api.post(`/ai-characters/${char.id}/voice-turn`, { greeting: true });
+          if (endedRef.current) return;
+          setCaption(r.reply);
+          await playAudio(r.audio_url);
+        }
+        if (!endedRef.current) { setStatus("idle"); if (autoListen) startRecording(); } // listen for your reply
       } catch {
         if (!endedRef.current) { toast.error("Couldn't start the voice call"); onEnd(); }
       }

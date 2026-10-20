@@ -203,6 +203,18 @@ def _strip_tags(text: str) -> str:
     return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
+# Whisper/soft/quiet performance tags — stripped from TTS so eleven_v4 never randomly
+# whispers (the model over-used these and it read as fake/annoying). Normal emotion tags
+# ([laughs], [excited], [sad]…) are untouched.
+_WHISPER_TAG_RE = re.compile(
+    r"\[[^\]]*\b(?:whisper|soft|quiet|hush|murmur|mutter|under[ -]?breath|low[ -]?voice|breathy|sotto)\w*[^\]]*\]",
+    re.IGNORECASE)
+
+
+def _strip_whisper(text: str) -> str:
+    return re.sub(r"\s{2,}", " ", _WHISPER_TAG_RE.sub("", text or "")).strip()
+
+
 ACTION_RE = re.compile(r"\*+[^*\n]{1,100}?\*+")  # *laughs softly* / **grins** roleplay actions
 
 
@@ -576,11 +588,9 @@ def build_router(ctx) -> APIRouter:
                      "that the voice will PERFORM (not say): [laughs], [giggles], [sighs], "
                      "[excited], [sad], [crying], [nervously], [gasps], [clears throat]. Use them naturally and "
                      "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
-                     "breathing and pauses. Speak in a normal voice by default — ONLY whisper (with [whispers]) "
-                     "if you genuinely need to be quiet right then (someone's asleep nearby, you're somewhere "
-                     "you have to keep your voice down); never whisper otherwise. Never read a tag out loud or "
-                     "explain it. Keep each reply to 1-3 short sentences so you respond quickly and the call "
-                     "feels snappy.")
+                     "breathing and pauses. Always speak in a normal, natural speaking voice — never "
+                     "whisper or lower your voice. Never read a tag out loud or explain it. Keep each reply "
+                     "to 1-3 short sentences so you respond quickly and the call feels snappy.")
         else:
             base += ("\n\nRIGHT NOW you are TEXTING — typed messages in a chat, NOT on a call. Write like a real "
                      "text message (casual, natural length). Do NOT use spoken audio cues like [laughs] or [sighs] "
@@ -1046,6 +1056,8 @@ def build_router(ctx) -> APIRouter:
         voice_id = c.get("voice_id")
         if not eleven_key or not voice_id:
             return None
+        # Never whisper: drop any whisper/soft/quiet tags before synthesis.
+        text = _strip_whisper(text)
 
         def _synth(model_id: str, synth_text: str) -> bytes:
             from elevenlabs import VoiceSettings

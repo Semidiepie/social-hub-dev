@@ -98,7 +98,7 @@ export function IncomingCallListener() {
     setIncoming(null);
   };
 
-  if (active) return <CharacterCall character={active} autoListen onEnd={() => setActive(null)} />;
+  if (active) return <CharacterCall character={active} autoListen incoming onEnd={() => setActive(null)} />;
   if (!incoming) return null;
 
   const c = incoming.character;
