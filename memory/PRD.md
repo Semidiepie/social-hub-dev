@@ -1270,3 +1270,11 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 ### 2026-06 (fork) — Can't attach MP3 in chat (greyed out in file picker)
 - User wanted to ATTACH an mp3 file (not record) in AI chat + DMs; the phone's file picker greyed out mp3s. Cause: file inputs used accept="image/*,video/*,audio/*" — the audio/* wildcard greys audio in iOS Files picker.
 - FIX: both chat file inputs (AiCharacterChat aichar-file-input + Messages chat-file-input) now accept explicit MIME types AND extensions: ...,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/ogg,.mp3,.m4a,.wav,.aac,.ogg,.oga,.flac. Handlers already treat file.type.startsWith('audio') as an audio file (upload resourceType 'video', audio_url/audio media_type). STATUS: preview; needs redeploy.
+
+### 2026-06 (fork) — Group call: only switch speaker on a DIRECT ASK
+- BUG (user): in a group call, mentioning the other person's name (even mid-sentence, e.g. "my brother never believed Hope existed" while talking to Juliette) rerouted the reply to that name, so Juliette went silent.
+- User rule: switch who's answering ONLY on an explicit ask; merely saying/mentioning a name must NOT switch.
+- FIX: _is_addressed(p, host, low) now matches ONLY explicit switch/ask phrases ("talk/speak/chat to X", "let me talk to X", "can i talk to X", "put X (back) on", "pass me (back) to X", "give/hand the phone to X", "switch to X", "back to X", "bring X back", "X come back"). Removed vocative-start and any-mention matching. Group responder = addressed(explicit) > collective("you both/you guys") > active_speaker (continuity).
+- Verified via curl: "Hope what do you think" / "I miss Hope" → stay Juliette; "can I talk to Hope" / "put Hope back on" / "pass me back to Hope" → Hope; "you both" → both.
+- LATENCY ("still a lot of thinking"): option-B speed fix (trim history to 14 + brevity, same Sonnet) applies to calls (fast=True). Remaining delay is mostly eleven_v4 TTS synth, which user wants kept. All preview; needs redeploy.
+- STILL PENDING: chat header (call button) hidden + page-scroll on device (screenshot was old prod build; dvh-calc fix is in preview, verify after redeploy; AppShell viewport-lock is the fallback if it still scrolls).

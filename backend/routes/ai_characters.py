@@ -825,6 +825,31 @@ def build_router(ctx) -> APIRouter:
                 toks.add(t)
         return [t for t in toks if len(t) >= 2]
 
+    def _is_addressed(p: dict, host: dict, low: str) -> bool:
+        """True ONLY when the user explicitly ASKS to talk to / switch to this person
+        ('let me talk to Hope', 'put Hope back on', 'pass me to Hope'). Merely saying
+        or mentioning their name — even at the start of a sentence — must NOT switch
+        who's answering; the current speaker keeps the line."""
+        for t in _addr_tokens(p, host):
+            et = re.escape(t)
+            patterns = [
+                rf"\b(?:talk|speak|chat) to {et}\b",
+                rf"\blet me (?:talk|speak|chat) (?:to )?{et}\b",
+                rf"\b(?:can|could|may|wanna|i wanna|i want to|i'd like to|lemme) (?:i )?(?:talk|speak|chat) (?:to )?{et}\b",
+                rf"\bput {et}\b",                                  # "put Hope on / back on"
+                rf"\bpass (?:me |it |the phone )?(?:to|back to) {et}\b",
+                rf"\b(?:give|hand) (?:me )?(?:the phone|it) (?:to|back to) {et}\b",
+                rf"\bswitch (?:to|back to) {et}\b",
+                rf"\bback to {et}\b",
+                rf"\bbring {et} back\b",
+                rf"\b(?:can|could) {et} come back\b",
+                rf"\b{et},? come back\b",
+            ]
+            if any(re.search(p_, low) for p_ in patterns):
+                return True
+        return False
+
+
     def _wants_join(text: str) -> bool:
         low = (text or "").lower()
         if _wants_passphone(text):
@@ -1599,15 +1624,16 @@ def build_router(ctx) -> APIRouter:
         # ---- GROUP call (2+ on the line): everyone's present, each speaks in their own voice ----
         if len(participants) > 1:
             low = body.text.lower()
-            addressed = [p for p in participants
-                         if any(re.search(rf"\b{re.escape(t)}\b", low) for t in _addr_tokens(p, host))]
-            collective = re.search(r"\b(both|you two|you guys|you all|y'all|everyone|you both|all of you)\b", low)
             active = body.active_speaker if body.active_speaker in present_ids else host["id"]
+            addressed = [p for p in participants if _is_addressed(p, host, low)]
+            collective = re.search(r"\b(both|you two|you guys|you all|y'all|everyone|you both|all of you)\b", low)
             if addressed:
                 responders = addressed
             elif collective:
                 responders = participants
             else:
+                # Nobody was directly addressed — keep talking to whoever's already on
+                # the line (continuity), NOT whoever happened to be name-dropped.
                 responders = [p for p in participants if p["id"] == active] or [host]
 
             async def _one(p: dict):
