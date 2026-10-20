@@ -1750,13 +1750,13 @@ def build_router(ctx) -> APIRouter:
         content = await audio.read()
         if not content:
             raise HTTPException(400, "Empty audio")
-        # Live calls: plain (no-diarization) transcription + skip the background-audio
-        # pass. Fewer moving parts = the turn comes back noticeably faster.
-        fast = mode == "call"
+        # Calls: diarize so we can tell separate voices apart (you vs. someone else on the
+        # line), but skip the background-audio pass to stay fast. Voice notes do both.
+        call = mode == "call"
         try:
-            r = await asyncio.to_thread(_diarize_convert, content, not fast)
+            r = await asyncio.to_thread(_diarize_convert, content, True)
             text, speaker_note = _parse_diarization(r)
-            note = speaker_note if fast else "\n".join(
+            note = speaker_note if call else "\n".join(
                 n for n in (speaker_note, await _audio_env(content, audio.content_type or "audio/mpeg", r, deep=False)) if n)
         except Exception as e:
             logger.warning(f"ai-char stt error: {e}")
