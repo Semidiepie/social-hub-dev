@@ -593,8 +593,8 @@ def build_router(ctx) -> APIRouter:
                      "[excited], [sad], [crying], [nervously], [gasps], [clears throat]. Use them naturally and "
                      "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
                      "breathing and pauses. Always speak in a normal, natural speaking voice — never "
-                     "whisper or lower your voice. Never read a tag out loud or explain it. Keep each reply "
-                     "to 1-3 short sentences so you respond quickly and the call feels snappy.")
+                     "whisper or lower your voice. Never read a tag out loud or explain it. Reply at whatever "
+                     "length feels natural — a short line, or a long flowing paragraph when you have a lot to say.")
         else:
             base += ("\n\nRIGHT NOW you are TEXTING — typed messages in a chat, NOT on a call. Write like a real "
                      "text message (casual, natural length). Do NOT use spoken audio cues like [laughs] or [sighs] "
@@ -987,11 +987,12 @@ def build_router(ctx) -> APIRouter:
             system_message=_system(c, spoken, context),
         ).with_model("anthropic", "claude-haiku-4-5-20251001" if fast else "claude-sonnet-4-6")
         if fast:
-            # Hard-cap the generation so the reply is genuinely short — this cuts BOTH the
-            # LLM time AND the voice-synth time (long replies were the real call lag).
-            chat = chat.with_params(max_tokens=64)
-        brief = ("\n\nThis is a live phone call — talk like a real phone call: ONE short sentence, "
-                 "reply instantly, no speeches, no lists, no rambling. Keep it under ~15 words." if fast else "")
+            # On a call she can talk freely — short quips OR long heartfelt paragraphs as the
+            # moment calls for. Generous cap so she's never cut off mid-thought.
+            chat = chat.with_params(max_tokens=700)
+        brief = ("\n\nThis is a live phone call — talk like a real person on the phone. Reply at whatever "
+                 "length feels natural: a quick line when that's all it needs, or a long, flowing paragraph "
+                 "when you've got a lot on your mind or something to explain. Don't hold back or force it short." if fast else "")
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
             f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.' + brief
         )
