@@ -16,6 +16,7 @@ import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import HomePage from "@/pages/Home";
 import BlogsPage from "@/pages/Blogs";
+import EmailPage from "@/pages/Email";
 import BlogReadPage from "@/pages/BlogRead";
 import BlogComposePage from "@/pages/BlogCompose";
 import BlogRequestPage from "@/pages/BlogRequest";
@@ -133,7 +134,7 @@ export default function App() {
             {/* Home & content — viewable by everyone but interactions need auth */}
             <Route path="/" element={<HomePage />} />
             <Route path="/blogs" element={<BlogsPage />} />
-            <Route path="/blogs/new" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
+            <Route path="/email" element={<ProtectedRoute><EmailPage /></ProtectedRoute>} />            <Route path="/blogs/new" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
             <Route path="/blogs/request" element={<ProtectedRoute><BlogRequestPage /></ProtectedRoute>} />
             <Route path="/blogs/:id" element={<BlogReadPage />} />
             <Route path="/blogs/:id/edit" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />

@@ -168,6 +168,7 @@ export default function SettingsPage() {
         avatar_url: user.avatar_url || "",
         cover_url: user.cover_url || "",
         username: user.username || "",
+        email: user.email || "",
       });
     }
   }, [user]);
@@ -178,6 +179,7 @@ export default function SettingsPage() {
     try {
       const payload = { ...profile };
       if (!payload.username || payload.username.length < 3) delete payload.username;
+      if (!payload.email || !payload.email.trim()) delete payload.email;
       const updated = await api.put("/auth/me", payload);
       patchUser(updated);
       toast.success("Profile updated");
@@ -354,6 +356,21 @@ export default function SettingsPage() {
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Your public channel URL. 3–20 characters: letters, numbers, underscores.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="email">Email address</Label>
+              <Input
+                id="email"
+                type="email"
+                value={profile.email}
+                onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
+                placeholder="you@example.com"
+                data-testid="settings-email"
+                className="mt-1.5 h-11"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Used for sign-in and recovery. Set a <b>@postmeplex.com</b> address to unlock the Email tab.
               </p>
             </div>
             <div>

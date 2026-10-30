@@ -1365,3 +1365,11 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - **Fix (server.py seed()):** per auth playbook ("never change an existing admin on restart"), seed now only keeps NON-credential canonical fields in sync (username, display_name, is_admin/super_admin/official/verified) and initialises `password_hash`/`reset_pin_hash` ONLY when missing. User-set PINs/passwords now persist across restarts.
 - **Verified (preview):** set official PIN to 5678 → restart backend → 5678 still works, old seed PIN 1000 rejected, founder 7455 still works.
 - **Note:** founder 7455 / official 1000 are now INITIAL/backfill values only; whatever the owner sets later sticks. Needs production redeploy; after redeploy, reset the affected PINs once more to a known value and it will persist.
+
+---
+## 2026-06 — PostMePlex Mail (internal email) + account email change (web)
+- **Scope decision:** User initially wanted real external email; NOT possible on platform (managed email is send-only/no inbound, From address is platform-fixed, and a free-form "email anyone" inbox is an open relay refused by anti-phishing guardrails). Built the compliant INTERNAL version instead (user agreed).
+- **Backend (server.py):** `mail` collection + endpoints — `GET /api/mail/inbox|sent|unread-count`, `GET/DELETE /api/mail/{id}` (mark-read on open, soft-delete via deleted_by), `POST /api/mail/send`. Gated by `_has_mail_access` = account email ends in `@postmeplex.com` (403 otherwise); recipient must be an existing `@postmeplex.com` PostMePlex user (400/404 otherwise). Not an external relay.
+- **Account email change:** `UpdateProfileBody.email` + `update_me` now validate (EmailStr) + enforce uniqueness; users can self-set any unused email incl. `@postmeplex.com` to unlock Mail.
+- **Web:** new `/email` page (`pages/Email.jsx`, ProtectedRoute) with persistent warning label, Inbox/Sent, read modal, compose modal; "Email" link added to hamburger side menu (`menu-email`). Settings profile adds an email field (`settings-email`).
+- **Verified:** backend curl (send→inbox/sent→read→unread count, 400/404/403 gating, email change + duplicate rejection + access unlock) and web smoke (page/warning/tabs/compose render). Web-only. Needs redeploy for production.

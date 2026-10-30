@@ -11,6 +11,7 @@ import {
   Music2,
   PawPrint,
   BookText,
+  Mail,
   ShoppingBag,
   Compass,
   MessageSquare,
@@ -43,6 +44,7 @@ const SHORTCUTS = [
   { label: "Music", route: "/music", icon: Music2 },
   { label: "My Pet", route: "/pet", icon: PawPrint },
   { label: "Blogs", route: "/blogs", icon: BookText },
+  { label: "Email", route: "/email", icon: Mail, testId: "menu-email" },
 ];
 
 const LINKS = [
