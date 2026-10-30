@@ -20,6 +20,7 @@ from typing import Annotated, List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 try:
@@ -623,8 +624,32 @@ def build_router(ctx) -> APIRouter:
                      "talked on the phone' vs what was texted.")
         return base
 
+    async def _fetch_weather(key, lat, lon) -> None:
+        """Refresh the weather cache in the BACKGROUND — never on a call's critical path."""
+        wx = ""
+        try:
+            async with httpx.AsyncClient(timeout=4) as client:
+                r = await client.get("https://api.open-meteo.com/v1/forecast", params={
+                    "latitude": lat, "longitude": lon,
+                    "current": "temperature_2m,weather_code,is_day", "temperature_unit": "celsius"})
+            if r.status_code < 400:
+                cur = r.json().get("current", {})
+                desc = WEATHER_CODES.get(cur.get("weather_code"), "")
+                temp = cur.get("temperature_2m")
+                day = "daytime" if cur.get("is_day") else "nighttime"
+                if desc or temp is not None:
+                    wx = f"Weather where they are right now: {desc}" if desc else "Weather where they are right now"
+                    if temp is not None:
+                        wx += f", about {round(temp)}°C"
+                    wx += f" ({day})."
+        except Exception as e:
+            logger.warning(f"weather lookup failed: {e}")
+        _WEATHER_CACHE[key] = (wx, datetime.now(timezone.utc).timestamp())
+
     async def _realworld_context(local_time: str, tz: str, lat, lon) -> str:
-        """Builds a 'this is true right now' block from the user's device clock and live weather."""
+        """'True right now' block from the device clock + live weather. NEVER blocks the
+        turn on the weather HTTP call — uses the cached value and refreshes in the
+        background, so replies come back instantly (especially the first turn of a call)."""
         parts = []
         if local_time:
             parts.append(f"Current local time on their phone: {local_time}" + (f" ({tz})" if tz else ""))
@@ -632,31 +657,14 @@ def build_router(ctx) -> APIRouter:
             key = (round(float(lat), 2), round(float(lon), 2))
             cached = _WEATHER_CACHE.get(key)
             nowts = datetime.now(timezone.utc).timestamp()
-            if cached and nowts - cached[1] < 900:  # reuse weather for 15 min (avoids per-turn latency)
+            if cached:
                 if cached[0]:
                     parts.append(cached[0])
+                if nowts - cached[1] >= 900:  # stale → refresh for next turn, don't wait
+                    asyncio.create_task(_fetch_weather(key, lat, lon))
             else:
-                wx = ""
-                try:
-                    async with httpx.AsyncClient(timeout=4) as client:
-                        r = await client.get("https://api.open-meteo.com/v1/forecast", params={
-                            "latitude": lat, "longitude": lon,
-                            "current": "temperature_2m,weather_code,is_day", "temperature_unit": "celsius"})
-                    if r.status_code < 400:
-                        cur = r.json().get("current", {})
-                        desc = WEATHER_CODES.get(cur.get("weather_code"), "")
-                        temp = cur.get("temperature_2m")
-                        day = "daytime" if cur.get("is_day") else "nighttime"
-                        if desc or temp is not None:
-                            wx = f"Weather where they are right now: {desc}" if desc else "Weather where they are right now"
-                            if temp is not None:
-                                wx += f", about {round(temp)}°C"
-                            wx += f" ({day})."
-                except Exception as e:
-                    logger.warning(f"weather lookup failed: {e}")
-                _WEATHER_CACHE[key] = (wx, nowts)
-                if wx:
-                    parts.append(wx)
+                # First time at this location — don't make her wait; weather joins next turn.
+                asyncio.create_task(_fetch_weather(key, lat, lon))
         return "\n".join(parts)
 
     async def _relatives(c: dict):
@@ -981,24 +989,29 @@ def build_router(ctx) -> APIRouter:
         tag = "(on the phone) " if m.get("channel") == "call" else ""
         return f"{tag}{'User' if m['role'] == 'user' else cname}: {m.get('text', '')}"
 
-    async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "",
-                     fast: bool = False) -> str:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        st = await db.ai_char_state.find_one(
-            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
-        context = _now_context(st.get("tz") or await _admin_tz(admin_id)) + ("\n" + context if context else "")
-        _rt = await _relatives_text(c)
-        if _rt:
-            context += "\n" + _rt
-        _cc = await _convo_context(admin_id, c["id"])
-        if _cc:
-            context += "\n" + _cc
+    async def _build_reply_chat(c: dict, admin_id: str, user_text: str, context: str,
+                                spoken: bool, fast: bool):
+        """Build the (LlmChat, prompt) for a reply. Shared by the normal path and the
+        streaming call path so both use identical model/history/brief."""
+        from emergentintegrations.llm.chat import LlmChat
         # On live calls, read LESS back-history and answer SHORT so the reply comes back
         # fast (less "thinking"). Same model/voice — just a lighter, snappier turn.
         hist_limit = 14 if fast else 40
-        history = await db.ai_char_messages.find(
-            {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1, "channel": 1}
-        ).sort("created_at", -1).limit(hist_limit).to_list(hist_limit)
+        # Independent reads — run them concurrently so she answers right away.
+        st, _rt, _cc, history = await asyncio.gather(
+            db.ai_char_state.find_one({"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}),
+            _relatives_text(c),
+            _convo_context(admin_id, c["id"]),
+            db.ai_char_messages.find(
+                {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1, "channel": 1}
+            ).sort("created_at", -1).limit(hist_limit).to_list(hist_limit),
+        )
+        st = st or {}
+        context = _now_context(st.get("tz") or await _admin_tz(admin_id)) + ("\n" + context if context else "")
+        if _rt:
+            context += "\n" + _rt
+        if _cc:
+            context += "\n" + _cc
         history.reverse()
         transcript = "\n".join(_tline(c['name'], m) for m in history)
         chat = LlmChat(
@@ -1019,8 +1032,78 @@ def build_router(ctx) -> APIRouter:
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
             f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.' + brief
         )
+        return chat, prompt
+
+    async def _reply(c: dict, admin_id: str, user_text: str, spoken: bool, context: str = "",
+                     fast: bool = False) -> str:
+        from emergentintegrations.llm.chat import UserMessage
+        chat, prompt = await _build_reply_chat(c, admin_id, user_text, context, spoken, fast)
         resp = await chat.send_message(UserMessage(text=prompt))
         return (resp or "").strip()
+
+    # Sentence boundary used to flush spoken chunks to TTS as the LLM writes them.
+    _SENT_END = re.compile(r'[.!?…\n]')
+
+    async def _stream_fast_reply(c: dict, admin_id: str, user_text: str, context: str):
+        """Live-call streaming: as the LLM writes the reply, synthesize each finished
+        sentence and yield {audio, text} segments so she starts speaking almost
+        instantly. Yields a final {done: True, reply: <full clean text>} sentinel."""
+        from emergentintegrations.llm.chat import UserMessage
+        try:
+            from emergentintegrations.llm.chat import TextDelta
+        except Exception:
+            TextDelta = None
+        chat, prompt = await _build_reply_chat(c, admin_id, user_text, context, spoken=True, fast=True)
+
+        async def _seg(spoken_seg: str):
+            seg = spoken_seg.strip()
+            if not seg:
+                return None
+            disp = _strip_actions(_strip_tags(seg)).strip()
+            audio = await _tts_bytes(c, seg)
+            if audio:
+                return {"audio": "data:audio/mpeg;base64," + base64.b64encode(audio).decode(), "text": disp}
+            if disp:
+                return {"audio": None, "text": disp}
+            return None
+
+        buf = ""
+        clean_parts: List[str] = []
+        async for ev in chat.stream_message(UserMessage(text=prompt)):
+            # IMPORTANT: only TextDelta carries incremental tokens. StreamDone also has
+            # a `.content` with the FULL text — using it would stream the reply twice.
+            if not (TextDelta and isinstance(ev, TextDelta)):
+                continue
+            delta = ev.content
+            if not delta:
+                continue
+            buf += delta
+            # Flush each completed sentence as soon as it's ready. For the FIRST segment,
+            # flush at an early clause boundary (comma/dash) so she starts talking sooner.
+            while True:
+                cut = None
+                se = _SENT_END.search(buf)
+                if se:
+                    cut = se.end()
+                elif not clean_parts:
+                    cl = re.search(r'[,;:]|—|–', buf)
+                    if cl and len(buf[:cl.start()].split()) >= 1:
+                        cut = cl.end()
+                if cut is None:
+                    break
+                seg, buf = buf[:cut], buf[cut:]
+                if len(seg.strip()) < 2:
+                    continue
+                out = await _seg(seg)
+                if out:
+                    clean_parts.append(out["text"])
+                    yield out
+        if buf.strip():
+            out = await _seg(buf)
+            if out:
+                clean_parts.append(out["text"])
+                yield out
+        yield {"done": True, "reply": " ".join(p for p in clean_parts if p).strip()}
 
     async def _media_reply(c: dict, admin_id: str, user_text: str, media_url: str,
                            media_type: str, context: str = "") -> str:
@@ -1849,6 +1932,77 @@ def build_router(ctx) -> APIRouter:
         await _store(host["id"], current["id"], "ai", display, channel="call")
         return {"reply": display, "audio_url": await _tts(host, spoken),
                 "participants": [host["id"]], "active_speaker": host["id"]}
+
+    @router.post("/api/ai-characters/{char_id}/voice-turn-stream")
+    async def voice_turn_stream(char_id: str, body: VoiceTurnBody,
+                                current: Annotated[dict, Depends(get_current_user)]):
+        """Low-latency CALL turn: streams the reply sentence-by-sentence (SSE) so the
+        character starts speaking almost instantly instead of waiting for the whole
+        reply + synthesis. Only the simple 1:1 case streams; greetings, group calls
+        and relative join/relay/overhear scenarios delegate to the standard endpoint."""
+        _require_admin(current)
+        host = await _get_char(char_id)
+        part_ids = [p for p in (body.participants or []) if p]
+        uniq = list(dict.fromkeys([char_id] + part_ids))
+        import json as _json
+
+        def _event(obj):
+            return "data: " + _json.dumps(obj) + "\n\n"
+
+        async def gen():
+            try:
+                complex_turn = (
+                    body.greeting or not body.text.strip() or len(uniq) > 1
+                    or bool(await _match_relative(host, body.text))
+                    or _wants_join(body.text) or _wants_relay(body.text)
+                )
+                if complex_turn:
+                    res = await voice_turn(char_id, body, current)
+                    if res.get("segments"):
+                        for s in res["segments"]:
+                            yield _event({"t": "seg", "audio": s.get("audio_url"),
+                                          "text": s.get("text", ""),
+                                          "character_id": s.get("character_id"),
+                                          "distant": s.get("distant", False)})
+                    elif res.get("audio_url") or res.get("reply"):
+                        yield _event({"t": "seg", "audio": res.get("audio_url"),
+                                      "text": res.get("reply", "")})
+                    yield _event({"t": "done", "reply": res.get("reply", ""),
+                                  "participants": res.get("participants") or [host["id"]],
+                                  "active_speaker": res.get("active_speaker") or host["id"]})
+                    return
+
+                # ---- simple 1:1 streaming ----
+                if body.tz:
+                    await _remember_tz(current["id"], body.tz)
+                await _store(host["id"], current["id"], "user", body.text, channel="call")
+                context_rw = await _realworld_context(body.local_time, body.tz, body.lat, body.lon)
+                _ln = _local_now(body.tz)
+                ctx = context_rw
+                if host.get("schedule") and _ln is not None:
+                    ctx = (ctx + "\n" if ctx else "") + _schedule_now_ctx(host["schedule"], _ln)
+                if body.speakers.strip():
+                    ctx = (ctx + "\n" if ctx else "") + body.speakers.strip()
+                full_reply = ""
+                async for part in _stream_fast_reply(host, current["id"], body.text, ctx):
+                    if part.get("done"):
+                        full_reply = part.get("reply", "")
+                        break
+                    yield _event({"t": "seg", "audio": part.get("audio"),
+                                  "text": part.get("text", ""), "character_id": host["id"]})
+                if full_reply:
+                    await _store(host["id"], current["id"], "ai", full_reply, channel="call")
+                yield _event({"t": "done", "reply": full_reply,
+                              "participants": [host["id"]], "active_speaker": host["id"]})
+            except HTTPException as e:
+                yield _event({"t": "error", "message": str(e.detail)})
+            except Exception as e:
+                logger.warning(f"ai-char voice-turn-stream error: {e}")
+                yield _event({"t": "error", "message": "trouble responding"})
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
 
 
     @router.post("/api/ai-characters/stt")

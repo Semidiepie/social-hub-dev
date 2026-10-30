@@ -373,6 +373,9 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
   // live group call: who's on the line, and who spoke last (for conversational flow).
   const participantsRef = useRef([initialCharacter.id]);
   const activeSpeakerRef = useRef(initialCharacter.id);
+  // Streaming-call playback queue: sentences play the moment they arrive.
+  const segQueueRef = useRef([]);
+  const drainingRef = useRef(false);
 
   const ensureAC = () => {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -407,7 +410,7 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
         srcNodeRef.current = src;
         setStatus("speaking");
         src.onended = finish;
-        watchdog = setTimeout(finish, 20000);
+        watchdog = setTimeout(finish, (decoded.duration + 3) * 1000);
         src.start();
       } catch { finish(); }
     })();
@@ -424,6 +427,69 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
       await playAudio(s.audio_url, s.distant ? 0.4 : 1);
     }
   }, [playAudio]);
+
+  // Play queued streaming sentences back-to-back. Guarded so only one drain runs.
+  const drainQueue = useCallback(async () => {
+    if (drainingRef.current) return;
+    drainingRef.current = true;
+    try {
+      while (segQueueRef.current.length && !endedRef.current) {
+        const s = segQueueRef.current.shift();
+        if (s.text) setCaption(s.text);
+        if (s.character_id) activeSpeakerRef.current = s.character_id;
+        await playAudio(s.audio, s.distant ? 0.4 : 1);
+      }
+    } finally {
+      drainingRef.current = false;
+    }
+  }, [playAudio]);
+
+  // Low-latency CALL turn: the server streams the reply sentence-by-sentence, so she
+  // starts speaking almost instantly. Resolves ONLY once all audio has finished playing
+  // (so the mic never reopens while she's still talking). Throws if streaming fails.
+  const streamTurn = useCallback(async ({ text, speakers }) => {
+    setStatus("thinking");
+    segQueueRef.current = [];
+    let errMsg = null;
+    const res = await fetch(`${BACKEND_URL}/api/ai-characters/${initialCharacter.id}/voice-turn-stream`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text, speakers: speakers || "",
+        participants: participantsRef.current, active_speaker: activeSpeakerRef.current,
+        ...gatherContext(),
+      }),
+    });
+    if (!res.ok || !res.body) throw new Error("stream-failed");
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const handle = (obj) => {
+      if (obj.t === "seg") {
+        if (obj.audio) { segQueueRef.current.push(obj); drainQueue(); }
+        else if (obj.text) setCaption(obj.text);
+      } else if (obj.t === "done") {
+        if (Array.isArray(obj.participants)) participantsRef.current = obj.participants;
+        if (obj.active_speaker) activeSpeakerRef.current = obj.active_speaker;
+      } else if (obj.t === "error") { errMsg = obj.message || "error"; }
+    };
+    while (!endedRef.current) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        const dl = chunk.split("\n").find((l) => l.startsWith("data:"));
+        if (dl) { try { handle(JSON.parse(dl.slice(5).trim())); } catch { /* noop */ } }
+      }
+    }
+    // Wait until every queued sentence has finished playing before handing the mic back.
+    while ((segQueueRef.current.length || drainingRef.current) && !endedRef.current) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (errMsg && !segQueueRef.current.length && !drainingRef.current) throw new Error(errMsg);
+  }, [drainQueue]);
 
   const stopVad = () => {
     if (vadTimerRef.current) { clearInterval(vadTimerRef.current); vadTimerRef.current = null; }
@@ -522,24 +588,28 @@ export function CharacterCall({ character: initialCharacter, onEnd, autoListen =
         return;
       }
       setCaption(text);
-      const r = await api.post(`/ai-characters/${initialCharacter.id}/voice-turn`, {
-        text, speakers: speaker_note || "",
-        participants: participantsRef.current,
-        active_speaker: activeSpeakerRef.current,
-        ...gatherContext(),
-      });
-      if (endedRef.current) return;
-      // Keep the live roster + last speaker in sync (group call state). The on-screen
-      // profile (name/avatar) always stays the host — only the voices change.
-      if (Array.isArray(r.participants)) participantsRef.current = r.participants;
-      if (r.active_speaker) activeSpeakerRef.current = r.active_speaker;
-      if (r.segments && r.segments.length) {
-        setCaption(r.reply || "");
-        await playSegments(r.segments);
-      } else {
-        setCaption(r.reply);
-        await playAudio(r.audio_url);
+      try {
+        await streamTurn({ text, speakers: speaker_note || "" });
+      } catch {
+        // Streaming unavailable — fall back to the standard whole-reply turn.
+        const r = await api.post(`/ai-characters/${initialCharacter.id}/voice-turn`, {
+          text, speakers: speaker_note || "",
+          participants: participantsRef.current,
+          active_speaker: activeSpeakerRef.current,
+          ...gatherContext(),
+        });
+        if (endedRef.current) return;
+        if (Array.isArray(r.participants)) participantsRef.current = r.participants;
+        if (r.active_speaker) activeSpeakerRef.current = r.active_speaker;
+        if (r.segments && r.segments.length) {
+          setCaption(r.reply || "");
+          await playSegments(r.segments);
+        } else {
+          setCaption(r.reply);
+          await playAudio(r.audio_url);
+        }
       }
+      if (endedRef.current) return;
       if (!endedRef.current) { setStatus("idle"); if (autoListen) startRecording(); } // keep the call flowing
     } catch {
       // A hiccup (STT/network) shouldn't dead-end a hands-free call — keep listening.
