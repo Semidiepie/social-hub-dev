@@ -53,7 +53,12 @@ export function applyThemeVars(spec) {
   const root = document.documentElement;
   const light = spec.mode === "light";
   const bg = rgbToHsl(hexToRgb(spec.background));
-  const fg = rgbToHsl(hexToRgb(spec.foreground));
+  let fg = rgbToHsl(hexToRgb(spec.foreground));
+  // Readability guard: if SAGE picked text too close to the background, force a
+  // high-contrast text color so nothing is ever unreadable.
+  if (Math.abs(luminance(spec.foreground) - luminance(spec.background)) < 0.42) {
+    fg = luminance(spec.background) < 0.5 ? { h: 0, s: 0, l: 98 } : { h: 222, s: 25, l: 12 };
+  }
   const primFg = luminance(spec.primary) > 0.62 ? "222 25% 12%" : "0 0% 100%";
   const accFg = luminance(spec.accent) > 0.62 ? "222 25% 12%" : "0 0% 100%";
   const set = {

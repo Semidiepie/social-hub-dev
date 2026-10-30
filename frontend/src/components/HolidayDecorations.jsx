@@ -154,7 +154,7 @@ const Balloon = ({ pos, color = "#ff6b3d", delay = 0 }) => (
 );
 
 const Cake = ({ pos }) => (
-  <svg className={`pmp-hd ${pos}`} style={{ left: "50%", transform: "translateX(-50%)", bottom: 0, margin: 14 }} width="120" height="110" viewBox="0 0 120 110">
+  <svg className={`pmp-hd pmp-hd-bottom ${pos}`} style={{ left: "50%", transform: "translateX(-50%)", margin: 14 }} width="120" height="110" viewBox="0 0 120 110">
     <rect x="18" y="58" width="84" height="42" rx="6" fill="#ff8fcf" />
     <rect x="28" y="38" width="64" height="26" rx="6" fill="#ffd4e6" />
     <path d="M18 64 q10 10 21 0 t21 0 t21 0 t21 0" fill="#fff" opacity="0.85" />

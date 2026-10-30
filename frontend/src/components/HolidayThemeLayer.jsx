@@ -45,6 +45,13 @@ export default function HolidayThemeLayer() {
 
   useEffect(() => { setHideBanner(false); }, [spec?.name, spec?.banner]);
 
+  // Announce the theme, then tuck the banner away so it never blocks the UI.
+  useEffect(() => {
+    if (!spec?.banner || hideBanner) return undefined;
+    const t = setTimeout(() => setHideBanner(true), 6500);
+    return () => clearTimeout(t);
+  }, [spec?.name, spec?.banner, hideBanner]);
+
   if (!spec) return null;
 
   return (
