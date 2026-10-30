@@ -1358,3 +1358,10 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - **Bug: framed avatar off-center** (`Avatar.jsx`) — a passed layout `className` (e.g. `mb-4` on group message avatars) was applied to the inner image inside the cosmetic-frame wrapper, pushing the image off the frame disc so it looked outside the circle. Fix: apply `className` to the outermost element (inner only when no frame/live), keeping frame + image concentric.
 - **Bug: chat refreshed/snapped to bottom every few seconds** (`Messages.jsx` ChatPane) — parent re-polls `/conversations` every 8s and passes a NEW `conv` object; ChatPane's reset effect keyed off the object reference, so it cleared messages + reset scroll each poll. Fix: key `load`/reset effect off `conv.id`. Verified in preview: open chat list stayed stable (no spinner/reset) across a full poll cycle.
 - Web-only; needs redeploy for production. Framed-avatar visual not reproducible in preview (no production group data).
+
+---
+## 2026-06 — Auth fix: seed no longer wipes user-set PINs (founder + official accounts)
+- **Bug (production):** startup `seed()` ran on every backend restart and unconditionally overwrote `password_hash` + `reset_pin_hash` for seeded accounts (super-admin founder, official postmeplex) back to hardcoded values. Each production redeploy/restart reverted the owner's chosen PIN → "invalid pin, keep resetting" on those accounts only (personal accounts unaffected).
+- **Fix (server.py seed()):** per auth playbook ("never change an existing admin on restart"), seed now only keeps NON-credential canonical fields in sync (username, display_name, is_admin/super_admin/official/verified) and initialises `password_hash`/`reset_pin_hash` ONLY when missing. User-set PINs/passwords now persist across restarts.
+- **Verified (preview):** set official PIN to 5678 → restart backend → 5678 still works, old seed PIN 1000 rejected, founder 7455 still works.
+- **Note:** founder 7455 / official 1000 are now INITIAL/backfill values only; whatever the owner sets later sticks. Needs production redeploy; after redeploy, reset the affected PINs once more to a known value and it will persist.

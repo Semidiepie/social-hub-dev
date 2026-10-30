@@ -3246,26 +3246,30 @@ async def seed():
         existing = await db.users.find_one({"email": email})
         if existing:
             uid = existing["id"]
-            # Always overwrite canonical credential + admin fields so they
-            # cannot drift. Avatar/bio are left alone so the user's edits stick.
+            # Keep non-credential canonical fields in sync, but NEVER overwrite a
+            # PIN/password the account owner set in the live app — this seed runs
+            # on every restart, so clobbering credentials would revert the owner's
+            # chosen PIN each boot (caused "invalid pin, keep resetting").
             set_fields = {
                 "username": u["username"],
                 "display_name": u["display_name"],
-                "password_hash": hash_pw(u["password"]),
                 "is_verified": u.get("is_verified", False),
                 "is_admin": u.get("is_admin", False),
                 "is_super_admin": u.get("is_super_admin", False),
                 "is_official": u.get("is_official", False),
             }
-            # Super-admin's own reset PIN is always 7455 (fixed recovery code).
-            if u.get("is_super_admin"):
-                set_fields["reset_pin_hash"] = hash_pin(ADMIN_DEFAULT_PIN)
-                set_fields["reset_pin_set_at"] = now()
-                set_fields["reset_pin_failed_attempts"] = 0
-                set_fields["reset_pin_locked_until"] = None
-            # Non-admin official accounts get a fixed login PIN so the founder can sign in.
-            elif u.get("pin"):
-                set_fields["reset_pin_hash"] = hash_pin(u["pin"])
+            # Only initialise credentials when the account is missing them.
+            if not existing.get("password_hash"):
+                set_fields["password_hash"] = hash_pw(u["password"])
+            if not existing.get("reset_pin_hash"):
+                if u.get("is_super_admin"):
+                    set_fields["reset_pin_hash"] = hash_pin(ADMIN_DEFAULT_PIN)
+                    set_fields["reset_pin_set_at"] = now()
+                    set_fields["reset_pin_failed_attempts"] = 0
+                    set_fields["reset_pin_locked_until"] = None
+                elif u.get("pin"):
+                    set_fields["reset_pin_hash"] = hash_pin(u["pin"])
+                    set_fields["reset_pin_set_at"] = now()
             await db.users.update_one({"id": uid}, {"$set": set_fields})
         else:
             new_doc = {
