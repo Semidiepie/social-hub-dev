@@ -600,11 +600,12 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   const dmFileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [recordingVoice, setRecordingVoice] = useState(false);
+  const convId = conv?.id;
 
   const load = useCallback(async () => {
-    if (!conv) return;
+    if (!convId) return;
     try {
-      const rows = await api.get(`/conversations/${conv.id}/messages`);
+      const rows = await api.get(`/conversations/${convId}/messages`);
       // Only re-render when something actually changed (new msg, reaction, or read
       // status) — polling an unchanged thread must NOT re-render (that caused the
       // "page reloads every couple seconds" flicker + scroll jumps).
@@ -618,7 +619,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
     } finally {
       setLoading(false);
     }
-  }, [conv]);
+  }, [convId]);
 
   useEffect(() => {
     setLoading(true);
@@ -627,13 +628,13 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
     sigRef.current = "";
     atBottomRef.current = true;
     load();
-    if (!conv) return undefined;
+    if (!convId) return undefined;
     const t = setInterval(() => {
       load();
-      api.get(`/conversations/${conv.id}/typing`).then((r) => setTypingUsers(r.users || [])).catch(() => {});
+      api.get(`/conversations/${convId}/typing`).then((r) => setTypingUsers(r.users || [])).catch(() => {});
     }, 3500);
     return () => clearInterval(t);
-  }, [conv, load]);
+  }, [convId, load]);
 
   // Auto-scroll to the newest message only when the user is already near the bottom,
   // so reading older messages isn't interrupted by polls/new messages.

@@ -20,7 +20,7 @@ export function Avatar({ src, alt, size = 40, className = "", ring = false, fram
     <div
       className={`inline-flex items-center justify-center overflow-hidden rounded-full bg-secondary ${
         ring && !showFrame ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
-      } ${live ? "ring-2 ring-red-500 ring-offset-2 ring-offset-background" : ""} ${showFrame ? "relative z-10" : ""} ${className}`}
+      } ${live ? "ring-2 ring-red-500 ring-offset-2 ring-offset-background" : ""} ${showFrame ? "relative z-10" : ""} ${!showFrame && !live ? className : ""}`}
       style={{ width: size, height: size }}
     >
       <img
@@ -34,7 +34,7 @@ export function Avatar({ src, alt, size = 40, className = "", ring = false, fram
     </div>
   );
   const core = !showFrame ? inner : (
-    <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <span className={`relative inline-flex items-center justify-center ${!live ? className : ""}`} style={{ width: size, height: size }}>
       {customRing ? (
         <span className="pmp-frame" style={customRing} aria-hidden />
       ) : (
@@ -45,7 +45,7 @@ export function Avatar({ src, alt, size = 40, className = "", ring = false, fram
   );
   if (!live) return core;
   return (
-    <span className="relative inline-flex items-center justify-center" style={{ width: size, height: size }} data-testid="avatar-live">
+    <span className={`relative inline-flex items-center justify-center ${className}`} style={{ width: size, height: size }} data-testid="avatar-live">
       {core}
       <span
         className="absolute -bottom-1 left-1/2 z-20 -translate-x-1/2 rounded bg-red-500 px-1 font-black uppercase leading-none text-white"

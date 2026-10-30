@@ -1352,3 +1352,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - **Web:** `BlogRead.jsx` sets per-article head tags imperatively via useEffect (title, description, canonical, OG, Twitter, `og:type=article`) and injects **NewsArticle JSON-LD** only for official-authored blogs; restores on unmount. (Used imperative DOM management instead of react-helmet-async because the preview's JSX source-instrumentation plugin broke Helmet's child parsing → duplicate tags.) `public/robots.txt` added, pointing to the sitemap.
 - **Verified (preview, credit-safe):** sitemap returns valid XML listing official blogs; blog page shows single correct description/og:type/canonical + valid NewsArticle JSON-LD; robots.txt served 200.
 - **User actions required:** verify postmeplex.com in Google Search Console + submit `https://www.postmeplex.com/api/sitemap.xml`. Redeploy to push to production.
+
+---
+## 2026-06 — Messages fixes (web): group avatar framing + scroll reset
+- **Bug: framed avatar off-center** (`Avatar.jsx`) — a passed layout `className` (e.g. `mb-4` on group message avatars) was applied to the inner image inside the cosmetic-frame wrapper, pushing the image off the frame disc so it looked outside the circle. Fix: apply `className` to the outermost element (inner only when no frame/live), keeping frame + image concentric.
+- **Bug: chat refreshed/snapped to bottom every few seconds** (`Messages.jsx` ChatPane) — parent re-polls `/conversations` every 8s and passes a NEW `conv` object; ChatPane's reset effect keyed off the object reference, so it cleared messages + reset scroll each poll. Fix: key `load`/reset effect off `conv.id`. Verified in preview: open chat list stayed stable (no spinner/reset) across a full poll cycle.
+- Web-only; needs redeploy for production. Framed-avatar visual not reproducible in preview (no production group data).
