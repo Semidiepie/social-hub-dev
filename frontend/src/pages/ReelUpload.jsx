@@ -1,11 +1,14 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Send, X, Film } from "lucide-react";
+import { Loader2, Send, X, Film, UserPlus } from "lucide-react";
 import { api } from "@/lib/api";
+import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/context/AuthContext";
+import CollaboratorPicker from "@/components/CollaboratorPicker";
 import { toast } from "sonner";
 import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
 import { compressVideoToTarget, TARGET_MAX_BYTES } from "@/lib/videoCompress";
@@ -13,6 +16,7 @@ import { compressVideoToTarget, TARGET_MAX_BYTES } from "@/lib/videoCompress";
 // Dedicated web page to publish a vertical reel (shows in the Reels feed).
 export default function ReelUploadPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [file, setFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
@@ -23,6 +27,8 @@ export default function ReelUploadPage() {
   const [caption, setCaption] = useState("");
   const [gameTag, setGameTag] = useState("");
   const [busy, setBusy] = useState(false);
+  const [collaborator, setCollaborator] = useState(null);
+  const [showCollabPicker, setShowCollabPicker] = useState(false);
 
   const onFile = async (e) => {
     const f = e.target.files?.[0];
@@ -87,9 +93,15 @@ export default function ReelUploadPage() {
         thumbnail_url: thumbnailUrl || null,
         game_tag: gameTag.trim() || null,
         duration: duration || null,
+        collaborator_id: collaborator?.id || null,
       });
-      toast.success("Reel published!");
-      navigate("/reels");
+      if (collaborator) {
+        toast.success(`Collab invite sent to @${collaborator.username} — your reel goes live when they accept`);
+        navigate("/");
+      } else {
+        toast.success("Reel published!");
+        navigate("/reels");
+      }
     } catch (err) {
       toast.error(err.message || "Failed to publish");
     } finally {
@@ -176,13 +188,54 @@ export default function ReelUploadPage() {
         />
       </div>
 
+      <div>
+        <Label>Collaborator</Label>
+        <p className="mb-1.5 mt-0.5 text-xs text-muted-foreground">Co-author this reel with another creator. It stays private until they accept.</p>
+        {collaborator ? (
+          <div className="flex w-fit items-center gap-2 rounded-full border border-primary/40 bg-primary/10 py-1 pl-1 pr-2.5" data-testid="reel-collaborator-chip">
+            <Avatar src={collaborator.avatar_url} size={26} />
+            <span className="text-sm font-semibold">{collaborator.display_name}</span>
+            <span className="text-xs text-muted-foreground">@{collaborator.username}</span>
+            <button
+              type="button"
+              onClick={() => setCollaborator(null)}
+              className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground hover:text-foreground"
+              data-testid="reel-remove-collaborator"
+              aria-label="Remove collaborator"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCollabPicker((v) => !v)}
+              className="gap-1.5"
+              data-testid="reel-add-collaborator"
+            >
+              <UserPlus size={15} /> Add collaborator
+            </Button>
+            {showCollabPicker && (
+              <CollaboratorPicker
+                excludeId={user?.id}
+                onClose={() => setShowCollabPicker(false)}
+                onSelect={(u) => { setCollaborator(u); setShowCollabPicker(false); }}
+              />
+            )}
+          </>
+        )}
+      </div>
+
       <Button
         type="submit"
         disabled={busy || uploading || !videoUrl}
         className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
         data-testid="reel-publish-btn"
       >
-        {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Publish reel
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {collaborator ? "Send collab reel" : "Publish reel"}
       </Button>
     </form>
   );

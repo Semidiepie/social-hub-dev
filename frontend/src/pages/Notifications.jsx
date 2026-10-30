@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Bell, Heart, MessageCircle, UserPlus, PawPrint, Megaphone, Radio } from "lucide-react";
+import { Loader2, Bell, Heart, MessageCircle, UserPlus, PawPrint, Megaphone, Radio, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,9 @@ const ICONS = {
   pet: PawPrint,
   update: Megaphone,
   live: Radio,
+  collab_invite: Users,
+  collab_accept: Users,
+  collab_decline: Users,
 };
 
 export default function NotificationsPage() {
@@ -40,6 +43,18 @@ export default function NotificationsPage() {
   const markAll = async () => {
     await api.post("/notifications/read-all").catch(() => {});
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  const respondCollab = async (e, n, action) => {
+    e.stopPropagation();
+    try {
+      await api.post(`/collab/invites/${n.collab_invite_id}/${action}`, {});
+      toast.success(action === "accept" ? "Collab accepted — it's live on both profiles!" : "Invite declined");
+      setItems((prev) => prev.filter((x) => x.id !== n.id));
+    } catch (err) {
+      toast.error(err.message || "Couldn't respond");
+      if (String(err.message || "").toLowerCase().includes("handled")) setItems((prev) => prev.filter((x) => x.id !== n.id));
+    }
   };
 
   // Route a notification to the thing it's about: a follow → the actor's
@@ -98,6 +113,37 @@ export default function NotificationsPage() {
                   <span className="font-semibold">{n.actor_name}</span>{" "}
                   <span className="text-muted-foreground">{n.text}</span>
                   <div className="mt-0.5 text-[11px] text-muted-foreground">{timeAgo(n.created_at)}</div>
+                  {n.type === "collab_invite" && n.collab_invite_id && (
+                    <>
+                    {(n.preview_image || n.preview_caption) && (
+                      <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-border bg-background/60 p-2" data-testid={`collab-preview-${n.id}`}>
+                        {n.preview_image && (
+                          <img src={n.preview_image} alt="" className="h-12 w-12 flex-shrink-0 rounded-lg object-cover" />
+                        )}
+                        <span className="min-w-0 text-xs text-muted-foreground">
+                          <span className="font-semibold uppercase tracking-wide text-primary">{n.preview_kind === "reel" ? "Reel" : "Post"}</span>
+                          {n.preview_caption ? <span className="ml-1 line-clamp-2">{n.preview_caption}</span> : <span className="ml-1 italic">No caption</span>}
+                        </span>
+                      </div>
+                    )}
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={(e) => respondCollab(e, n, "accept")}
+                        className="rounded-full bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground"
+                        data-testid={`collab-accept-${n.id}`}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={(e) => respondCollab(e, n, "decline")}
+                        className="rounded-full border border-border px-3.5 py-1.5 text-xs font-bold hover:border-destructive hover:text-destructive"
+                        data-testid={`collab-decline-${n.id}`}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                    </>
+                  )}
                 </div>
                 <Icon size={16} className={n.read ? "text-muted-foreground" : "text-primary"} />
                 {!n.read && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}

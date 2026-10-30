@@ -1,24 +1,42 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, MessageCircle, Trash2, Send, Pencil, Bookmark, Gamepad2 } from "lucide-react";
+import { Heart, MessageCircle, Trash2, Send, Pencil, Bookmark, Gamepad2, Users, UserMinus, Clock } from "lucide-react";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
+import CollaboratorPicker from "@/components/CollaboratorPicker";
 import { PostMediaGallery } from "@/components/PostMediaGallery";
 import { FeaturedBadge, FeatureToggle } from "@/components/FeaturedControls";
 import { timeAgo, formatNumber, userPath, frameOf } from "@/lib/format";
 import { api } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { shareUrl, origin } from "@/lib/share";
 import { toast } from "sonner";
 
 // Shared X-style timeline post card — used by the Home feed and the Profile Posts tab.
 export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdated }) {
+  const { user } = useAuth();
   const [showComments, setShowComments] = useState(false);
   const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
   const [editing, setEditing] = useState(false);
   const [featured, setFeatured] = useState(!!post.featured);
   const [saved, setSaved] = useState(!!post.saved_by_me);
+  const [reinviting, setReinviting] = useState(false);
   const isReel = post.type === "reel";
+  const isCollab = post.is_collab && post.collaborator;
+  const isPending = post.collab_status === "pending";
+  const amOwner = user?.id === (post.owner_id || post.author?.id);
+  const amCollaborator = user?.id === post.collaborator?.id;
+
+  const collabAction = async (fn, okMsg) => {
+    try { const fresh = await fn(); if (okMsg) toast.success(okMsg); onUpdated?.(fresh); }
+    catch (e) { toast.error(e.message || "Something went wrong"); }
+  };
+  const detach = () => collabAction(() => api.post(`/posts/${post.id}/collab/detach`, {}),
+    amOwner ? "Collaborator removed" : "You were removed from this post");
+  const publishSolo = () => collabAction(() => api.post(`/collab/posts/${post.id}/publish-solo`, {}), "Published as a solo post");
+  const cancelInvite = () => collabAction(() => api.post(`/collab/posts/${post.id}/cancel`, {}), "Invite cancelled");
+  const reinvite = (u) => { setReinviting(false); collabAction(() => api.post(`/collab/posts/${post.id}/reinvite`, { collaborator_id: u.id }), `Invite sent to @${u.username}`); };
 
   const onShare = () =>
     shareUrl(
@@ -42,7 +60,16 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
   return (
     <article className="bg-transparent pb-2" data-testid={`post-${post.id}`}>
       <div className="flex items-center gap-3 px-4 pt-4">
-        {post.author ? (
+        {isCollab ? (
+          <div className="flex items-center" data-testid={`post-collab-avatars-${post.id}`}>
+            <Link to={userPath(post.author)} className="relative z-10">
+              <Avatar src={post.author?.avatar_url} size={40} ring frame={frameOf(post.author)} live={post.author?.is_live} />
+            </Link>
+            <Link to={userPath(post.collaborator)} className="-ml-3">
+              <Avatar src={post.collaborator?.avatar_url} size={40} ring frame={frameOf(post.collaborator)} live={post.collaborator?.is_live} />
+            </Link>
+          </div>
+        ) : post.author ? (
           <Link to={userPath(post.author)}>
             <Avatar src={post.author.avatar_url} size={40} ring frame={frameOf(post.author)} live={post.author?.is_live} />
           </Link>
@@ -50,17 +77,26 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
           <Avatar size={40} ring />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <UsernameLine user={post.author} className="text-sm" />
-            {post.author?.is_streamer && (
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            <Link to={userPath(post.author)} className="hover:underline"><UsernameLine user={post.author} className="text-sm" /></Link>
+            {isCollab && (
+              <>
+                <span className="text-sm text-muted-foreground">and</span>
+                <Link to={userPath(post.collaborator)} className="hover:underline"><UsernameLine user={post.collaborator} className="text-sm" /></Link>
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary" data-testid={`post-collab-pill-${post.id}`}>
+                  <Users size={10} /> Collab
+                </span>
+              </>
+            )}
+            {!isCollab && post.author?.is_streamer && (
               <span className="pmp-streamer" data-testid={`post-streamer-${post.id}`}>
                 <Gamepad2 size={9} /> Streamer
               </span>
             )}
             <FeaturedBadge show={featured} />
           </div>
-          <div className="text-xs text-muted-foreground">
-            @{post.author?.username} · {timeAgo(post.created_at)}
+          <div className="truncate text-xs text-muted-foreground">
+            @{post.author?.username}{isCollab ? ` · @${post.collaborator?.username}` : ""} · {timeAgo(post.created_at)}
           </div>
         </div>
         <FeatureToggle type={post.type === "reel" ? "reel" : "post"} id={post.id} featured={featured} onChange={setFeatured} />
@@ -74,6 +110,17 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
           >
             #{post.game_tag}
           </Link>
+        )}
+        {isCollab && !isPending && (amOwner || amCollaborator) && (
+          <button
+            onClick={detach}
+            title={amOwner ? "Remove collaborator" : "Remove myself from this post"}
+            aria-label="Remove collaboration"
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            data-testid={`post-collab-detach-${post.id}`}
+          >
+            <UserMinus size={16} />
+          </button>
         )}
         {canManage && (
           <>
@@ -99,6 +146,28 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
         )}
       </div>
 
+      {isPending && amOwner && (
+        <div className="mx-4 mt-2 rounded-xl border border-primary/30 bg-primary/5 p-3" data-testid={`post-pending-${post.id}`}>
+          <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+            <Clock size={15} />
+            {post.collaborator
+              ? `Waiting for @${post.collaborator.username} to accept your collab invite`
+              : post.collab_declined
+                ? "Your collaborator declined — publish solo, invite someone else, or delete"
+                : "Invite cancelled — publish solo, invite someone else, or delete"}
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button onClick={publishSolo} className="rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground" data-testid={`post-publish-solo-${post.id}`}>Publish solo</button>
+            {post.collaborator
+              ? <button onClick={cancelInvite} className="rounded-full border border-border px-3 py-1.5 text-xs font-bold" data-testid={`post-cancel-invite-${post.id}`}>Cancel invite</button>
+              : <button onClick={() => setReinviting((v) => !v)} className="rounded-full border border-border px-3 py-1.5 text-xs font-bold" data-testid={`post-reinvite-${post.id}`}>Invite someone</button>}
+            <button onClick={onDelete} className="rounded-full border border-destructive/40 px-3 py-1.5 text-xs font-bold text-destructive" data-testid={`post-pending-delete-${post.id}`}>Delete</button>
+          </div>
+          {reinviting && (
+            <CollaboratorPicker excludeId={user?.id} onClose={() => setReinviting(false)} onSelect={reinvite} />
+          )}
+        </div>
+      )}
       {(post.image_urls?.length || post.image_url) && (
         <div className="relative mx-2 mt-2">
           <PostMediaGallery images={post.image_urls?.length ? post.image_urls : [post.image_url]} />

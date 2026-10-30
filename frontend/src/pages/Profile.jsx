@@ -463,6 +463,16 @@ function ReelsGrid({ reels }) {
             <video src={r.video_url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
           )}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          {r.collab_status === "pending" && (
+            <span className="absolute left-2 top-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary-foreground" data-testid={`reel-tile-pending-${r.id}`}>
+              Pending
+            </span>
+          )}
+          {r.is_collab && r.collaborator && (
+            <span className="absolute left-2 top-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary-foreground">
+              Collab
+            </span>
+          )}
           <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between text-[11px] font-semibold text-white">
             <span className="inline-flex items-center gap-1"><Play size={12} className="fill-white" /> {formatNumber(r.views || 0)}</span>
             <span className="inline-flex items-center gap-1"><Heart size={12} className="fill-white" /> {formatNumber(r.likes || 0)}</span>

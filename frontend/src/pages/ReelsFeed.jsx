@@ -15,6 +15,7 @@ import {
   X,
   ArrowLeft,
   Share2,
+  Users,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
@@ -282,7 +283,20 @@ function WebReel({ reel, muted, onToggleMute, canManage, onOpenComments, onEdit,
 
       {/* Bottom author + caption */}
       <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-8 pt-16">
-        {reel.author && (
+        {reel.is_collab && reel.collaborator ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-testid={`reels-feed-collab-${reel.id}`}>
+            <div className="flex items-center">
+              <Link to={userPath(reel.author)} className="relative z-10"><Avatar src={reel.author?.avatar_url} size={34} frame={frameOf(reel.author)} /></Link>
+              <Link to={userPath(reel.collaborator)} className="-ml-3"><Avatar src={reel.collaborator?.avatar_url} size={34} frame={frameOf(reel.collaborator)} /></Link>
+            </div>
+            <span className="font-bold text-white">@{reel.author?.username}</span>
+            <span className="text-sm text-white/70">&amp;</span>
+            <span className="font-bold text-white">@{reel.collaborator?.username}</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary-foreground">
+              <Users size={10} /> Collab
+            </span>
+          </div>
+        ) : reel.author && (
           <Link to={userPath(reel.author)} className="flex items-center gap-2">
             <Avatar src={reel.author.avatar_url} size={38} frame={frameOf(reel.author)} />
             <span className="flex items-center gap-1 font-bold text-white">

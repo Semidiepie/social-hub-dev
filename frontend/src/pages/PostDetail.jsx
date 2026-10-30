@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Heart, Loader2, MessageCircle, Send, BadgeCheck, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, MessageCircle, Send, BadgeCheck, Trash2, Pencil, Users, UserMinus, Clock } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar, UsernameLine } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
+import CollaboratorPicker from "@/components/CollaboratorPicker";
 import { PostMediaGallery } from "@/components/PostMediaGallery";
 import { timeAgo, formatNumber, userPath, badgeCls, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
@@ -18,6 +19,22 @@ export default function PostDetailPage() {
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [reinviting, setReinviting] = useState(false);
+
+  const isCollab = post?.is_collab && post?.collaborator;
+  const isPending = post?.collab_status === "pending";
+  const amOwner = user?.id === (post?.owner_id || post?.author?.id);
+  const amCollaborator = user?.id === post?.collaborator?.id;
+
+  const collabAction = async (fn, okMsg) => {
+    try { const fresh = await fn(); if (okMsg) toast.success(okMsg); setPost((p) => ({ ...p, ...fresh })); }
+    catch (e) { toast.error(e.message || "Something went wrong"); }
+  };
+  const detach = () => collabAction(() => api.post(`/posts/${id}/collab/detach`, {}),
+    amOwner ? "Collaborator removed" : "You were removed from this post");
+  const publishSolo = () => collabAction(() => api.post(`/collab/posts/${id}/publish-solo`, {}), "Published as a solo post");
+  const cancelInvite = () => collabAction(() => api.post(`/collab/posts/${id}/cancel`, {}), "Invite cancelled");
+  const reinvite = (u) => { setReinviting(false); collabAction(() => api.post(`/collab/posts/${id}/reinvite`, { collaborator_id: u.id }), `Invite sent to @${u.username}`); };
 
   const load = useCallback(async () => {
     try {
@@ -80,21 +97,52 @@ export default function PostDetailPage() {
 
       <article className="border-b border-border pb-2" data-testid="post-detail-article">
         <div className="flex items-center gap-3 px-4 pt-4">
-          {post.author && (
+          {isCollab ? (
+            <div className="flex items-center" data-testid={`post-detail-collab-avatars`}>
+              <button onClick={() => navigate(userPath(post.author))} className="relative z-10">
+                <Avatar src={post.author?.avatar_url} size={40} frame={frameOf(post.author)} />
+              </button>
+              <button onClick={() => navigate(userPath(post.collaborator))} className="-ml-3">
+                <Avatar src={post.collaborator?.avatar_url} size={40} frame={frameOf(post.collaborator)} />
+              </button>
+            </div>
+          ) : post.author && (
             <button onClick={() => navigate(userPath(post.author))}>
               <Avatar src={post.author.avatar_url} size={40} frame={frameOf(post.author)} />
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <UsernameLine user={post.author} className="text-sm" />
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <UsernameLine user={post.author} className="text-sm" />
+              {isCollab && (
+                <>
+                  <span className="text-sm text-muted-foreground">and</span>
+                  <UsernameLine user={post.collaborator} className="text-sm" />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary" data-testid="post-detail-collab-pill">
+                    <Users size={10} /> Collab
+                  </span>
+                </>
+              )}
+            </div>
             <div className="text-xs text-muted-foreground">
-              @{post.author?.username} · {timeAgo(post.created_at)}
+              @{post.author?.username}{isCollab ? ` · @${post.collaborator?.username}` : ""} · {timeAgo(post.created_at)}
             </div>
           </div>
           {post.game_tag && (
             <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
               #{post.game_tag}
             </span>
+          )}
+          {isCollab && !isPending && (amOwner || amCollaborator) && (
+            <button
+              onClick={detach}
+              title={amOwner ? "Remove collaborator" : "Remove myself from this post"}
+              aria-label="Remove collaboration"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              data-testid="post-detail-collab-detach"
+            >
+              <UserMinus size={18} />
+            </button>
           )}
           {user?.id && post.author?.id === user.id && (
             <>
@@ -119,6 +167,29 @@ export default function PostDetailPage() {
             </>
           )}
         </div>
+
+        {isPending && amOwner && (
+          <div className="mx-4 mt-2 rounded-xl border border-primary/30 bg-primary/5 p-3" data-testid="post-detail-pending">
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+              <Clock size={15} />
+              {post.collaborator
+                ? `Waiting for @${post.collaborator.username} to accept your collab invite`
+                : post.collab_declined
+                  ? "Your collaborator declined — publish solo, invite someone else, or delete"
+                  : "Invite cancelled — publish solo, invite someone else, or delete"}
+            </div>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <button onClick={publishSolo} className="rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground" data-testid="post-detail-publish-solo">Publish solo</button>
+              {post.collaborator
+                ? <button onClick={cancelInvite} className="rounded-full border border-border px-3 py-1.5 text-xs font-bold" data-testid="post-detail-cancel-invite">Cancel invite</button>
+                : <button onClick={() => setReinviting((v) => !v)} className="rounded-full border border-border px-3 py-1.5 text-xs font-bold" data-testid="post-detail-reinvite">Invite someone</button>}
+              <button onClick={handleDelete} className="rounded-full border border-destructive/40 px-3 py-1.5 text-xs font-bold text-destructive" data-testid="post-detail-pending-delete">Delete</button>
+            </div>
+            {reinviting && (
+              <CollaboratorPicker excludeId={user?.id} onClose={() => setReinviting(false)} onSelect={reinvite} />
+            )}
+          </div>
+        )}
 
         {post.caption && <p className="px-4 pt-3 text-[15px] leading-relaxed">{post.caption}</p>}
 

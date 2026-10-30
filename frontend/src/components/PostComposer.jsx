@@ -1,9 +1,10 @@
 import React, { useRef, useState } from "react";
-import { ImagePlus, Film, Loader2, X, Send } from "lucide-react";
+import { ImagePlus, Film, Loader2, X, Send, UserPlus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
+import CollaboratorPicker from "@/components/CollaboratorPicker";
 import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
 import { compressVideoToTarget, TARGET_MAX_BYTES } from "@/lib/videoCompress";
 import { playPostChime } from "@/lib/sound";
@@ -21,6 +22,8 @@ export function PostComposer({ onPosted }) {
   const [phase, setPhase] = useState("");
   const [progress, setProgress] = useState(0);
   const [posting, setPosting] = useState(false);
+  const [collaborator, setCollaborator] = useState(null);
+  const [showCollabPicker, setShowCollabPicker] = useState(false);
   const photoRef = useRef(null);
   const videoRef = useRef(null);
 
@@ -111,6 +114,7 @@ export function PostComposer({ onPosted }) {
         video_url: video?.url || null,
         thumbnail_url: video?.thumbnail_url || null,
         duration: video?.duration || null,
+        collaborator_id: collaborator?.id || null,
       };
       const created = await api.post("/posts", body);
       setCaption("");
@@ -118,7 +122,13 @@ export function PostComposer({ onPosted }) {
       setImages([]);
       setVideo(null);
       playPostChime();
-      toast.success("Posted!");
+      if (collaborator) {
+        toast.success(`Collab invite sent to @${collaborator.username} — it goes live when they accept`);
+      } else {
+        toast.success("Posted!");
+      }
+      setCollaborator(null);
+      setShowCollabPicker(false);
       onPosted?.(created);
     } catch (e) {
       toast.error(e.message || "Failed to post");
@@ -205,6 +215,17 @@ export function PostComposer({ onPosted }) {
             >
               <Film size={15} /> Video
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={posting}
+              onClick={() => setShowCollabPicker((v) => !v)}
+              className={`gap-1.5 ${collaborator ? "border-primary text-primary" : ""}`}
+              data-testid="composer-add-collaborator"
+            >
+              <UserPlus size={15} /> {collaborator ? "Collaborator added" : "Add collaborator"}
+            </Button>
             <input
               value={gameTag}
               onChange={(e) => setGameTag(e.target.value.replace(/\s/g, ""))}
@@ -227,6 +248,34 @@ export function PostComposer({ onPosted }) {
               {posting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Post
             </Button>
           </div>
+
+          {collaborator && (
+            <div className="mt-3 flex w-fit items-center gap-2 rounded-full border border-primary/40 bg-primary/10 py-1 pl-1 pr-2.5" data-testid="composer-collaborator-chip">
+              <Avatar src={collaborator.avatar_url} size={26} />
+              <span className="text-sm font-semibold">{collaborator.display_name}</span>
+              <span className="text-xs text-muted-foreground">@{collaborator.username}</span>
+              <button
+                onClick={() => setCollaborator(null)}
+                className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground hover:text-foreground"
+                data-testid="composer-remove-collaborator"
+                aria-label="Remove collaborator"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
+          {showCollabPicker && !collaborator && (
+            <CollaboratorPicker
+              excludeId={user.id}
+              onClose={() => setShowCollabPicker(false)}
+              onSelect={(u) => { setCollaborator(u); setShowCollabPicker(false); }}
+            />
+          )}
+          {collaborator && (
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              This becomes a collab post — it stays private until @{collaborator.username} accepts your invite.
+            </p>
+          )}
         </div>
       </div>
     </div>

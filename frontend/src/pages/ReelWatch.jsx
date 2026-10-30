@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Heart, Loader2, MessageCircle, Volume2, VolumeX, BadgeCheck, X, Send, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, MessageCircle, Volume2, VolumeX, BadgeCheck, X, Send, Trash2, Pencil, Users, UserMinus, Clock } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { formatNumber, timeAgo, userPath, badgeCls, badgeStyle, frameOf } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { EditContentModal } from "@/components/EditContentModal";
 import CommentThread from "@/components/CommentThread";
+import CollaboratorPicker from "@/components/CollaboratorPicker";
 import { toast } from "sonner";
 
 export default function ReelWatchPage() {
@@ -19,7 +20,23 @@ export default function ReelWatchPage() {
   const [playing, setPlaying] = useState(true);
   const [showComments, setShowComments] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [reinviting, setReinviting] = useState(false);
   const videoRef = useRef(null);
+
+  const isCollab = reel?.is_collab && reel?.collaborator;
+  const isPending = reel?.collab_status === "pending";
+  const amOwner = user?.id === (reel?.owner_id || reel?.author?.id);
+  const amCollaborator = user?.id === reel?.collaborator?.id;
+
+  const collabAction = async (fn, okMsg) => {
+    try { const fresh = await fn(); if (okMsg) toast.success(okMsg); setReel((r) => ({ ...r, ...fresh })); }
+    catch (e) { toast.error(e.message || "Something went wrong"); }
+  };
+  const detach = () => collabAction(() => api.post(`/posts/${id}/collab/detach`, {}),
+    amOwner ? "Collaborator removed" : "You were removed from this reel");
+  const publishSolo = () => collabAction(() => api.post(`/collab/posts/${id}/publish-solo`, {}), "Published as a solo reel");
+  const cancelInvite = () => collabAction(() => api.post(`/collab/posts/${id}/cancel`, {}), "Invite cancelled");
+  const reinvite = (u) => { setReinviting(false); collabAction(() => api.post(`/collab/posts/${id}/reinvite`, { collaborator_id: u.id }), `Invite sent to @${u.username}`); };
 
   const goBack = useCallback(() => {
     if (window.history.length > 1) navigate(-1);
@@ -111,6 +128,17 @@ export default function ReelWatchPage() {
         >
           {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
         </button>
+        {isCollab && !isPending && (amOwner || amCollaborator) && (
+          <button
+            onClick={detach}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-red-500/80"
+            data-testid="reel-collab-detach"
+            aria-label="Remove collaboration"
+            title={amOwner ? "Remove collaborator" : "Remove myself from this reel"}
+          >
+            <UserMinus size={17} />
+          </button>
+        )}
         {user?.id && reel.author?.id === user.id && (
           <>
             <button
@@ -132,6 +160,29 @@ export default function ReelWatchPage() {
           </>
         )}
       </div>
+
+      {isPending && amOwner && (
+        <div className="absolute inset-x-3 top-16 z-30 rounded-xl border border-primary/40 bg-black/80 p-3 backdrop-blur" data-testid="reel-pending">
+          <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+            <Clock size={15} />
+            {reel.collaborator
+              ? `Waiting for @${reel.collaborator.username} to accept your collab invite`
+              : reel.collab_declined
+                ? "Your collaborator declined — publish solo, invite someone else, or delete"
+                : "Invite cancelled — publish solo, invite someone else, or delete"}
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button onClick={publishSolo} className="rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground" data-testid="reel-publish-solo">Publish solo</button>
+            {reel.collaborator
+              ? <button onClick={cancelInvite} className="rounded-full border border-white/30 px-3 py-1.5 text-xs font-bold text-white" data-testid="reel-cancel-invite">Cancel invite</button>
+              : <button onClick={() => setReinviting((v) => !v)} className="rounded-full border border-white/30 px-3 py-1.5 text-xs font-bold text-white" data-testid="reel-reinvite">Invite someone</button>}
+            <button onClick={handleDelete} className="rounded-full border border-destructive/50 px-3 py-1.5 text-xs font-bold text-destructive" data-testid="reel-pending-delete">Delete</button>
+          </div>
+          {reinviting && (
+            <CollaboratorPicker excludeId={user?.id} onClose={() => setReinviting(false)} onSelect={reinvite} />
+          )}
+        </div>
+      )}
 
       {/* Vertical player */}
       <div className="relative h-screen w-full max-w-[440px]" onClick={togglePlay}>
@@ -179,7 +230,20 @@ export default function ReelWatchPage() {
 
         {/* Bottom author + caption */}
         <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-4 pb-6 pt-16">
-          {reel.author && (
+          {isCollab ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="reel-collab-header">
+              <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                <Link to={userPath(reel.author)} className="relative z-10"><Avatar src={reel.author?.avatar_url} size={36} frame={frameOf(reel.author)} /></Link>
+                <Link to={userPath(reel.collaborator)} className="-ml-3"><Avatar src={reel.collaborator?.avatar_url} size={36} frame={frameOf(reel.collaborator)} /></Link>
+              </div>
+              <span className="font-bold text-white">@{reel.author?.username}</span>
+              <span className="text-sm text-white/70">&amp;</span>
+              <span className="font-bold text-white">@{reel.collaborator?.username}</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary-foreground" data-testid="reel-collab-pill">
+                <Users size={10} /> Collab
+              </span>
+            </div>
+          ) : reel.author && (
             <Link
               to={userPath(reel.author)}
               onClick={(e) => e.stopPropagation()}

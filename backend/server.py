@@ -185,6 +185,7 @@ class CreatePostBody(BaseModel):
     thumbnail_url: Optional[str] = None
     duration: Optional[float] = None
     game_tag: Optional[str] = None
+    collaborator_id: Optional[str] = None
 
 
 class CreateReelBody(BaseModel):
@@ -193,6 +194,7 @@ class CreateReelBody(BaseModel):
     thumbnail_url: Optional[str] = None
     game_tag: Optional[str] = None
     duration: Optional[float] = None  # seconds
+    collaborator_id: Optional[str] = None
 
 
 class UpdatePostBody(BaseModel):
@@ -594,6 +596,24 @@ def _cloudinary_compat_url(url: Optional[str]) -> Optional[str]:
     return url.replace("/video/upload/", "/video/upload/f_mp4,vc_h264,q_auto/", 1)
 
 
+def _public_user_card(u: Optional[dict]) -> Optional[dict]:
+    if not u:
+        return None
+    return {
+        "id": u["id"],
+        "username": u["username"],
+        "display_name": u["display_name"],
+        "avatar_url": avatar_or_default(u.get("avatar_url")),
+        "is_verified": u.get("is_verified", False),
+        "verified_color": u.get("verified_color"),
+        "is_live": u.get("is_live", False),
+        "remembering": u.get("remembering", False),
+        "is_streamer": u.get("is_streamer", False),
+        "equipped_frame": u.get("equipped_frame"), "custom_frame": u.get("custom_frame"),
+        "frame_enabled": u.get("frame_enabled", True),
+    }
+
+
 async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
     author = await db.users.find_one({"id": post["author_id"]}, {"_id": 0})
     liked_by_me = False
@@ -603,7 +623,17 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
     if viewer_id:
         saved_by_me = await db.bookmarks.find_one({"user_id": viewer_id, "item_id": post["id"]}) is not None
     images = post.get("image_urls") or ([post["image_url"]] if post.get("image_url") else [])
+    collab_status = post.get("collab_status", "none")
+    collaborator = None
+    if post.get("collaborator_id"):
+        cu = await db.users.find_one({"id": post["collaborator_id"]}, {"_id": 0})
+        collaborator = _public_user_card(cu)
     return {
+        "collab_status": collab_status,
+        "is_collab": bool(collaborator and collab_status == "accepted"),
+        "collaborator": collaborator,
+        "collab_declined": bool(post.get("collab_declined", False)),
+        "owner_id": post["author_id"],
         "id": post["id"],
         "type": post.get("type", "post"),
         "caption": post.get("caption", ""),
@@ -620,19 +650,7 @@ async def serialize_post(post: dict, viewer_id: Optional[str] = None) -> dict:
         "created_at": post["created_at"].isoformat() if isinstance(post["created_at"], datetime) else post["created_at"],
         "liked_by_me": liked_by_me,
         "saved_by_me": saved_by_me,
-        "author": {
-            "id": author["id"],
-            "username": author["username"],
-            "display_name": author["display_name"],
-            "avatar_url": avatar_or_default(author.get("avatar_url")),
-            "is_verified": author.get("is_verified", False),
-            "verified_color": author.get("verified_color"),
-            "is_live": author.get("is_live", False),
-            "remembering": author.get("remembering", False),
-            "is_streamer": author.get("is_streamer", False),
-            "equipped_frame": author.get("equipped_frame"), "custom_frame": author.get("custom_frame"),
-            "frame_enabled": author.get("frame_enabled", True),
-        } if author else None,
+        "author": _public_user_card(author),
     }
 
 
@@ -1001,6 +1019,14 @@ async def delete_account(current: Annotated[dict, Depends(get_current_user)]):
     # End any live session they own
     await db.live_sessions.update_many({"host_id": uid, "ended_at": None}, {"$set": {"ended_at": now()}})
     # Remove user's content + reactions
+    # Collab posts where this user was the COLLABORATOR → convert to owner's solo post.
+    async for _p in db.posts.find({"collaborator_id": uid}):
+        await _detach_collab_post(_p)
+    # Their OWN accepted collab posts are deleted below — keep the co-creator's count correct.
+    async for _p in db.posts.find({"author_id": uid, "collab_status": "accepted", "collaborator_id": {"$ne": None}}):
+        if _p.get("type") == "post":
+            await db.users.update_one({"id": _p["collaborator_id"]}, {"$inc": {"posts_count": -1}})
+    await db.collab_invites.delete_many({"$or": [{"from_user": uid}, {"to_user": uid}]})
     await db.posts.delete_many({"author_id": uid})
     await db.comments.delete_many({"user_id": uid})
     await db.likes.delete_many({"user_id": uid})
@@ -1030,6 +1056,20 @@ async def block_user(user_id: str, current: Annotated[dict, Depends(get_current_
             "blocked_id": user_id,
             "created_at": now(),
         })
+        # Collab posts between the two convert to the owner's solo post.
+        async for p in db.posts.find({"collab_status": "accepted", "$or": [
+            {"author_id": current["id"], "collaborator_id": user_id},
+            {"author_id": user_id, "collaborator_id": current["id"]},
+        ]}):
+            await _detach_collab_post(p)
+        await db.posts.update_many({"collab_status": "pending", "$or": [
+            {"author_id": current["id"], "collaborator_id": user_id},
+            {"author_id": user_id, "collaborator_id": current["id"]},
+        ]}, {"$set": {"collaborator_id": None}})
+        await db.collab_invites.update_many({"status": "pending", "$or": [
+            {"from_user": current["id"], "to_user": user_id},
+            {"from_user": user_id, "to_user": current["id"]},
+        ]}, {"$set": {"status": "cancelled", "updated_at": now()}})
         # Apple Guideline 1.2: notify the developer when a user blocks someone.
         # We do that by logging it and also creating a moderation_events row that
         # the founder/admin can review (and an internal email if Resend is set).
@@ -1326,15 +1366,25 @@ async def unfollow_user(user_id: str, current: Annotated[dict, Depends(get_curre
 
 @app.get("/api/users/{user_id}/posts")
 async def user_posts(user_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
-    rows = await db.posts.find({"author_id": user_id, "type": "post"}, {"_id": 0}).sort("created_at", -1).to_list(200)
     viewer_id = viewer["id"] if viewer else None
+    q: dict = {"type": "post", "$or": [{"author_id": user_id}, {"collaborator_id": user_id, "collab_status": "accepted"}]}
+    if viewer_id != user_id:
+        q["collab_status"] = {"$ne": "pending"}  # only the owner sees their own pending collabs
+    rows = await db.posts.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
     return [await serialize_post(p, viewer_id) for p in rows]
 
 
 @app.get("/api/users/{user_id}/reels")
 async def user_reels(user_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
-    rows = await db.posts.find({"author_id": user_id, "type": "reel", "video_url": {"$not": {"$regex": "res\\.cloudinary\\.com"}}}, {"_id": 0}).sort("created_at", -1).to_list(200)
     viewer_id = viewer["id"] if viewer else None
+    q: dict = {
+        "type": "reel",
+        "video_url": {"$not": {"$regex": "res\\.cloudinary\\.com"}},
+        "$or": [{"author_id": user_id}, {"collaborator_id": user_id, "collab_status": "accepted"}],
+    }
+    if viewer_id != user_id:
+        q["collab_status"] = {"$ne": "pending"}
+    rows = await db.posts.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
     return [await serialize_post(p, viewer_id) for p in rows]
 
 
@@ -1496,8 +1546,8 @@ async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)], fo
     viewer_id = viewer["id"] if viewer else None
     blocked = await blocked_ids_for(viewer_id)
 
-    post_query: dict = {"type": "post"}
-    reel_query: dict = {"type": "reel"}
+    post_query: dict = {"type": "post", "collab_status": {"$ne": "pending"}}
+    reel_query: dict = {"type": "reel", "collab_status": {"$ne": "pending"}}
     video_query: dict = {"visibility": "public"}
     if blocked:
         post_query["author_id"] = {"$nin": list(blocked)}
@@ -1512,8 +1562,12 @@ async def feed(viewer: Annotated[Optional[dict], Depends(get_optional_user)], fo
         followed = [r["followee_id"] for r in follow_rows]
         if not followed:
             return []
-        for q in (post_query, reel_query, video_query):
-            q["author_id"] = {"$in": followed, **({"$nin": list(blocked)} if blocked else {})}
+        nin = {"$nin": list(blocked)} if blocked else {}
+        # A collab post shows if you follow EITHER creator (it's one doc → no dupes).
+        for q in (post_query, reel_query):
+            q["$or"] = [{"author_id": {"$in": followed, **nin}}, {"collaborator_id": {"$in": followed}}]
+            q.pop("author_id", None)
+        video_query["author_id"] = {"$in": followed, **nin}
 
     post_rows = await db.posts.find(post_query, {"_id": 0}).sort("created_at", -1).to_list(50)
     reel_rows = await db.posts.find(reel_query, {"_id": 0}).sort("created_at", -1).to_list(50)
@@ -1759,7 +1813,7 @@ async def discover(filter: Literal["top", "accounts", "tags"] = "top",
 async def reels(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
     viewer_id = viewer["id"] if viewer else None
     blocked = await blocked_ids_for(viewer_id)
-    query: dict = {"type": "reel", "video_url": {"$not": {"$regex": "res\\.cloudinary\\.com"}}}
+    query: dict = {"type": "reel", "collab_status": {"$ne": "pending"}, "video_url": {"$not": {"$regex": "res\\.cloudinary\\.com"}}}
     if blocked:
         query["author_id"] = {"$nin": list(blocked)}
     rows = await db.posts.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
@@ -1834,8 +1888,16 @@ async def create_post(body: CreatePostBody, current: Annotated[dict, Depends(get
         "created_at": now(),
     }
     await db.posts.insert_one(doc)
-    await db.users.update_one({"id": current["id"]}, {"$inc": {"posts_count": 1}})
-    await _notify_followers_new_post(current, doc)
+    collaborator = None
+    if body.collaborator_id:
+        collaborator = await _validate_collaborator(body.collaborator_id, current["id"])
+        await db.posts.update_one({"id": post_id}, {"$set": {"collaborator_id": collaborator["id"], "collab_status": "pending"}})
+        doc["collaborator_id"] = collaborator["id"]
+        doc["collab_status"] = "pending"
+        await _create_collab_invite(current, collaborator, doc)
+    else:
+        await db.users.update_one({"id": current["id"]}, {"$inc": {"posts_count": 1}})
+        await _notify_followers_new_post(current, doc)
     return await serialize_post(doc, current["id"])
 
 
@@ -1857,6 +1919,15 @@ async def create_reel(body: CreateReelBody, current: Annotated[dict, Depends(get
         "created_at": now(),
     }
     await db.posts.insert_one(doc)
+    collaborator = None
+    if body.collaborator_id:
+        collaborator = await _validate_collaborator(body.collaborator_id, current["id"])
+        await db.posts.update_one({"id": post_id}, {"$set": {"collaborator_id": collaborator["id"], "collab_status": "pending"}})
+        doc["collaborator_id"] = collaborator["id"]
+        doc["collab_status"] = "pending"
+        await _create_collab_invite(current, collaborator, doc)
+    else:
+        await _notify_followers_new_post(current, doc)
     return await serialize_post(doc, current["id"])
 
 
@@ -1958,9 +2029,285 @@ async def delete_post(post_id: str, current: Annotated[dict, Depends(get_current
     await db.posts.delete_one({"id": post_id})
     await db.comments.delete_many({"post_id": post_id})
     await db.likes.delete_many({"post_id": post_id})
+    await db.collab_invites.delete_many({"post_id": post_id})
     if post.get("type") == "post":
         await db.users.update_one({"id": current["id"]}, {"$inc": {"posts_count": -1}})
+        if post.get("collab_status") == "accepted" and post.get("collaborator_id"):
+            await db.users.update_one({"id": post["collaborator_id"]}, {"$inc": {"posts_count": -1}})
     return {"status": "deleted"}
+
+
+class ReinviteBody(BaseModel):
+    collaborator_id: str
+
+
+async def _validate_collaborator(collab_id: str, owner_id: str) -> dict:
+    if collab_id == owner_id:
+        raise HTTPException(400, "You can't collaborate with yourself")
+    u = await db.users.find_one({"id": collab_id})
+    if not u:
+        raise HTTPException(404, "Collaborator not found")
+    if await db.blocks.find_one({"$or": [
+        {"blocker_id": owner_id, "blocked_id": collab_id},
+        {"blocker_id": collab_id, "blocked_id": owner_id},
+    ]}):
+        raise HTTPException(400, "You can't collaborate with this user")
+    return u
+
+
+def _post_link(post: dict) -> str:
+    return f"/reels/{post['id']}" if post.get("type") == "reel" else f"/posts/{post['id']}"
+
+
+async def _create_collab_invite(owner: dict, collaborator: dict, post: dict) -> dict:
+    inv = {
+        "id": str(uuid.uuid4()),
+        "post_id": post["id"],
+        "from_user": owner["id"],
+        "to_user": collaborator["id"],
+        "status": "pending",
+        "created_at": now(),
+        "updated_at": now(),
+    }
+    await db.collab_invites.insert_one(inv)
+    _imgs = post.get("image_urls") or ([post["image_url"]] if post.get("image_url") else [])
+    preview_image = post.get("thumbnail_url") or (_imgs[0] if _imgs else None)
+    kind = "reel" if post.get("type") == "reel" else "post"
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": collaborator["id"],
+        "type": "collab_invite",
+        "actor_id": owner["id"],
+        "actor_name": owner["display_name"],
+        "actor_avatar": avatar_or_default(owner.get("avatar_url")),
+        "text": f"invited you to collaborate on a {kind}",
+        "post_id": post["id"],
+        "collab_invite_id": inv["id"],
+        "preview_image": preview_image,
+        "preview_caption": (post.get("caption") or "")[:140],
+        "preview_kind": kind,
+        "read": False,
+        "created_at": now(),
+    })
+    try:
+        await send_web_push(collaborator["id"], "Collab invite",
+                            f"{owner['display_name']} invited you to collaborate on a post", "/notifications")
+    except Exception:
+        pass
+    return inv
+
+
+async def _notify_collab_engagement(post: dict, actor: dict, kind: str, text: str, link: str, push_title: str) -> None:
+    """Mirror an engagement notification to the OTHER creator of a collab post."""
+    if post.get("collab_status") != "accepted" or not post.get("collaborator_id"):
+        return
+    cid = post["collaborator_id"]
+    if cid in (actor["id"], post["author_id"]):
+        return
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "user_id": cid, "type": kind,
+        "actor_id": actor["id"], "actor_name": actor["display_name"],
+        "actor_avatar": avatar_or_default(actor.get("avatar_url")),
+        "text": text, "post_id": post["id"], "read": False, "created_at": now(),
+    })
+    try:
+        await send_web_push(cid, push_title, f"{actor['display_name']} {text}", link)
+    except Exception:
+        pass
+
+
+async def _notify_followers_new_collab(owner: dict, collaborator: dict, post: dict) -> None:
+    """Fan out a 'new collab post' notification to followers of BOTH creators, deduped."""
+    try:
+        ids: set[str] = set()
+        for uid in (owner["id"], collaborator["id"]):
+            async for f in db.follows.find({"followee_id": uid}, {"_id": 0, "follower_id": 1}):
+                ids.add(f["follower_id"])
+        ids.discard(owner["id"])
+        ids.discard(collaborator["id"])
+        if not ids:
+            return
+        link = _post_link(post)
+        kind = "reel" if post.get("type") == "reel" else "post"
+        text = f"and {collaborator['display_name']} collaborated on a new {kind}"
+        docs = [{
+            "id": str(uuid.uuid4()), "user_id": fid, "type": "post",
+            "actor_id": owner["id"], "actor_name": owner["display_name"],
+            "actor_avatar": avatar_or_default(owner.get("avatar_url")),
+            "text": text, "link": link, "post_id": post["id"],
+            "read": False, "created_at": now(),
+        } for fid in ids]
+        await db.notifications.insert_many(docs)
+        title = f"{owner['display_name']} & {collaborator['display_name']} posted"
+        for fid in ids:
+            try:
+                await send_web_push(fid, title, (post.get("caption") or text)[:80], link)
+            except Exception:
+                pass
+        try:
+            await send_push(recipients=list(ids), data={"title": title, "message": (post.get("caption") or text)[:80], "action_url": link})
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"notify collab followers failed: {e}")
+
+
+async def _detach_collab_post(post: dict) -> None:
+    """Convert an accepted collab post back to the owner's solo post."""
+    if post.get("type") == "post" and post.get("collab_status") == "accepted" and post.get("collaborator_id"):
+        await db.users.update_one({"id": post["collaborator_id"]}, {"$inc": {"posts_count": -1}})
+    await db.posts.update_one({"id": post["id"]}, {"$set": {"collaborator_id": None, "collab_status": "none", "collab_declined": False}})
+    await db.collab_invites.update_many(
+        {"post_id": post["id"], "status": {"$in": ["pending", "accepted"]}},
+        {"$set": {"status": "cancelled", "updated_at": now()}})
+
+
+async def _owner_pending_post(post_id: str, owner_id: str) -> dict:
+    post = await db.posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post["author_id"] != owner_id:
+        raise HTTPException(403, "Not your post")
+    if post.get("collab_status") != "pending":
+        raise HTTPException(400, "This post isn't waiting on a collaborator")
+    return post
+
+
+@app.get("/api/collab/invites")
+async def collab_invites_incoming(current: Annotated[dict, Depends(get_current_user)]):
+    """Pending collab invites addressed to the current user (collaborator side)."""
+    rows = await db.collab_invites.find({"to_user": current["id"], "status": "pending"}).sort("created_at", -1).to_list(100)
+    out = []
+    for inv in rows:
+        post = await db.posts.find_one({"id": inv["post_id"]}, {"_id": 0})
+        owner = await db.users.find_one({"id": inv["from_user"]}, {"_id": 0})
+        if post and owner and post.get("collab_status") == "pending":
+            out.append({
+                "id": inv["id"],
+                "created_at": inv["created_at"].isoformat() if isinstance(inv["created_at"], datetime) else inv["created_at"],
+                "from_user": _public_user_card(owner),
+                "post": await serialize_post(post, current["id"]),
+            })
+    return out
+
+
+@app.get("/api/collab/pending")
+async def collab_pending_outgoing(current: Annotated[dict, Depends(get_current_user)]):
+    """The current user's own posts waiting on a collaborator (owner side)."""
+    rows = await db.posts.find({"author_id": current["id"], "collab_status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return [await serialize_post(p, current["id"]) for p in rows]
+
+
+@app.post("/api/collab/invites/{invite_id}/accept")
+async def collab_accept(invite_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    inv = await db.collab_invites.find_one({"id": invite_id})
+    if not inv or inv["to_user"] != current["id"]:
+        raise HTTPException(404, "Invite not found")
+    if inv["status"] != "pending":
+        raise HTTPException(400, "This invite was already handled")
+    post = await db.posts.find_one({"id": inv["post_id"]})
+    owner = await db.users.find_one({"id": inv["from_user"]})
+    if not post or not owner:
+        await db.collab_invites.update_one({"id": invite_id}, {"$set": {"status": "cancelled", "updated_at": now()}})
+        raise HTTPException(404, "That post no longer exists")
+    await db.collab_invites.update_one({"id": invite_id}, {"$set": {"status": "accepted", "updated_at": now()}})
+    await db.posts.update_one({"id": post["id"]}, {"$set": {"collab_status": "accepted", "collab_declined": False}})
+    post["collab_status"] = "accepted"
+    await db.notifications.delete_many({"post_id": post["id"], "type": "collab_invite"})
+    if post.get("type") == "post":
+        await db.users.update_one({"id": owner["id"]}, {"$inc": {"posts_count": 1}})
+        await db.users.update_one({"id": current["id"]}, {"$inc": {"posts_count": 1}})
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "user_id": owner["id"], "type": "collab_accept",
+        "actor_id": current["id"], "actor_name": current["display_name"],
+        "actor_avatar": avatar_or_default(current.get("avatar_url")),
+        "text": "accepted your collab invite — your post is live",
+        "post_id": post["id"], "link": _post_link(post), "read": False, "created_at": now(),
+    })
+    try:
+        await send_web_push(owner["id"], "Collab accepted", f"{current['display_name']} accepted your collab invite — your post is live", _post_link(post))
+    except Exception:
+        pass
+    await _notify_followers_new_collab(owner, current, post)
+    return await serialize_post(post, current["id"])
+
+
+@app.post("/api/collab/invites/{invite_id}/decline")
+async def collab_decline(invite_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    inv = await db.collab_invites.find_one({"id": invite_id})
+    if not inv or inv["to_user"] != current["id"]:
+        raise HTTPException(404, "Invite not found")
+    if inv["status"] != "pending":
+        raise HTTPException(400, "This invite was already handled")
+    await db.collab_invites.update_one({"id": invite_id}, {"$set": {"status": "declined", "updated_at": now()}})
+    # Post stays private in the owner's pending area; collaborator is detached.
+    await db.posts.update_one({"id": inv["post_id"]}, {"$set": {"collaborator_id": None, "collab_declined": True}})
+    await db.notifications.delete_many({"post_id": inv["post_id"], "type": "collab_invite"})
+    owner = await db.users.find_one({"id": inv["from_user"]})
+    if owner:
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()), "user_id": owner["id"], "type": "collab_decline",
+            "actor_id": current["id"], "actor_name": current["display_name"],
+            "actor_avatar": avatar_or_default(current.get("avatar_url")),
+            "text": "declined your collab invite", "post_id": inv["post_id"], "read": False, "created_at": now(),
+        })
+        try:
+            await send_web_push(owner["id"], "Collab declined", f"{current['display_name']} declined your collab invite", "/collab/pending")
+        except Exception:
+            pass
+    return {"status": "declined"}
+
+
+@app.post("/api/collab/posts/{post_id}/cancel")
+async def collab_cancel(post_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    """Owner cancels a pending invite; it leaves the collaborator's inbox."""
+    await _owner_pending_post(post_id, current["id"])
+    await db.collab_invites.update_many({"post_id": post_id, "status": "pending"}, {"$set": {"status": "cancelled", "updated_at": now()}})
+    await db.notifications.delete_many({"post_id": post_id, "type": "collab_invite"})
+    await db.posts.update_one({"id": post_id}, {"$set": {"collaborator_id": None, "collab_declined": False}})
+    return {"status": "cancelled"}
+
+
+@app.post("/api/collab/posts/{post_id}/publish-solo")
+async def collab_publish_solo(post_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    """Owner publishes a pending post as a normal solo post."""
+    await _owner_pending_post(post_id, current["id"])
+    await db.collab_invites.update_many({"post_id": post_id, "status": "pending"}, {"$set": {"status": "cancelled", "updated_at": now()}})
+    await db.notifications.delete_many({"post_id": post_id, "type": "collab_invite"})
+    await db.posts.update_one({"id": post_id}, {"$set": {"collaborator_id": None, "collab_status": "none", "collab_declined": False}})
+    fresh = await db.posts.find_one({"id": post_id})
+    if fresh.get("type") == "post":
+        await db.users.update_one({"id": current["id"]}, {"$inc": {"posts_count": 1}})
+    await _notify_followers_new_post(current, fresh)
+    return await serialize_post(fresh, current["id"])
+
+
+@app.post("/api/collab/posts/{post_id}/reinvite")
+async def collab_reinvite(post_id: str, body: ReinviteBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Owner sends a pending post to a different collaborator."""
+    post = await _owner_pending_post(post_id, current["id"])
+    collaborator = await _validate_collaborator(body.collaborator_id, current["id"])
+    await db.collab_invites.update_many({"post_id": post_id, "status": "pending"}, {"$set": {"status": "cancelled", "updated_at": now()}})
+    await db.notifications.delete_many({"post_id": post_id, "type": "collab_invite"})
+    await db.posts.update_one({"id": post_id}, {"$set": {"collaborator_id": collaborator["id"], "collab_status": "pending", "collab_declined": False}})
+    await _create_collab_invite(current, collaborator, post)
+    fresh = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    return await serialize_post(fresh, current["id"])
+
+
+@app.post("/api/posts/{post_id}/collab/detach")
+async def collab_detach(post_id: str, current: Annotated[dict, Depends(get_current_user)]):
+    """Either creator removes the collaboration; the post becomes the owner's solo post."""
+    post = await db.posts.find_one({"id": post_id})
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post.get("collab_status") != "accepted" or not post.get("collaborator_id"):
+        raise HTTPException(400, "This isn't a collab post")
+    if current["id"] not in (post["author_id"], post["collaborator_id"]):
+        raise HTTPException(403, "Not your post")
+    await _detach_collab_post(post)
+    fresh = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    return await serialize_post(fresh, current["id"])
 
 
 @app.post("/api/posts/{post_id}/like")
@@ -2005,6 +2352,7 @@ async def like_post(post_id: str, current: Annotated[dict, Depends(get_current_u
         except Exception as e:
             logger.warning(f"Like push failed: {e}")
         await send_web_push(post["author_id"], "New like", f"{current['display_name']} liked your post.", f"/posts/{post_id}")
+    await _notify_collab_engagement(post, current, "like", "liked your post", f"/posts/{post_id}", "New like")
     return {"status": "liked", "likes": updated.get("likes", 0)}
 
 
@@ -2130,6 +2478,7 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
         except Exception as e:
             logger.warning(f"Comment push failed: {e}")
         await send_web_push(post["author_id"], "New comment", f"{current['display_name']}: {body.text[:80]}", f"/posts/{post_id}")
+    await _notify_collab_engagement(post, current, "comment", f"commented: {body.text[:60]}", f"/posts/{post_id}", "New comment")
     comment_out = {k: v for k, v in comment.items() if k != "_id"}
     comment_out["created_at"] = comment["created_at"].isoformat()
     return comment_out
