@@ -15,7 +15,6 @@ MANAGED_KEYS = [
     {"name": "CLOUDFLARE_API_TOKEN", "label": "Cloudflare API Token", "service": "cloudflare", "secret": True},
     {"name": "AGORA_APP_ID", "label": "Agora App ID", "service": "agora", "secret": False},
     {"name": "AGORA_APP_CERTIFICATE", "label": "Agora App Certificate", "service": "agora", "secret": True},
-    {"name": "ELEVENLABS_API_KEY", "label": "ElevenLabs API Key (Sage voice)", "service": "elevenlabs", "secret": True},
     {"name": "CLOUDINARY_CLOUD_NAME", "label": "Cloudinary Cloud Name", "service": "cloudinary", "secret": False},
     {"name": "CLOUDINARY_UPLOAD_PRESET", "label": "Cloudinary Upload Preset", "service": "cloudinary", "secret": False},
     {"name": "PIXABAY_API_KEY", "label": "Pixabay API Key", "service": "pixabay", "secret": True},

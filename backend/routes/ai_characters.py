@@ -11,6 +11,7 @@ annotations break closure-local `Depends` in these routers).
 """
 import asyncio
 import base64
+import os
 import random
 import re
 import uuid
@@ -161,6 +162,12 @@ import settings_store
 
 TTS_MODEL = "eleven_v4"  # newest, most expressive — supports audio tags ([laughs], [sighs], [crying]…)
 TTS_FALLBACK_MODEL = "eleven_v3"  # used if v4 is unavailable for the account/voice (still tag-expressive)
+# Premade voices that always exist on any ElevenLabs account — used as a last
+# resort when a character's configured custom voice_id is missing from the
+# connected account (voice_not_found), so calls/voice notes still speak instead
+# of going silent.
+FALLBACK_VOICE_FEMALE = "EXAVITQu4vr4xnSDxMaL"  # Sarah
+FALLBACK_VOICE_MALE = "JBFqnCBsd6RMkjVDRZzb"    # George
 
 # Proactive "human-like" texting. Cadence is PERSONALITY-PACED: each character picks
 # its own next check-in time — someone attached texts within hours (even daily), a
@@ -1087,7 +1094,7 @@ def build_router(ctx) -> APIRouter:
         # Never whisper: drop any whisper/soft/quiet tags before synthesis.
         text = _strip_whisper(text)
 
-        def _synth(model_id: str, synth_text: str) -> bytes:
+        def _synth(model_id: str, synth_text: str, vid: str) -> bytes:
             from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
@@ -1095,24 +1102,36 @@ def build_router(ctx) -> APIRouter:
             # Faithful to the pasted voice, NO added accent/theatrical drift:
             # max similarity to the source voice + zero style keeps delivery neutral.
             stream = client.text_to_speech.convert(
-                text=synth_text, voice_id=voice_id, model_id=model_id, output_format="mp3_44100_128",
+                text=synth_text, voice_id=vid, model_id=model_id, output_format="mp3_44100_128",
                 voice_settings=VoiceSettings(stability=0.5, similarity_boost=1.0, style=0.0, use_speaker_boost=True),
             )
             return b"".join(stream)
 
-        # Model chain. v4/v3 support the [expressive] audio tags; many cloned/legacy
-        # voices are NOT enabled for v4/v3 at all (they only work on multilingual_v2),
-        # which is why one character can speak while a linked one stays silent. The
-        # final multilingual_v2 attempt guarantees a configured voice is still audible
-        # (tags stripped, since that model would otherwise read them aloud).
+        # Try the character's own voice first; if that voice isn't on the
+        # connected ElevenLabs account (voice_not_found), fall back to a premade
+        # voice so the character still speaks instead of going silent.
+        gender = (c.get("gender") or c.get("voice_gender") or "").lower()
+        fallback_voice = FALLBACK_VOICE_MALE if gender.startswith("m") else FALLBACK_VOICE_FEMALE
+        voice_chain = [voice_id] if voice_id == fallback_voice else [voice_id, fallback_voice]
+
+        # Model chain. v4/v3 support the [expressive] audio tags; the final
+        # multilingual_v2 attempt strips tags so a legacy voice stays audible.
         attempts = [(TTS_MODEL, text), (TTS_FALLBACK_MODEL, text), ("eleven_multilingual_v2", _strip_tags(text))]
         last_err = None
-        for model_id, synth_text in attempts:
-            try:
-                return await asyncio.to_thread(_synth, model_id, synth_text)
-            except Exception as e:
-                last_err = e
-                logger.warning(f"ai-char tts failed on {model_id} (voice {str(voice_id)[:8]}): {e}")
+        for vid in voice_chain:
+            missing_voice = False
+            for model_id, synth_text in attempts:
+                try:
+                    return await asyncio.to_thread(_synth, model_id, synth_text, vid)
+                except Exception as e:
+                    last_err = e
+                    msg = str(e)
+                    logger.warning(f"ai-char tts failed on {model_id} (voice {str(vid)[:8]}): {msg[:160]}")
+                    if "voice_not_found" in msg:
+                        missing_voice = True
+                        break  # this voice doesn't exist; skip models, try fallback voice
+            if not missing_voice:
+                break  # failures weren't about a missing voice — don't mask them with fallback
         if last_err:
             await _flag_elevenlabs(last_err)
         return None
@@ -1123,18 +1142,13 @@ def build_router(ctx) -> APIRouter:
         return ("data:audio/mpeg;base64," + base64.b64encode(audio).decode()) if audio else None
 
     async def _upload_audio(data: bytes) -> Optional[str]:
-        """Upload mp3 bytes to Cloudinary (unsigned) and return the hosted URL."""
-        cloud = settings_store.get("CLOUDINARY_CLOUD_NAME")
-        preset = settings_store.get("CLOUDINARY_UPLOAD_PRESET")
-        if not cloud or not preset:
-            return None
-        data_uri = "data:audio/mpeg;base64," + base64.b64encode(data).decode()
+        """Host mp3 bytes on PostMePlex object storage and return the public URL."""
         try:
-            async with httpx.AsyncClient(timeout=60) as cl:
-                r = await cl.post(
-                    f"https://api.cloudinary.com/v1_1/{cloud}/video/upload",
-                    data={"upload_preset": preset, "file": data_uri})
-            return r.json().get("secure_url")
+            import storage as objstorage
+            path = f"postmeplex/voice/{uuid.uuid4().hex}.mp3"
+            await objstorage.put_object(path, data, "audio/mpeg")
+            base = (os.environ.get("APP_PUBLIC_URL") or "").rstrip("/")
+            return f"{base}/api/files/{path}"
         except Exception as e:
             logger.warning(f"ai-char audio upload failed: {e}")
             return None

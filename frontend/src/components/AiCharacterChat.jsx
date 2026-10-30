@@ -56,6 +56,11 @@ export function AiCharacterChat({ characterId, onBack }) {
   const busy = sending;
   const [inCall, setInCall] = useState(false);
   const listRef = useRef(null);
+  const atBottomRef = useRef(true);
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
   const fileRef = useRef(null);
   const seenIds = useRef(new Set());
 
@@ -101,13 +106,20 @@ export function AiCharacterChat({ characterId, onBack }) {
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
   }, [poll]);
-  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages, phase]);
+  useEffect(() => {
+    // Only auto-scroll to newest when the user is already near the bottom — so
+    // scrolling up to read history isn't yanked back down by the 8s poll.
+    if (listRef.current && atBottomRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, [messages, phase]);
 
   const send = async (e) => {
     e.preventDefault();
     const draft = text.trim();
     if (!draft || sending) return;
     setText("");
+    atBottomRef.current = true;
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: "user", text: draft, created_at: new Date().toISOString() }]);
     setSending(true);
     try {
@@ -137,6 +149,7 @@ export function AiCharacterChat({ characterId, onBack }) {
     setUploading(true);
     const localPreview = URL.createObjectURL(file);
     const tmpId = `tmp-${Date.now()}`;
+    atBottomRef.current = true;
     setMessages((m) => [...m, { id: tmpId, role: "user", text: "", media_url: localPreview, media_type: kind, created_at: new Date().toISOString() }]);
     try {
       const up = await uploadToCloudinary(file, { resourceType: isAudioFile ? "video" : kind });
@@ -156,6 +169,7 @@ export function AiCharacterChat({ characterId, onBack }) {
     const ext = (blob.type.includes("mp4") || blob.type.includes("aac")) ? "m4a" : "webm";
     const tmpId = `tmp-${Date.now()}`;
     const localPreview = URL.createObjectURL(blob);
+    atBottomRef.current = true;
     setMessages((m) => [...m, { id: tmpId, role: "user", text: "", media_url: localPreview, media_type: "audio", audio_duration: duration, created_at: new Date().toISOString() }]);
     try {
       const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type });
@@ -232,7 +246,7 @@ export function AiCharacterChat({ characterId, onBack }) {
         </button>
       </header>
 
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      <div ref={listRef} onScroll={onListScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {messages.length === 0 ? (
           <div className="mx-auto mt-8 max-w-md text-center">
             <Avatar src={character.avatar_url} size={72} className="mx-auto" />

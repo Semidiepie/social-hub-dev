@@ -1,3 +1,11 @@
+## Fix — AI call voice restored (ElevenLabs key shadowing) + quick thinking (2026-06, backend/web)
+- Root cause of silent AI calls in production: a stale ElevenLabs key saved via the in-app Admin API Settings was stored in `db.api_keys` and silently OVERRODE the key from the secure secrets card (settings_store resolves DB override → env). Characters' custom voice IDs were absent under that old key → `voice_not_found` → the TTS retry loop (2 voices × 3 models) burned time then returned silence ("long thinking, no voice").
+- Fix: ELEVENLABS_API_KEY is now managed EXCLUSIVELY via the secure secrets card (env). Removed it from `settings_store.MANAGED_KEYS` (admin panel can no longer set it) and added a startup purge in `server.py` `_load_api_key_overrides` that deletes any `db.api_keys` ELEVENLABS_API_KEY override so the env key is authoritative in every environment after redeploy.
+- Verified in preview: both keys resolve the custom voices (MackF, Young Kid, creator tier); `eleven_v4` synthesizes in ~1.2s; full `/voice-turn` round trip = 3.8s with real audio returned. No more retry-loop silence.
+- Also already shipped in preview (prior session): new AI voice messages host on PostMePlex object storage (not dead Cloudinary); AI chat no longer auto-snaps to bottom while scrolling up.
+- ACTION FOR USER: redeploy (Publish) so the env key + override purge reach production. Old Cloudinary-hosted voice messages remain unrecoverable.
+
+
 ## Fix — AI proactive cadence is now personality-paced + strip roleplay actions from text (2026-06, web, admin-only)
 - **Problem:** uniform cadence throttled a loving "daughter" character the same as a cold one → she went silent for over a day (unrealistic).
 - **Fix:** each character now sets its OWN next check-in. `_proactive_decide` returns `next_hours` and the scheduler schedules the next evaluation from it (clamped 1–120h, ±15% jitter). Prompt guides: deeply attached ~2–8h (even multiple times/day), friendly ~12–24h, distant ~24–72h, cold/upset ~72–120h. Removed the fixed 8–72h window + blanket 45% mood-skip. Min idle lowered 180→60 min. Kept one-per-admin-per-pass + shuffle (no simultaneous) and stop-after-3-ignored.
@@ -1386,3 +1394,11 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 ## 2026-06 — Email feature removed (per user)
 - User decided an in-app inbox overlaps with existing Messages and external email isn't possible on-platform (open-relay restriction; no inbound; platform-managed sender). Removed: `/api/mail/*` endpoints + models (server.py), `pages/Email.jsx`, the `/email` route (App.js), and the "Email" hamburger link. Reels cleanup + sitemap + storage untouched.
 - KEPT: account email-change in Settings (standard sign-in/recovery setting) + backend `update_me` email validation/uniqueness. Helper text reworded (no @postmeplex.com/Email-tab mention).
+
+---
+## 2026-06 — AI call/voice outage fixes (web/backend)
+- **Root cause of "no voice on calls":** the connected ElevenLabs account no longer contains the characters' custom voices (free account w/ only 25 default voices) → every TTS call returned voice_not_found → silence + slow 3x retries. NOT a code bug (key swapped / voices removed externally). User skipped updating the ElevenLabs key for now.
+- **Fixes (ai_characters.py):** (1) `_tts_bytes` now falls back to a premade voice (Sarah/George by gender) when the character's voice is voice_not_found, and breaks out of the model loop immediately on voice_not_found (restores audio + cuts latency). All models incl. eleven_v4 verified working with a valid voice. (2) `_upload_audio` migrated from dead Cloudinary → PostMePlex object storage (`/api/files`); verified synth→upload→serve (audio/mpeg 200). Added `import os`.
+- **Fix (AiCharacterChat.jsx):** scroll-to-bottom effect now guarded by an `atBottomRef` (+ onScroll handler); user-initiated sends set at-bottom. Mirrors the Messages.jsx fix — scrolling up to read history no longer snaps back on the 8s poll.
+- Needs redeploy. After redeploy characters speak with a SUBSTITUTE voice until the ElevenLabs key is pointed back at the account holding the custom voices (secure secrets card).
+- TODO/known: pets.py still uploads to Cloudinary (broken, not urgent); other backend Cloudinary refs (_cloudinary_resized used only for media-analysis input URL transform) left as-is.

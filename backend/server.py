@@ -3427,6 +3427,13 @@ app.include_router(_build_livechat(route_ctx))
 
 @app.on_event("startup")
 async def _load_api_key_overrides():
+    # The ElevenLabs key is managed exclusively via the secure secrets card (env).
+    # Purge any legacy DB override so it can never shadow the env key — this was
+    # silently breaking AI voice in production when an old key sat in Admin settings.
+    try:
+        await db.api_keys.delete_one({"name": "ELEVENLABS_API_KEY"})
+    except Exception:
+        pass
     await settings_store.load()
 
 
