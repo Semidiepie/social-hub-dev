@@ -987,12 +987,13 @@ def build_router(ctx) -> APIRouter:
             system_message=_system(c, spoken, context),
         ).with_model("anthropic", "claude-haiku-4-5-20251001" if fast else "claude-sonnet-4-6")
         if fast:
-            # On a call she can talk freely — short quips OR long heartfelt paragraphs as the
-            # moment calls for. Generous cap so she's never cut off mid-thought.
+            # Generous cap so she's never cut off mid-thought, but the brief keeps most
+            # replies short — long only when the moment genuinely calls for it.
             chat = chat.with_params(max_tokens=700)
-        brief = ("\n\nThis is a live phone call — talk like a real person on the phone. Reply at whatever "
-                 "length feels natural: a quick line when that's all it needs, or a long, flowing paragraph "
-                 "when you've got a lot on your mind or something to explain. Don't hold back or force it short." if fast else "")
+        brief = ("\n\nThis is a live phone call — talk like a real person on the phone and VARY your length "
+                 "naturally. MOST of the time reply in just a sentence or two, like normal quick back-and-forth. "
+                 "Only give a longer, flowing answer when the question really calls for it or you genuinely have "
+                 "a lot to share. Don't make every reply long." if fast else "")
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
             f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.' + brief
         )
