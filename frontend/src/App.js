@@ -52,6 +52,9 @@ import AdminThemePage from "@/pages/AdminTheme";
 import HolidayThemeLayer from "@/components/HolidayThemeLayer";
 import AdminGamesPage from "@/pages/AdminGames";
 import AdminAiCharactersPage from "@/pages/AdminAiCharacters";
+import AdminLayout from "@/components/AdminLayout";
+import AdminDashboardPage from "@/pages/AdminDashboard";
+import AdminNotificationSoundsPage from "@/pages/AdminNotificationSounds";
 import GamesHubPage from "@/pages/GamesHub";
 import GameProfilePage from "@/pages/GameProfile";
 import GamePlayerPage from "@/pages/GamePlayer";
@@ -188,42 +191,21 @@ export default function App() {
               path="/settings"
               element={<ProtectedRoute><SettingsPage /></ProtectedRoute>}
             />
-            <Route
-              path="/admin/reset-pins"
-              element={<ProtectedRoute><AdminResetPinsPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/verify"
-              element={<ProtectedRoute><AdminVerifyPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/curate"
-              element={<ProtectedRoute><AdminCuratePage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/accounts"
-              element={<ProtectedRoute><AdminAccountsPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/remembering"
-              element={<ProtectedRoute><AdminRememberingPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/blogs"
-              element={<ProtectedRoute><AdminBlogsPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/announce"
-              element={<ProtectedRoute><AdminAnnouncePage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/keys"
-              element={<ProtectedRoute><AdminKeysPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/theme"
-              element={<ProtectedRoute><AdminThemePage /></ProtectedRoute>}
-            />
+            <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+              <Route index element={<AdminDashboardPage />} />
+              <Route path="reset-pins" element={<AdminResetPinsPage />} />
+              <Route path="verify" element={<AdminVerifyPage />} />
+              <Route path="curate" element={<AdminCuratePage />} />
+              <Route path="accounts" element={<AdminAccountsPage />} />
+              <Route path="remembering" element={<AdminRememberingPage />} />
+              <Route path="blogs" element={<AdminBlogsPage />} />
+              <Route path="announce" element={<AdminAnnouncePage />} />
+              <Route path="keys" element={<AdminKeysPage />} />
+              <Route path="theme" element={<AdminThemePage />} />
+              <Route path="games" element={<AdminGamesPage />} />
+              <Route path="ai-characters" element={<AdminAiCharactersPage />} />
+              <Route path="notification-sounds" element={<AdminNotificationSoundsPage />} />
+            </Route>
 
             <Route path="/music" element={<MusicPage />} />
 
@@ -236,8 +218,6 @@ export default function App() {
             <Route path="/games" element={<ProtectedRoute><GamesHubPage /></ProtectedRoute>} />
             <Route path="/games/:id" element={<ProtectedRoute><GameProfilePage /></ProtectedRoute>} />
             <Route path="/games/:id/play" element={<ProtectedRoute><GamePlayerPage /></ProtectedRoute>} />
-            <Route path="/admin/games" element={<ProtectedRoute><AdminGamesPage /></ProtectedRoute>} />
-            <Route path="/admin/ai-characters" element={<ProtectedRoute><AdminAiCharactersPage /></ProtectedRoute>} />
 
             {/* Clean channel-handle URLs: /@username and /@username/{videoId}.
                 Declared last so all static/specific routes win first. */}

@@ -3906,6 +3906,64 @@ async def serve_file(path: str, request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Admin: Studio dashboard stats + global per-type notification sounds
+# ---------------------------------------------------------------------------
+NOTIF_SOUND_GROUPS = {"message", "posts", "social", "follow", "collab"}
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(current: Annotated[dict, Depends(get_current_user)]):
+    if not (current.get("is_admin") or current.get("is_super_admin")):
+        raise HTTPException(403, "Admin only")
+    return {
+        "users": await db.users.count_documents({}),
+        "verified": await db.users.count_documents({"is_verified": True}),
+        "posts": await db.posts.count_documents({"type": "post"}),
+        "reels": await db.posts.count_documents({"type": "reel"}),
+        "blogs": await db.blogs.count_documents({"status": "published"}),
+        "pending_blogs": await db.users.count_documents({"blog_permission": "pending"}),
+        "live_now": await db.live_streams.count_documents({"status": "live"}),
+    }
+
+
+@app.get("/api/notification-sounds")
+async def get_notification_sounds():
+    doc = await db.app_settings.find_one({"_id": "notification_sounds"})
+    return {"sounds": (doc or {}).get("sounds", {})}
+
+
+class NotifSoundBody(BaseModel):
+    group: str
+    url: Optional[str] = None
+
+
+@app.post("/api/admin/notification-sounds")
+async def set_notification_sound(body: NotifSoundBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_super_admin"):
+        raise HTTPException(403, "Only the super-admin can change notification sounds")
+    if body.group not in NOTIF_SOUND_GROUPS:
+        raise HTTPException(400, "Unknown notification group")
+    field = f"sounds.{body.group}"
+    if body.url:
+        update = {"$set": {field: body.url, "updated_at": datetime.now(timezone.utc)}}
+    else:
+        update = {"$unset": {field: ""}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+    await db.app_settings.update_one({"_id": "notification_sounds"}, update, upsert=True)
+    doc = await db.app_settings.find_one({"_id": "notification_sounds"})
+    return {"sounds": (doc or {}).get("sounds", {})}
+
+
+@app.get("/api/messages/unread-count")
+async def messages_unread_count(current: Annotated[dict, Depends(get_current_user)]):
+    total = 0
+    async for c in db.conversations.find({"member_ids": current["id"]}, {"unread": 1}):
+        u = c.get("unread") or {}
+        if isinstance(u, dict):
+            total += int(u.get(current["id"], 0) or 0)
+    return {"count": total}
+
+
+# ---------------------------------------------------------------------------
 # SEO: dynamic sitemap for official PostMePlex blogs (+ Google News entries)
 # ---------------------------------------------------------------------------
 from xml.sax.saxutils import escape as _xml_escape  # noqa: E402

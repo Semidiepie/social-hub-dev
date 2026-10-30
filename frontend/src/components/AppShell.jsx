@@ -182,7 +182,7 @@ export function AppShell({ children }) {
           </NavLink>
           {user?.is_super_admin && (
             <NavLink
-              to="/admin/verify"
+              to="/admin"
               data-testid="sidebar-admin"
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
