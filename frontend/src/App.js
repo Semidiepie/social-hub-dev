@@ -16,7 +16,6 @@ import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import HomePage from "@/pages/Home";
 import BlogsPage from "@/pages/Blogs";
-import EmailPage from "@/pages/Email";
 import BlogReadPage from "@/pages/BlogRead";
 import BlogComposePage from "@/pages/BlogCompose";
 import BlogRequestPage from "@/pages/BlogRequest";
@@ -100,6 +99,19 @@ export default function App() {
   return (
     <BrowserRouter>
       <SplashScreen />
+      {/* Metallic gold paint for the gold verified badge (referenced via
+          fill:url(#pmp-gold) by badgeStyle). Defined once, used app-wide. */}
+      <svg width="0" height="0" aria-hidden="true" style={{ position: "absolute" }}>
+        <defs>
+          <linearGradient id="pmp-gold" x1="0" y1="0" x2="0.35" y2="1">
+            <stop offset="0%" stopColor="#FFF4C2" />
+            <stop offset="22%" stopColor="#F6D469" />
+            <stop offset="48%" stopColor="#E3A72B" />
+            <stop offset="74%" stopColor="#C6831A" />
+            <stop offset="100%" stopColor="#8A5A12" />
+          </linearGradient>
+        </defs>
+      </svg>
       <AuthProvider>
         <PlayerProvider>
           <CallProvider>
@@ -134,7 +146,7 @@ export default function App() {
             {/* Home & content — viewable by everyone but interactions need auth */}
             <Route path="/" element={<HomePage />} />
             <Route path="/blogs" element={<BlogsPage />} />
-            <Route path="/email" element={<ProtectedRoute><EmailPage /></ProtectedRoute>} />            <Route path="/blogs/new" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
+            <Route path="/blogs/new" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />
             <Route path="/blogs/request" element={<ProtectedRoute><BlogRequestPage /></ProtectedRoute>} />
             <Route path="/blogs/:id" element={<BlogReadPage />} />
             <Route path="/blogs/:id/edit" element={<ProtectedRoute><BlogComposePage /></ProtectedRoute>} />

@@ -1379,3 +1379,10 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - **Gold badge:** `verified_color = "gold"` sentinel → X-style gold BadgeCheck (fill #F5B301 + soft glow) rendered app-wide via `badgeStyle()`/`badgeCls()` (lib/format.js). New admin endpoint `POST /api/admin/users/{id}/verify-gold {gold}` (toggles + auto-verifies / clears). AdminVerify page: added a gold "Gold" toggle button per user; row badge preview uses shared helpers. Verified: endpoint on/off + badge renders gold. NOTE: web only — mobile badge components (PostCard.tsx etc.) still render default color; gold parity on mobile is a follow-up.
 - **Broken reels:** old reels pointed at the dead Cloudinary cloud (unrecoverable, can't re-upload). Startup cleanup `_cleanup_broken_reels()` deletes `type:"reel"` posts whose `video_url` matches `res.cloudinary.com` (idempotent; runs in prod on redeploy). `/api/reels` + `/api/users/{id}/reels` also filter out any Cloudinary reels. Verified in preview: 4 broken deleted (21→17), feed returns 0 Cloudinary reels; non-Cloudinary reels preserved.
 - Both need production redeploy. Reels auto-cleanup runs on first prod boot after deploy.
+
+- **Gold badge refinement:** flat fill read as yellow; replaced with a metallic multi-stop linearGradient `#pmp-gold` (defined once in App.js, light→deep bronze) referenced via `fill:url(#pmp-gold)` in badgeStyle, plus layered drop-shadows. Verified on the official profile — reads as real gold with sheen (X-style).
+
+---
+## 2026-06 — Email feature removed (per user)
+- User decided an in-app inbox overlaps with existing Messages and external email isn't possible on-platform (open-relay restriction; no inbound; platform-managed sender). Removed: `/api/mail/*` endpoints + models (server.py), `pages/Email.jsx`, the `/email` route (App.js), and the "Email" hamburger link. Reels cleanup + sitemap + storage untouched.
+- KEPT: account email-change in Settings (standard sign-in/recovery setting) + backend `update_me` email validation/uniqueness. Helper text reworded (no @postmeplex.com/Email-tab mention).

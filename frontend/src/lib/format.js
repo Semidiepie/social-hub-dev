@@ -100,7 +100,7 @@ export function badgeStyle(entity) {
   const color = entity?.verified_color;
   if (!color) return undefined;
   if (color === GOLD_BADGE) {
-    return { fill: "#F5B301", filter: "drop-shadow(0 0 2px rgba(245,179,1,0.65))" };
+    return { fill: "url(#pmp-gold)", filter: "drop-shadow(0 1px 1px rgba(120,80,10,0.55)) drop-shadow(0 0 2px rgba(240,190,70,0.5))" };
   }
   return { fill: color };
 }

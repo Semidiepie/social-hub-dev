@@ -370,7 +370,7 @@ export default function SettingsPage() {
                 className="mt-1.5 h-11"
               />
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Used for sign-in and recovery. Set a <b>@postmeplex.com</b> address to unlock the Email tab.
+                Used for sign-in and account recovery.
               </p>
             </div>
             <div>
