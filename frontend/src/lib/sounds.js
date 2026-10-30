@@ -48,7 +48,8 @@ export function playNotificationChime() {
 // ---------------------------------------------------------------------------
 const TYPE_TO_GROUP = {
   message: "message",
-  post: "posts", reel: "posts", video: "posts", live: "posts",
+  post: "posts", reel: "posts", video: "posts",
+  live: "live",
   like: "social", comment: "social", heart: "social",
   follow: "follow",
   collab_invite: "collab", collab_accept: "collab", collab_decline: "collab", update: "collab",

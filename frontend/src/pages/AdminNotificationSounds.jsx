@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2, BellRing, Play, Upload, Check, RotateCcw, MessageCircle, Clapperboard, Heart, UserPlus, Users } from "lucide-react";
+import { Loader2, BellRing, Play, Upload, Check, RotateCcw, MessageCircle, Image as ImageIcon, Radio, Heart, UserPlus, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
@@ -12,7 +12,8 @@ import { toast } from "sonner";
 // one .mp3 per group; it applies to ALL users in real time (played in-app).
 const GROUPS = [
   { key: "message", label: "Messages (DMs)", desc: "When a new direct message arrives", icon: MessageCircle },
-  { key: "posts", label: "New posts, reels & live", desc: "New content or a live stream from people a user follows", icon: Clapperboard },
+  { key: "posts", label: "New posts & reels", desc: "When someone a user follows posts on PostMePlex", icon: ImageIcon },
+  { key: "live", label: "Live", desc: "When someone a user follows starts a live stream", icon: Radio },
   { key: "social", label: "Likes & comments", desc: "Someone likes or comments on a user's content", icon: Heart },
   { key: "follow", label: "New followers", desc: "Someone starts following a user", icon: UserPlus },
   { key: "collab", label: "Collab invites & announcements", desc: "Collab requests and app-wide announcements", icon: Users },
