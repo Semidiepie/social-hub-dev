@@ -94,7 +94,13 @@ export function badgeCls(entity, base = "") {
 // recolors ONLY the badge body (the check-mark tick keeps its class color).
 // Inline `fill` overrides whatever fill class badgeCls set. Undefined when no
 // custom color, so the default brand/red styling applies.
+// Special sentinel "gold" → premium X-style gold badge with a soft glow.
+export const GOLD_BADGE = "gold";
 export function badgeStyle(entity) {
   const color = entity?.verified_color;
-  return color ? { fill: color } : undefined;
+  if (!color) return undefined;
+  if (color === GOLD_BADGE) {
+    return { fill: "#F5B301", filter: "drop-shadow(0 0 2px rgba(245,179,1,0.65))" };
+  }
+  return { fill: color };
 }

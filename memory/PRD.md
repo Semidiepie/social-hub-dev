@@ -1373,3 +1373,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - **Account email change:** `UpdateProfileBody.email` + `update_me` now validate (EmailStr) + enforce uniqueness; users can self-set any unused email incl. `@postmeplex.com` to unlock Mail.
 - **Web:** new `/email` page (`pages/Email.jsx`, ProtectedRoute) with persistent warning label, Inbox/Sent, read modal, compose modal; "Email" link added to hamburger side menu (`menu-email`). Settings profile adds an email field (`settings-email`).
 - **Verified:** backend curl (send→inbox/sent→read→unread count, 400/404/403 gating, email change + duplicate rejection + access unlock) and web smoke (page/warning/tabs/compose render). Web-only. Needs redeploy for production.
+
+---
+## 2026-06 — Gold verified badge (admin) + broken-reels cleanup (web/backend)
+- **Gold badge:** `verified_color = "gold"` sentinel → X-style gold BadgeCheck (fill #F5B301 + soft glow) rendered app-wide via `badgeStyle()`/`badgeCls()` (lib/format.js). New admin endpoint `POST /api/admin/users/{id}/verify-gold {gold}` (toggles + auto-verifies / clears). AdminVerify page: added a gold "Gold" toggle button per user; row badge preview uses shared helpers. Verified: endpoint on/off + badge renders gold. NOTE: web only — mobile badge components (PostCard.tsx etc.) still render default color; gold parity on mobile is a follow-up.
+- **Broken reels:** old reels pointed at the dead Cloudinary cloud (unrecoverable, can't re-upload). Startup cleanup `_cleanup_broken_reels()` deletes `type:"reel"` posts whose `video_url` matches `res.cloudinary.com` (idempotent; runs in prod on redeploy). `/api/reels` + `/api/users/{id}/reels` also filter out any Cloudinary reels. Verified in preview: 4 broken deleted (21→17), feed returns 0 Cloudinary reels; non-Cloudinary reels preserved.
+- Both need production redeploy. Reels auto-cleanup runs on first prod boot after deploy.

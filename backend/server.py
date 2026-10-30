@@ -1333,7 +1333,7 @@ async def user_posts(user_id: str, viewer: Annotated[Optional[dict], Depends(get
 
 @app.get("/api/users/{user_id}/reels")
 async def user_reels(user_id: str, viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
-    rows = await db.posts.find({"author_id": user_id, "type": "reel"}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    rows = await db.posts.find({"author_id": user_id, "type": "reel", "video_url": {"$not": {"$regex": "res\\.cloudinary\\.com"}}}, {"_id": 0}).sort("created_at", -1).to_list(200)
     viewer_id = viewer["id"] if viewer else None
     return [await serialize_post(p, viewer_id) for p in rows]
 
@@ -1759,7 +1759,7 @@ async def discover(filter: Literal["top", "accounts", "tags"] = "top",
 async def reels(viewer: Annotated[Optional[dict], Depends(get_optional_user)]):
     viewer_id = viewer["id"] if viewer else None
     blocked = await blocked_ids_for(viewer_id)
-    query: dict = {"type": "reel"}
+    query: dict = {"type": "reel", "video_url": {"$not": {"$regex": "res\\.cloudinary\\.com"}}}
     if blocked:
         query["author_id"] = {"$nin": list(blocked)}
     rows = await db.posts.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
@@ -2400,6 +2400,28 @@ async def admin_set_verify_color(user_id: str, body: VerifyColorBody, current: A
     # Setting a custom badge color auto-verifies the account.
     await db.users.update_one({"id": user_id}, {"$set": {"verified_color": color, "is_verified": True}})
     return {"id": user_id, "verified_color": color, "is_verified": True}
+
+
+class VerifyGoldBody(BaseModel):
+    """Admin toggles the X-style GOLD verified badge. gold=True stores the
+    'gold' sentinel in verified_color (and auto-verifies); gold=False clears it
+    back to the default blue badge."""
+    gold: bool = True
+
+
+@app.post("/api/admin/users/{user_id}/verify-gold")
+async def admin_set_verify_gold(user_id: str, body: VerifyGoldBody, current: Annotated[dict, Depends(get_current_user)]):
+    if not current.get("is_admin") and not current.get("is_super_admin"):
+        raise HTTPException(403, "Admin only")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if body.gold:
+        await db.users.update_one({"id": user_id}, {"$set": {"verified_color": "gold", "is_verified": True}})
+        return {"id": user_id, "verified_color": "gold", "is_verified": True}
+    await db.users.update_one({"id": user_id}, {"$set": {"verified_color": None}})
+    return {"id": user_id, "verified_color": None, "is_verified": bool(target.get("is_verified", False))}
+
 
 
 class FeatureBody(BaseModel):
@@ -3686,3 +3708,19 @@ async def mail_delete(mail_id: str, current: Annotated[dict, Depends(get_current
         raise HTTPException(404, "Not found")
     await db.mail.update_one({"id": mail_id}, {"$addToSet": {"deleted_by": current["id"]}})
     return {"ok": True}
+
+
+@app.on_event("startup")
+async def _cleanup_broken_reels():
+    """One-time (idempotent) cleanup: permanently delete reels whose video is on
+    the dead Cloudinary cloud — those files are gone (401) and can't be
+    recovered, so the reel can never play. Runs on every boot but only matches
+    broken Cloudinary reels, so it's a no-op once they're gone."""
+    try:
+        res = await db.posts.delete_many(
+            {"type": "reel", "video_url": {"$regex": "res\\.cloudinary\\.com"}}
+        )
+        if res.deleted_count:
+            logger.info(f"[cleanup] deleted {res.deleted_count} broken Cloudinary reels")
+    except Exception as e:
+        logger.error(f"[cleanup] broken-reels cleanup failed: {e}")

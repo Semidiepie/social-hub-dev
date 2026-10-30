@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2, Search, BadgeCheck, Users, Palette, X } from "lucide-react";
+import { Loader2, Search, BadgeCheck, Users, Palette, X, Crown } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/Avatar";
+import { badgeCls, badgeStyle } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,6 +20,7 @@ export default function AdminVerifyPage() {
   const [busyId, setBusyId] = useState(null);
   const [colorText, setColorText] = useState({});
   const [colorBusyId, setColorBusyId] = useState(null);
+  const [goldBusyId, setGoldBusyId] = useState(null);
 
   const load = useCallback(async (query) => {
     setLoading(true);
@@ -71,6 +73,21 @@ export default function AdminVerifyPage() {
     }
   };
 
+  const toggleGold = async (u) => {
+    if (goldBusyId) return;
+    const next = u.verified_color !== "gold";
+    setGoldBusyId(u.id);
+    try {
+      const resp = await api.post(`/admin/users/${u.id}/verify-gold`, { gold: next });
+      setUsers((prev) => prev.map((x) => (x.id === resp.id ? { ...x, verified_color: resp.verified_color, is_verified: resp.is_verified } : x)));
+      toast.success(next ? "Gold verified badge granted ✨" : "Gold badge removed");
+    } catch (e) {
+      toast.error(e.message || "Failed");
+    } finally {
+      setGoldBusyId(null);
+    }
+  };
+
   if (authLoading) return null;
   if (!user?.is_super_admin) return <Navigate to="/" replace />;
 
@@ -115,7 +132,7 @@ export default function AdminVerifyPage() {
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="flex items-center gap-1">
                     <span className="truncate font-semibold">{u.display_name}</span>
-                    {u.is_verified && <BadgeCheck size={15} className="shrink-0 text-background fill-primary" style={u.verified_color ? { fill: u.verified_color } : undefined} data-testid={`admin-verify-badge-${u.username}`} />}
+                    {u.is_verified && <BadgeCheck size={15} className={badgeCls(u, "shrink-0")} style={badgeStyle(u)} data-testid={`admin-verify-badge-${u.username}`} />}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">@{u.username}</div>
                   {u.email && <div className="truncate text-[11px] text-muted-foreground/70">{u.email}</div>}
@@ -138,6 +155,20 @@ export default function AdminVerifyPage() {
                   ) : (
                     "Verify"
                   )}
+                </Button>
+                <Button
+                  onClick={() => toggleGold(u)}
+                  disabled={goldBusyId === u.id}
+                  variant="outline"
+                  className={
+                    u.verified_color === "gold"
+                      ? "min-w-[92px] gap-1 border-0 bg-gradient-to-b from-amber-300 to-yellow-500 font-bold text-black shadow-[0_0_10px_rgba(245,179,1,0.5)] hover:opacity-90"
+                      : "min-w-[92px] gap-1 border-amber-400/70 text-amber-500 hover:bg-amber-400/10"
+                  }
+                  data-testid={`admin-gold-toggle-${u.username}`}
+                  title="X-style gold verified badge"
+                >
+                  {goldBusyId === u.id ? <Loader2 size={14} className="animate-spin" /> : <><Crown size={14} /> Gold</>}
                 </Button>
                 </div>
 
