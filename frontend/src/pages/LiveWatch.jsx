@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import Hls from "hls.js";
+import { attachHls } from "@/lib/hlsAttach";
 import { Loader2, Radio, Volume2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -119,20 +119,13 @@ export default function LiveWatchPage() {
         .then((r) => { rtcRef.current = r; el.play().catch(() => {}); })
         .catch(() => {});
     } else if (stream.hls_url) {
-      if (el.canPlayType("application/vnd.apple.mpegurl")) {
-        el.src = stream.hls_url;
-      } else if (Hls.isSupported()) {
-        const hls = new Hls({ lowLatencyMode: true });
-        hls.loadSource(stream.hls_url);
-        hls.attachMedia(el);
-        hlsRef.current = hls;
-      }
+      hlsRef.current = attachHls(el, stream.hls_url, { lowLatencyMode: true });
     }
     return () => {
       endSession(rtcRef.current?.session);
       rtcRef.current?.pc?.close();
       rtcRef.current = null;
-      hlsRef.current?.destroy();
+      hlsRef.current?.();
       hlsRef.current = null;
     };
   }, [stream]);

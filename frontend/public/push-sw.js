@@ -1,5 +1,14 @@
 /* PostMePlex Web Push service worker. Displays system notifications even when
-   the tab/site is closed, and focuses/opens the app when clicked. */
+   the tab/site is closed, and focuses/opens the app when clicked.
+   It also registers a (pass-through) fetch handler: Android/Chrome only treat
+   the site as an installable PWA — the real "Install app" that opens full-screen,
+   not a plain home-screen shortcut — when the active service worker has a fetch
+   handler. We don't cache or intercept anything; letting the browser handle
+   requests normally is enough to satisfy the install criteria. */
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener("fetch", () => { /* pass-through — enables PWA installability */ });
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {

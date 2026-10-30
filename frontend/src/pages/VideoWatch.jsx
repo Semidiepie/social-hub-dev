@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Loader2, Heart, Eye, ArrowLeft, BadgeCheck, Trash2, Pencil, Share2 } from "lucide-react";
-import Hls from "hls.js";
+import { attachHls } from "@/lib/hlsAttach";
 import { api } from "@/lib/api";
 import { shareUrl, origin } from "@/lib/share";
 import { Avatar } from "@/components/Avatar";
@@ -60,22 +60,13 @@ export default function VideoWatchPage() {
   }, [id]);
 
   // Attach the right source: adaptive HLS for Cloudflare Stream videos (hls.js,
-  // with native HLS on Safari), plain MP4 for legacy Cloudinary videos.
+  // with native HLS on iOS), plain MP4 for legacy Cloudinary videos.
   useEffect(() => {
     const el = videoElRef.current;
     if (!el || !video) return undefined;
     const isStream = video.provider === "stream" && video.hls_url;
     if (isStream) {
-      if (el.canPlayType("application/vnd.apple.mpegurl")) {
-        el.src = video.hls_url;
-      } else if (Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
-        hls.loadSource(video.hls_url);
-        hls.attachMedia(el);
-        return () => hls.destroy();
-      } else {
-        el.src = video.hls_url;
-      }
+      return attachHls(el, video.hls_url, { lowLatencyMode: false });
     } else if (video.video_url) {
       el.src = video.video_url;
     }
