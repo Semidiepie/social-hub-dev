@@ -48,6 +48,8 @@ import AdminRememberingPage from "@/pages/AdminRemembering";
 import AdminBlogsPage from "@/pages/AdminBlogs";
 import AdminAnnouncePage from "@/pages/AdminAnnounce";
 import AdminKeysPage from "@/pages/AdminKeys";
+import AdminThemePage from "@/pages/AdminTheme";
+import HolidayThemeLayer from "@/components/HolidayThemeLayer";
 import AdminGamesPage from "@/pages/AdminGames";
 import AdminAiCharactersPage from "@/pages/AdminAiCharacters";
 import GamesHubPage from "@/pages/GamesHub";
@@ -218,6 +220,10 @@ export default function App() {
               path="/admin/keys"
               element={<ProtectedRoute><AdminKeysPage /></ProtectedRoute>}
             />
+            <Route
+              path="/admin/theme"
+              element={<ProtectedRoute><AdminThemePage /></ProtectedRoute>}
+            />
 
             <Route path="/music" element={<MusicPage />} />
 
@@ -244,6 +250,7 @@ export default function App() {
           <PlayerBar />
           <InstallAppPrompt />
           <ThemeLayer />
+          <HolidayThemeLayer />
           </CallProvider>
         </PlayerProvider>
       </AuthProvider>

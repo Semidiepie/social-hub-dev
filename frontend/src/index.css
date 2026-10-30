@@ -274,6 +274,46 @@ html, body {
   100% { transform: translateY(112vh) translateX(-16px) rotate(360deg); }
 }
 
+/* ===== Holiday Theme Generator (global, admin-applied) ===== */
+.pmp-holiday { position: fixed; inset: 0; z-index: 44; pointer-events: none; overflow: hidden; }
+.pmp-holiday * { pointer-events: none; }
+.pmp-hd { position: absolute; will-change: transform; filter: drop-shadow(0 4px 10px rgba(0,0,0,.35)); }
+.pmp-hd-tl { top: 0; left: 0; }
+.pmp-hd-tr { top: 0; right: 0; transform: scaleX(-1); }
+.pmp-hd-bl { bottom: 0; left: 0; }
+.pmp-hd-br { bottom: 0; right: 0; }
+.pmp-hd-top { top: 0; left: 0; right: 0; }
+
+@keyframes pmp-sway { 0%,100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+@keyframes pmp-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+@keyframes pmp-twinkle { 0%,100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes pmp-blink { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes pmp-bob { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-10px) rotate(3deg); } }
+@keyframes pmp-pop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(.9); opacity: 0; } }
+
+.pmp-anim-sway  { animation: pmp-sway 3.4s ease-in-out infinite; transform-origin: top center; }
+.pmp-anim-float { animation: pmp-float 4s ease-in-out infinite; }
+.pmp-anim-twinkle { animation: pmp-twinkle 2.2s ease-in-out infinite; }
+.pmp-anim-bob   { animation: pmp-bob 3.6s ease-in-out infinite; }
+
+.pmp-holiday-banner {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  top: 10px; z-index: 46; pointer-events: auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px 7px 16px; border-radius: 9999px;
+  background: hsl(var(--card) / .92); border: 1px solid hsl(var(--primary) / .55);
+  color: hsl(var(--foreground)); font-size: 13px; font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35); backdrop-filter: blur(10px);
+  max-width: min(92vw, 560px);
+}
+.pmp-holiday-banner .pmp-banner-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 9999px; cursor: pointer;
+  color: hsl(var(--muted-foreground)); background: hsl(var(--secondary));
+}
+.pmp-holiday-banner .pmp-banner-close:hover { color: hsl(var(--foreground)); }
+
+
 
 /* App load splash (X-style zoom reveal, PostMePlex theme) */
 @keyframes splash-bolt-pop {

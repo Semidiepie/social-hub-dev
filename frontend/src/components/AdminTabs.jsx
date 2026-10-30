@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { BadgeCheck, BookText, KeyRound, Heart, Megaphone, ShieldAlert, Sparkles, Users, Gamepad2, BrainCircuit } from "lucide-react";
+import { BadgeCheck, BookText, KeyRound, Heart, Megaphone, ShieldAlert, Sparkles, Users, Gamepad2, BrainCircuit, Wand2 } from "lucide-react";
 
 const TABS = [
   { to: "/admin/verify", label: "Verify accounts", icon: BadgeCheck, testId: "admin-tab-verify" },
@@ -8,6 +8,7 @@ const TABS = [
   { to: "/admin/accounts", label: "Accounts", icon: Users, testId: "admin-tab-accounts" },
   { to: "/admin/games", label: "Games", icon: Gamepad2, testId: "admin-tab-games" },
   { to: "/admin/ai-characters", label: "AI Characters", icon: BrainCircuit, testId: "admin-tab-ai-characters" },
+  { to: "/admin/theme", label: "Holiday Theme", icon: Wand2, testId: "admin-tab-theme" },
   { to: "/admin/blogs", label: "Blog approvals", icon: BookText, testId: "admin-tab-blogs" },
   { to: "/admin/reset-pins", label: "Reset PINs", icon: KeyRound, testId: "admin-tab-reset-pins" },
   { to: "/admin/remembering", label: "Remembering", icon: Heart, testId: "admin-tab-remembering" },

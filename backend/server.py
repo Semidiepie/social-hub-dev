@@ -3424,6 +3424,9 @@ app.include_router(_build_games(route_ctx))
 from routes.livechat import build_router as _build_livechat  # noqa: E402
 app.include_router(_build_livechat(route_ctx))
 
+from routes.holiday_theme import build_router as _build_holiday_theme  # noqa: E402
+app.include_router(_build_holiday_theme(route_ctx))
+
 
 @app.on_event("startup")
 async def _load_api_key_overrides():
