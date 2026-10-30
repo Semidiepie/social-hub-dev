@@ -34,6 +34,97 @@ export default function BlogReadPage() {
     load();
   }, [load]);
 
+  // SEO: per-article head tags + NewsArticle structured data (official authors).
+  // Managed imperatively (not via Helmet) so it's deterministic in dev + prod.
+  useEffect(() => {
+    if (!blog) return undefined;
+    const origin = window.location.origin;
+    const canonical = `${origin}/blogs/${blog.id}`;
+    const plain = (blog.body_md || "")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/[#>*_`~\-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const desc = (blog.subtitle || plain || blog.title || "PostMePlex blog").slice(0, 200);
+    const image = blog.cover_url || `${origin}/logo-512.png`;
+    const published = blog.published_at || blog.created_at;
+
+    const changes = [];
+    const upsertMeta = (attr, key, content) => {
+      let el = document.head.querySelector(`meta[${attr}="${key}"]`);
+      const created = !el;
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      changes.push({ el, prev: created ? null : el.getAttribute("content"), created });
+      el.setAttribute("content", content);
+    };
+
+    const prevTitle = document.title;
+    document.title = `${blog.title} — PostMePlex`;
+    upsertMeta("name", "description", desc);
+    upsertMeta("property", "og:type", "article");
+    upsertMeta("property", "og:title", blog.title);
+    upsertMeta("property", "og:description", desc);
+    upsertMeta("property", "og:image", image);
+    upsertMeta("property", "og:url", canonical);
+    upsertMeta("name", "twitter:card", "summary_large_image");
+    upsertMeta("name", "twitter:title", blog.title);
+    upsertMeta("name", "twitter:description", desc);
+    upsertMeta("name", "twitter:image", image);
+
+    let canon = document.head.querySelector('link[rel="canonical"]');
+    const canonCreated = !canon;
+    const canonPrev = canon ? canon.getAttribute("href") : null;
+    if (!canon) {
+      canon = document.createElement("link");
+      canon.setAttribute("rel", "canonical");
+      document.head.appendChild(canon);
+    }
+    canon.setAttribute("href", canonical);
+
+    let ld = null;
+    if (blog.author?.is_official) {
+      ld = document.createElement("script");
+      ld.type = "application/ld+json";
+      ld.id = "blog-newsarticle-ld";
+      ld.textContent = JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        headline: blog.title,
+        description: desc,
+        image: [image],
+        datePublished: published,
+        dateModified: blog.updated_at || published,
+        author: {
+          "@type": "Person",
+          name: blog.author?.display_name || "PostMePlex",
+          url: `${origin}${userPath(blog.author)}`,
+        },
+        publisher: {
+          "@type": "Organization",
+          name: "PostMePlex",
+          logo: { "@type": "ImageObject", url: `${origin}/logo-512.png` },
+        },
+        mainEntityOfPage: { "@type": "WebPage", "@id": canonical },
+      });
+      document.head.appendChild(ld);
+    }
+
+    return () => {
+      document.title = prevTitle;
+      changes.forEach(({ el, prev, created }) => {
+        if (created) el.remove();
+        else if (prev !== null) el.setAttribute("content", prev);
+      });
+      if (canonCreated) canon.remove();
+      else if (canonPrev !== null) canon.setAttribute("href", canonPrev);
+      if (ld) ld.remove();
+    };
+  }, [blog]);
+
   const toggleLike = async () => {
     if (!user) return navigate("/login");
     const prev = { liked_by_me: blog.liked_by_me, likes: blog.likes };

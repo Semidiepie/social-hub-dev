@@ -3507,3 +3507,52 @@ async def serve_file(path: str, request: Request):
         except (ValueError, IndexError):
             pass
     return Response(content=body, status_code=200, media_type=content_type, headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# SEO: dynamic sitemap for official PostMePlex blogs (+ Google News entries)
+# ---------------------------------------------------------------------------
+from xml.sax.saxutils import escape as _xml_escape  # noqa: E402
+
+
+@app.get("/api/sitemap.xml")
+async def blogs_sitemap():
+    base = (APP_PUBLIC_URL or "https://www.postmeplex.com").rstrip("/")
+    official_ids = [u["id"] async for u in db.users.find({"is_official": True}, {"id": 1, "_id": 0})]
+    now = datetime.now(timezone.utc)
+    url_entries: list[str] = []
+    if official_ids:
+        cursor = (
+            db.blogs.find({"status": "published", "author_id": {"$in": official_ids}})
+            .sort("published_at", -1)
+            .limit(1000)
+        )
+        async for b in cursor:
+            bid = b.get("id")
+            if not bid:
+                continue
+            loc = f"{base}/blogs/{bid}"
+            pub = b.get("published_at") or b.get("created_at")
+            lm = b.get("updated_at") or pub
+            lastmod = lm.isoformat() if isinstance(lm, datetime) else (lm if isinstance(lm, str) else "")
+            news = ""
+            if isinstance(pub, datetime):
+                pub_aware = pub if pub.tzinfo else pub.replace(tzinfo=timezone.utc)
+                if (now - pub_aware).total_seconds() <= 2 * 86400:
+                    news = (
+                        "<news:news><news:publication>"
+                        "<news:name>PostMePlex</news:name><news:language>en</news:language>"
+                        "</news:publication>"
+                        f"<news:publication_date>{pub_aware.isoformat()}</news:publication_date>"
+                        f"<news:title>{_xml_escape(b.get('title', ''))}</news:title></news:news>"
+                    )
+            lastmod_tag = f"<lastmod>{lastmod}</lastmod>" if lastmod else ""
+            url_entries.append(f"<url><loc>{_xml_escape(loc)}</loc>{lastmod_tag}{news}</url>")
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+        'xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">'
+        + "".join(url_entries)
+        + "</urlset>"
+    )
+    return Response(content=xml, media_type="application/xml")

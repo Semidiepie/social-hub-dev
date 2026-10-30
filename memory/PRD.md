@@ -1344,3 +1344,11 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - **Mobile:** `src/lib/cloudinary.ts` rewired (`uploadToCloudinary`, `uploadVideoChunked` now hit `/api/upload`). 4 feed components' FALLBACK_AVATAR → PostMePlex URL.
 - **Verified:** testing agent iteration 69 — backend 8/8 pytest + web E2E post-with-image, all pass. Credit-safe (no LLM/TTS). NOT yet confirmed on production — user must Publish/Redeploy.
 - **Leftover (optional):** dead `CLOUDINARY_*` / `REACT_APP_CLOUDINARY_*` env keys and a few historical seed-data `dpnrol54k` URLs in server.py (sample.jpg, demo thumbs) remain; harmless.
+
+---
+## 2026-06 — Blog SEO groundwork for Google discoverability (official PostMePlex blogs)
+- **Goal:** help official PostMePlex blogs become eligible to appear in Google Search's News tab. (Placement is Google's decision — we can only make them discoverable/eligible, not guarantee inclusion.)
+- **Backend:** `GET /api/sitemap.xml` (server.py) — dynamic sitemap of published blogs by `is_official` authors, incl. Google News `<news:news>` entries for articles < 48h old; uses `APP_PUBLIC_URL` as base. Added `is_official` to blog `_author_view` (rooms_blogs.py).
+- **Web:** `BlogRead.jsx` sets per-article head tags imperatively via useEffect (title, description, canonical, OG, Twitter, `og:type=article`) and injects **NewsArticle JSON-LD** only for official-authored blogs; restores on unmount. (Used imperative DOM management instead of react-helmet-async because the preview's JSX source-instrumentation plugin broke Helmet's child parsing → duplicate tags.) `public/robots.txt` added, pointing to the sitemap.
+- **Verified (preview, credit-safe):** sitemap returns valid XML listing official blogs; blog page shows single correct description/og:type/canonical + valid NewsArticle JSON-LD; robots.txt served 200.
+- **User actions required:** verify postmeplex.com in Google Search Console + submit `https://www.postmeplex.com/api/sitemap.xml`. Redeploy to push to production.
