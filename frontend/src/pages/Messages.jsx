@@ -22,6 +22,21 @@ function minsAgo(iso) {
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`;
 }
 
+// Group chats: show the uploaded group photo, or a clean centered group icon that sits
+// perfectly inside the circle (avoids a cropped/off-center logo).
+function GroupAvatar({ src, size = 40, className = "" }) {
+  if (src) return <Avatar src={src} size={size} className={className} />;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-muted-foreground ${className}`}
+      style={{ width: size, height: size }}
+      data-testid="group-avatar-icon"
+    >
+      <Users size={Math.round(size * 0.5)} />
+    </span>
+  );
+}
+
 export default function MessagesPage() {
   const { user } = useAuth();
   const { convId } = useParams();
@@ -109,8 +124,8 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="grid gap-0 grid-cols-1 md:grid-cols-[320px_1fr] grid-rows-1 min-w-0 h-[calc(100dvh_-_env(safe-area-inset-top)_-_12rem)] md:h-[calc(100dvh_-_8rem)]">
-      <aside className={`min-w-0 overflow-hidden rounded-2xl border border-border bg-card md:mr-4 ${convId ? "hidden md:block" : ""}`}>
+    <div className="md:-mx-6 md:-mt-6 md:-mb-24 grid gap-0 grid-cols-1 md:grid-cols-[340px_1fr] grid-rows-1 min-w-0 h-[calc(100dvh_-_env(safe-area-inset-top)_-_10.5rem)] md:h-[100dvh]">
+      <aside className={`min-w-0 overflow-hidden border-border bg-card md:border-r ${convId ? "hidden md:block" : ""}`}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <h1 className="text-xl font-black">Messages</h1>
           <button
@@ -231,7 +246,9 @@ export default function MessagesPage() {
                   data-testid={`conv-${c.id}`}
                 >
                   <span className="relative shrink-0">
-                    <Avatar src={c.avatar_url} size={44} frame={c.is_group ? null : frameOf(c.peer)} live={!c.is_group && c.peer?.is_live} />
+                    {c.is_group
+                      ? <GroupAvatar src={c.avatar_url} size={44} />
+                      : <Avatar src={c.avatar_url} size={44} frame={frameOf(c.peer)} live={c.peer?.is_live} />}
                     {!c.is_group && c.peer && onlineIds.has(c.peer.id) && (
                       <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card bg-green-500" data-testid={`conv-online-${c.id}`} />
                     )}
@@ -578,6 +595,8 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   const [typingUsers, setTypingUsers] = useState([]);
   const lastTypingPing = useRef(0);
   const listRef = useRef(null);
+  const sigRef = useRef("");
+  const atBottomRef = useRef(true);
   const dmFileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [recordingVoice, setRecordingVoice] = useState(false);
@@ -586,7 +605,14 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
     if (!conv) return;
     try {
       const rows = await api.get(`/conversations/${conv.id}/messages`);
-      setMessages(rows);
+      // Only re-render when something actually changed (new msg, reaction, or read
+      // status) — polling an unchanged thread must NOT re-render (that caused the
+      // "page reloads every couple seconds" flicker + scroll jumps).
+      const sig = rows.map((m) => `${m.id}:${(m.reactions || []).length}:${(m.read_by || []).length}`).join("|");
+      if (sig !== sigRef.current) {
+        sigRef.current = sig;
+        setMessages(rows);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -598,6 +624,8 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
     setLoading(true);
     setMessages([]);
     setTypingUsers([]);
+    sigRef.current = "";
+    atBottomRef.current = true;
     load();
     if (!conv) return undefined;
     const t = setInterval(() => {
@@ -607,9 +635,24 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
     return () => clearInterval(t);
   }, [conv, load]);
 
+  // Auto-scroll to the newest message only when the user is already near the bottom,
+  // so reading older messages isn't interrupted by polls/new messages.
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    if (listRef.current && atBottomRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, typingUsers]);
+
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  // id of my most recent message — only this one shows a Sent/Read status (1:1 chats).
+  const lastMineId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].sender_id === me?.id) return messages[i].id;
+    }
+    return null;
+  }, [messages, me]);
 
   const onType = (e) => {
     setText(e.target.value);
@@ -709,12 +752,14 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   }
 
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
-      <header className="flex items-center gap-3 border-b border-border p-3">
+    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card">
+      <header className="flex items-center gap-3 border-b border-border p-3" style={{ paddingTop: "max(env(safe-area-inset-top), 0.75rem)" }}>
         <button onClick={onBack} className="rounded-lg p-1 text-muted-foreground hover:bg-secondary md:hidden">
           <ArrowLeft size={18} />
         </button>
-        <Avatar src={conv.avatar_url} size={36} frame={conv.is_group ? null : frameOf(conv.peer)} live={!conv.is_group && conv.peer?.is_live} />
+        {conv.is_group
+          ? <GroupAvatar src={conv.avatar_url} size={36} />
+          : <Avatar src={conv.avatar_url} size={36} frame={frameOf(conv.peer)} live={conv.peer?.is_live} />}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 truncate font-bold">
             <span className="truncate">{conv.title}</span>
@@ -742,7 +787,7 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
         )}
       </header>
 
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      <div ref={listRef} onScroll={onListScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : messages.length === 0 ? (
@@ -750,6 +795,8 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
         ) : (
           messages.map((m) => {
             const mine = m.sender_id === me?.id;
+            const showStatus = mine && !conv.is_group && m.id === lastMineId;
+            const seen = showStatus && conv.peer?.id && (m.read_by || []).includes(conv.peer.id);
             return (
               <div key={m.id} className={`group flex items-end gap-1 ${mine ? "justify-end" : "justify-start"}`}>
                 {!mine && conv.is_group && (
@@ -779,6 +826,11 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
                     {m.text ? <div className="whitespace-pre-wrap">{m.text}</div> : null}
                     <div className={`mt-1 text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.created_at)}</div>
                   </div>
+                  {showStatus && (
+                    <div className="mt-0.5 self-end text-[10px] font-semibold text-muted-foreground" data-testid="dm-read-status">
+                      {seen ? "Read" : "Sent"}
+                    </div>
+                  )}
                   <ReactionChips reactions={m.reactions} myId={me?.id} mine={mine} onToggle={(e, h) => toggleReaction(m.id, e, h)} />
                 </div>
                 {!mine && (
@@ -1050,7 +1102,7 @@ function GroupSettingsDialog({ conv, me, onClose, onChanged, onLeft }) {
         <div className="mb-4 flex items-center gap-3">
           <button onClick={() => isAdmin && fileRef.current?.click()} disabled={!isAdmin || uploading}
             className="relative" title={isAdmin ? "Change photo" : ""} data-testid="group-photo-btn">
-            <Avatar src={conv.avatar_url} size={56} />
+            <GroupAvatar src={conv.avatar_url} size={56} />
             {isAdmin && (
               <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
                 {uploading ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}

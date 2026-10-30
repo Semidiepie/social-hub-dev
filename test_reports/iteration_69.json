@@ -1,0 +1,39 @@
+{
+  "summary": "Verified Cloudinary -> PostMePlex (Emergent object storage) migration end-to-end on the web surface. All 8 backend pytest cases passed (upload shape, auth-required, empty-reject, full fetch 200, Range 206, missing 404, default avatar 200, create post with uploaded image). Web UI E2E: logged a scratch test_* user, composed a text+image post via PostComposer. Network capture confirmed POST /api/upload returned {url, secure_url, path, bytes, content_type} with url=https://<BACKEND>/api/files/postmeplex/uploads/<user_id>/<hex>.png (bytes=72, content_type=image/png) and POST /api/posts persisted image_url pointing to /api/files (NOT res.cloudinary.com). Composer preview and feed post both rendered via /api/files/postmeplex/uploads/.... Default avatar served from /api/files/postmeplex/branding/default_avatar.png (HTTP 200) and is used as the author avatar for the new user. No AI/LLM/TTS endpoints were exercised (credit-sensitive constraint respected).",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration69_storage.py",
+    "/app/test_reports/pytest/iteration69_storage.xml"
+  ],
+  "action_items": [
+    "Optional: /app/backend/.env still has CLOUDINARY_CLOUD_NAME=dpnrol54k and CLOUDINARY_UPLOAD_PRESET=ml_default, and /app/frontend/.env still has REACT_APP_CLOUDINARY_CLOUD_NAME and REACT_APP_CLOUDINARY_UPLOAD_PRESET. These are now dead config since storage.py no longer uses them and frontend/src/lib/cloudinary.js posts to /api/upload. Safe to remove to prevent confusion.",
+    "Optional: DEFAULT_AVATAR_URL in /app/backend/.env still points to the disabled Cloudinary URL (https://res.cloudinary.com/dpnrol54k/image/upload/v1790317297/postmeplex_icon_v2.png). server.py already overrides this at startup (lines 63-65) when it detects 'res.cloudinary.com/dpnrol54k', so no functional impact, but recommend clearing the env value or replacing with the /api/files URL for clarity.",
+    "Historical/seed data still references Cloudinary (res.cloudinary.com/dpnrol54k/image/upload/sample.jpg, blob_cpgjgj.jpg, demo video thumbs in server.py lines 2729, 2917-2928). User explicitly acknowledged 'Old Cloudinary media is accepted as lost'; these will 401. If desired, main agent can re-upload stock seeds to PostMePlex storage or point seed URLs to the new /api/files path, but this is NOT blocking."
+  ],
+  "critical_code_review_comments": [
+    "storage.py uses a module-level httpx.AsyncClient — fine for FastAPI's single event loop; it will leak on hot-reload but is acceptable.",
+    "serve_file() returns the full body plus a synthesized 206 when the upstream ignores a Range header — correct for iOS Safari video seeking.",
+    "/api/upload has NO explicit size cap on the server side (frontend caps at 1GB). Consider adding a server-side guard to prevent abusive large uploads.",
+    "/api/upload has NO content-type whitelist — any file type can be uploaded. If this is user-generated media, consider restricting to image/*, video/*, audio/* to reduce the attack surface (e.g. HTML with inline script served from the same origin as the SPA)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration69_storage.py",
+    "/app/test_reports/iteration_69.json",
+    "/app/test_reports/pytest/iteration69_storage.xml"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (web E2E passed)"},
+  "test_credentials": "Used scratch user test_webui_<rand> registered via /api/auth/register (pin=1122). Founder credentials from /app/memory/test_credentials.md were available but not used to avoid credit-sensitive flows.",
+  "seed_data_creation": "Registered scratch user test_webui_* and test_stor_* (auto-purged on backend restart per PRD). Created one post containing the uploaded 8x8 PNG.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The /api/upload + /api/files endpoints and the composer flow are fully migrated to PostMePlex storage. If the next task touches media again, the Cloudinary leftovers listed under action_items are the known cleanup items. No AI/LLM/TTS endpoints were exercised per credit-sensitive constraint."
+}

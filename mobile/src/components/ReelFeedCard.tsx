@@ -12,7 +12,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { OwnerContentMenu } from "@/src/components/OwnerContentMenu";
 
 const FALLBACK_AVATAR =
-  "https://res.cloudinary.com/dpnrol54k/image/upload/v1790317297/postmeplex_icon_v2.png";
+  `${process.env.EXPO_PUBLIC_BACKEND_URL ?? ""}/api/files/postmeplex/branding/default_avatar.png`;
 const FALLBACK_THUMB =
   "https://images.pexels.com/photos/6489045/pexels-photo-6489045.jpeg?auto=compress&cs=tinysrgb&w=1080";
 

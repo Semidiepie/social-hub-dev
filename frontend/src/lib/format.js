@@ -57,9 +57,9 @@ export function formatDuration(seconds) {
   return `${h}:${String(mm).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
 }
 
-// Fallback SVG avatar for missing images.
+// Fallback SVG avatar for missing images. Hosted on PostMePlex storage.
 export const AVATAR_FALLBACK =
-  "https://res.cloudinary.com/dpnrol54k/image/upload/v1790317297/postmeplex_icon_v2.png";
+  `${process.env.REACT_APP_BACKEND_URL || ""}/api/files/postmeplex/branding/default_avatar.png`;
 
 // Clean channel-handle URLs. Prefer /@username; fall back to legacy /user/:id.
 export function userPath(u) {

@@ -155,12 +155,8 @@ export default function ProfilePage() {
     }
   };
 
-  const initialTab = useMemo(() => {
-    if (reels.length) return "reels";
-    if (blogs.length) return "blogs";
-    if (videos.length) return "videos";
-    return "posts";
-  }, [reels.length, blogs.length, videos.length]);
+  // Always open on Posts first (don't jump to reels/blogs just because posts is empty).
+  const initialTab = "posts";
 
   if (loading || !target) {
     return (
@@ -304,16 +300,16 @@ export default function ProfilePage() {
       </div>
 
       <Tabs defaultValue={initialTab} key={initialTab} className="mt-6">
-        <TabsList>
-          <TabsTrigger value="posts" data-testid="profile-tab-posts">Posts{contentLoading ? "" : ` · ${posts.length}`}</TabsTrigger>
-          <TabsTrigger value="reels" data-testid="profile-tab-reels">Reels{contentLoading ? "" : ` · ${reels.length}`}</TabsTrigger>
-          <TabsTrigger value="videos" data-testid="profile-tab-videos">Videos{contentLoading ? "" : ` · ${videos.length}`}</TabsTrigger>
+        <TabsList className="flex w-full max-w-full justify-start gap-1 overflow-x-auto no-scrollbar">
+          <TabsTrigger value="posts" className="shrink-0" data-testid="profile-tab-posts">Posts{contentLoading ? "" : ` · ${posts.length}`}</TabsTrigger>
+          <TabsTrigger value="reels" className="shrink-0" data-testid="profile-tab-reels">Reels{contentLoading ? "" : ` · ${reels.length}`}</TabsTrigger>
+          <TabsTrigger value="videos" className="shrink-0" data-testid="profile-tab-videos">Videos{contentLoading ? "" : ` · ${videos.length}`}</TabsTrigger>
           {tiktok.length > 0 && (
-            <TabsTrigger value="tiktok" data-testid="profile-tab-tiktok">TikTok{contentLoading ? "" : ` · ${tiktok.length}`}</TabsTrigger>
+            <TabsTrigger value="tiktok" className="shrink-0" data-testid="profile-tab-tiktok">TikTok{contentLoading ? "" : ` · ${tiktok.length}`}</TabsTrigger>
           )}
-          <TabsTrigger value="blogs" data-testid="profile-tab-blogs">Blogs{contentLoading ? "" : ` · ${blogs.length}`}</TabsTrigger>
+          <TabsTrigger value="blogs" className="shrink-0" data-testid="profile-tab-blogs">Blogs{contentLoading ? "" : ` · ${blogs.length}`}</TabsTrigger>
           {isSelf && (
-            <TabsTrigger value="saved" data-testid="profile-tab-saved">Saved{contentLoading ? "" : ` · ${saved.length}`}</TabsTrigger>
+            <TabsTrigger value="saved" className="shrink-0" data-testid="profile-tab-saved">Saved{contentLoading ? "" : ` · ${saved.length}`}</TabsTrigger>
           )}
         </TabsList>
         <TabsContent value="posts">

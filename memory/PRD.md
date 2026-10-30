@@ -1330,3 +1330,17 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 
 ### Call replies: length unrestricted (2026 fork)
 - Per user request, calls are no longer forced short. `_reply` fast path: max_tokens 64→700 and the brief now says reply at whatever length feels natural (quick line OR long flowing paragraph). Spoken system prompt "1-3 short sentences" line removed. Text-chat (fast=False) unchanged. Trade-off: long replies take longer to voice (v4 synth of ~165 words ≈ ~15s) — inherent to speech length. STATUS: needs redeploy.
+
+### All AI characters know the real time/date (2026 fork)
+- Bug: only characters the user had called/texted-with-tz (e.g. Hope) knew the exact real time/date; others fell back to UTC. Cause: time context built solely from each character's ai_char_state.tz.
+- Fix: `_remember_tz(admin_id, tz)` saves the tz on users.ai_tz AND backfills it onto ALL the admin's ai_char_state docs; called from /send and /voice-turn whenever body.tz present. `_admin_tz(admin_id)` provides a global fallback. Every `_now_context(...)` site + the proactive loop's `_local_now` now use `state.tz or admin ai_tz`. Removed redundant inline per-character tz update_one.
+- Verified by testing_agent iteration 67: 9/9 backend pass, credit-safe (no LLM/TTS spent) — one /send with tz backfills every character + user.ai_tz; tz override works; omitting tz doesn't wipe saved tz. STATUS: needs redeploy.
+
+---
+## 2026-06 — Media storage migrated off Cloudinary → PostMePlex storage
+- **Why:** Cloudinary cloud `dpnrol54k` was disabled on Cloudinary's side (uploads AND delivery returned 401 / "cloud_name is disabled"). User chose to drop Cloudinary entirely and host all media on PostMePlex. Old Cloudinary media accepted as lost/unrecoverable.
+- **Backend:** new `/app/backend/storage.py` (Emergent object storage via INTEGRATION_PROXY_URL + EMERGENT_LLM_KEY). New endpoints in `server.py`: `POST /api/upload` (auth; multipart; image/video/audio only; 1GB cap) → returns `{url, secure_url, path, bytes, content_type}`; public `GET /api/files/{path:path}` (serves with correct content-type + HTTP Range/206 for iOS video). Storage inits at startup. Default avatar now served from `/api/files/postmeplex/branding/default_avatar.png`; `DEFAULT_AVATAR_URL` auto-overridden when it points to the dead cloud.
+- **Web:** `src/lib/cloudinary.js` rewired to POST to `/api/upload` (same `uploadToCloudinary` signature → no call-site changes). `src/lib/format.js` AVATAR_FALLBACK → PostMePlex URL.
+- **Mobile:** `src/lib/cloudinary.ts` rewired (`uploadToCloudinary`, `uploadVideoChunked` now hit `/api/upload`). 4 feed components' FALLBACK_AVATAR → PostMePlex URL.
+- **Verified:** testing agent iteration 69 — backend 8/8 pytest + web E2E post-with-image, all pass. Credit-safe (no LLM/TTS). NOT yet confirmed on production — user must Publish/Redeploy.
+- **Leftover (optional):** dead `CLOUDINARY_*` / `REACT_APP_CLOUDINARY_*` env keys and a few historical seed-data `dpnrol54k` URLs in server.py (sample.jpg, demo thumbs) remain; harmless.

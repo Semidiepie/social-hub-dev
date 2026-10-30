@@ -69,7 +69,7 @@ def conv_preview(c: dict, my_id: str, members_by_id: dict) -> dict:
     peer = None
     if is_group:
         title = c.get("name") or "Squad chat"
-        avatar = c.get("avatar_url") or next((members_by_id[i].get("avatar_url") for i in other_ids if i in members_by_id and members_by_id[i].get("avatar_url")), "")
+        avatar = c.get("avatar_url") or ""   # group photo only; empty → UI shows a group icon
     else:
         other = members_by_id.get(other_ids[0]) if other_ids else None
         peer = _member_public(other) if other else None
@@ -81,7 +81,7 @@ def conv_preview(c: dict, my_id: str, members_by_id: dict) -> dict:
         "id": c["id"],
         "is_group": is_group,
         "title": title,
-        "avatar_url": _av(avatar),
+        "avatar_url": avatar if is_group else _av(avatar),
         "admin_id": c.get("created_by"),
         "member_ids": c["member_ids"],
         "members": members,

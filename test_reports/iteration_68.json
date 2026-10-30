@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 68 verified the DM + Profile bug-fix bundle (read receipts, typing, group-avatar fallback, Messages full-screen layout, Profile default tab = Posts, Profile tab-strip horizontal-overflow fix at 430px). Backend 4/4 pytest pass. Frontend assertions pass: /profile and /user/{id} both default to Posts (data-state=active) with blogs inactive; document.scrollWidth == window.innerWidth (430==430) at mobile width; TabsList itself is horizontally scrollable (sw=454 > cw=398) so Saved is reachable and activates on click; Messages page renders full-height (innerH=bodyH=rootH=900); groups with no custom avatar render a centered group icon (visually confirmed in /messages screenshot). No LLM/TTS credit was spent.",
+  "platforms_tested": ["web"],
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": { "ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": [] }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration68_dm_profile.py",
+    "/app/test_reports/pytest/iteration68.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Messages.jsx conversation rows navigate via onClick (likely useNavigate) instead of using <a href>. This made the testing agent unable to open a chat via url navigation. Consider wrapping each row in a <Link to=\"/messages/:id\"> so the DOM has crawlable hrefs — improves accessibility, right-click 'open in new tab', AND makes automated testing simpler.",
+    "The polling / mutation-based flicker fix in ChatPane is a reasonable pragmatic solution, but a long-term improvement would be to subscribe to a server-sent events / WebSocket channel per conversation to push new messages and typing + read_by state (the app already has /api/rtc/ws). This would remove the periodic GET entirely and eliminate the class of 'reload every few seconds' bugs.",
+    "routes/messages.py: send_message writes `last_message.created_at` as an ISO string but conversations.updated_at is a datetime. Minor inconsistency; downstream code works because the preview tolerates both, but worth normalising."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration68_dm_profile.py"
+  ],
+  "success_rate": { "backend": "100% (4/4)", "frontend": "100% on measurable assertions" },
+  "test_credentials": "Founder PIN login — identifier=semidiepie@gmail.com, pin=7455. Two ephemeral mutual-follow users (tpb_dm_a_*/tpb_dm_b_*) are created per run and auto-purged by the TEST_/tpb_ purge on backend restart.",
+  "seed_data_creation": "Two tpb_dm_* mutual-follow users; one 1:1 conversation with 'TEST_RR hello from A' message; one group 'TEST_GroupNoAvatar' with 3 members. All auto-purged on backend restart via existing TEST_/tpb_ purge logic.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "DM read-receipt / typing / group-avatar fixes are verified end-to-end. Note that conversation rows in Messages.jsx use onClick (not <a>), so to open a specific chat in a playwright test you must click a visible row rather than page.goto(href). Backend fixture naming/filter: conversation preview returns `title` (not `name`) — filter group lookups by `title`. The pytest module test_iteration68_dm_profile.py is safe to re-run (idempotent, prefixed data).",
+  "rca of the issue": "Original user bugs: (1) ChatPane re-set messages state every poll even when payload was unchanged → full re-render + scroll jump every few seconds; (2) group previews fell through to member avatars when no avatar_url was set → cropped off-center logo; (3) Profile had initialTab derived from URL/state and often resolved to 'blogs'; (4) TabsList used flex-wrap or min-w-0 which pushed the whole page wider than the viewport at 430px, making the entire page scroll sideways and hiding 'Saved'. Main-agent fixes verified: ChatPane now compares a message signature before setState and only auto-scrolls when near bottom; conv_preview() returns `avatar_url = ''` for groups without a custom photo (routes/messages.py L72, L84); Profile.jsx initialTab is const 'posts' and TabsList uses `overflow-x-auto no-scrollbar` with `shrink-0` triggers (confirmed sw=454, cw=398 → scroll inside the strip, page sw==iw==430). Sent/Read labels wire to the backend's per-message read_by array (verified by TestReadReceipts: peer's id appears in read_by after they GET /messages)."
+}

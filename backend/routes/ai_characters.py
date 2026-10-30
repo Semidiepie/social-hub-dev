@@ -489,6 +489,19 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(404, "Character not found")
         return c
 
+    async def _remember_tz(admin_id: str, tz: str):
+        """Save the user's real timezone once we learn it (from any character/call) and
+        backfill it onto ALL their characters' state, so EVERY character knows the exact
+        real time/date — not just the ones that have been called."""
+        if not tz:
+            return
+        await db.users.update_one({"id": admin_id}, {"$set": {"ai_tz": tz}})
+        await db.ai_char_state.update_many({"admin_id": admin_id}, {"$set": {"tz": tz}})
+
+    async def _admin_tz(admin_id: str) -> str:
+        u = await db.users.find_one({"id": admin_id}, {"_id": 0, "ai_tz": 1}) or {}
+        return u.get("ai_tz") or ""
+
     def _char_public(c: dict) -> dict:
         return {
             "id": c["id"],
@@ -898,7 +911,7 @@ def build_router(ctx) -> APIRouter:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         st = await db.ai_char_state.find_one(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
-        ctx = _now_context(st.get("tz")) + (("\n" + context) if context else "")
+        ctx = _now_context(st.get("tz") or await _admin_tz(admin_id)) + (("\n" + context) if context else "")
         _rt = await _relatives_text(c)
         if _rt:
             ctx += "\n" + _rt
@@ -966,7 +979,7 @@ def build_router(ctx) -> APIRouter:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         st = await db.ai_char_state.find_one(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
-        context = _now_context(st.get("tz")) + ("\n" + context if context else "")
+        context = _now_context(st.get("tz") or await _admin_tz(admin_id)) + ("\n" + context if context else "")
         _rt = await _relatives_text(c)
         if _rt:
             context += "\n" + _rt
@@ -1012,7 +1025,7 @@ def build_router(ctx) -> APIRouter:
         from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent, FileContentWithMimeType
         st = await db.ai_char_state.find_one(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
-        context = _now_context(st.get("tz")) + ("\n" + context if context else "")
+        context = _now_context(st.get("tz") or await _admin_tz(admin_id)) + ("\n" + context if context else "")
         history = await db.ai_char_messages.find(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "role": 1, "text": 1}
         ).sort("created_at", -1).limit(20).to_list(20)
@@ -1598,7 +1611,7 @@ def build_router(ctx) -> APIRouter:
             reply_at = now + timedelta(seconds=_reply_delay_seconds(c.get("affection", "warm")))
         setfields = {"pending_reply_at": reply_at, "pending_from": current["id"]}
         if body.tz:
-            setfields["tz"] = body.tz
+            await _remember_tz(current["id"], body.tz)  # saves user.ai_tz + backfills all characters
         await db.ai_char_state.update_one(
             {"character_id": char_id, "admin_id": current["id"]},
             {"$set": setfields}, upsert=True)
@@ -1653,9 +1666,7 @@ def build_router(ctx) -> APIRouter:
         if not body.text.strip():
             raise HTTPException(400, "Nothing to respond to")
         if body.tz:
-            await db.ai_char_state.update_one(
-                {"character_id": char_id, "admin_id": current["id"]},
-                {"$set": {"tz": body.tz}}, upsert=True)
+            await _remember_tz(current["id"], body.tz)  # saves user.ai_tz + backfills all characters
 
         # Call turns are stored with channel='call': kept for each character's MEMORY but
         # hidden from the visible chat thread. Store the user's words for every participant.
@@ -2095,7 +2106,8 @@ def build_router(ctx) -> APIRouter:
                 promise_due = bool(promised and now >= promised)
 
                 # Age/affection realism: user's local time, sleep window, daily schedule.
-                local_now = _local_now(state.get("tz"))
+                tzv = state.get("tz") or await _admin_tz(admin_id)
+                local_now = _local_now(tzv)
                 sleep_start, sleep_end = _sleep_window(c)
                 schedule = c.get("schedule") or []
                 # A call the user scheduled ("call me at 8") that's now due → ring them when free.
@@ -2141,7 +2153,7 @@ def build_router(ctx) -> APIRouter:
                             nxt = a
                     return {"last_checked_at": now, "next_eval_at": nxt, "promised_at": None}
 
-                time_ctx = _now_context(state.get("tz"))
+                time_ctx = _now_context(tzv)
                 if local_now is not None:
                     lh = local_now.hour
                     time_ctx += (f"\n- Your usual bedtime is about {sleep_start:02d}:00 and you wake around {sleep_end:02d}:00.")
@@ -2375,7 +2387,7 @@ def build_router(ctx) -> APIRouter:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         st = await db.ai_char_state.find_one(
             {"character_id": c["id"], "admin_id": admin_id}, {"_id": 0, "tz": 1}) or {}
-        sys = _system(c, spoken=False, context=_now_context(st.get("tz")))
+        sys = _system(c, spoken=False, context=_now_context(st.get("tz") or await _admin_tz(admin_id)))
         them = c.get("nickname") or c.get("your_name") or "them"
         sys += (
             f"\n\nRIGHT NOW {them} is livestreaming on PostMePlex (stream title: \"{title}\"). "

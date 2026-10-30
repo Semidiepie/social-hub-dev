@@ -1,0 +1,32 @@
+{
+  "summary": "Backend-only verification of the AI-character timezone backfill fix. 9/9 tests pass. /send with tz persists on users.ai_tz AND backfills ai_char_state.tz for ALL of the admin's characters (not just the messaged one). Overwrite behaviour and 'tz omitted' no-wipe regression also verified. /voice-turn's _remember_tz wiring and _now_context admin_tz fallback are confirmed by static code checks (LLM/TTS cost avoided). Pending reply timers and TEST_* messages cleaned up — no LLM credits spent on reply generation.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration67_tz_backfill.py",
+    "/app/test_reports/pytest/iteration67.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ai_characters.py is now 2644 lines — well past the 700-line guideline. Should be split into submodules (characters CRUD, messaging/send, voice/call, reply-loop, tz/state helpers).",
+    "voice-turn still does `await db.ai_char_state.update_one(...tz...)` right after _remember_tz already backfilled the same character; harmless but redundant (same pattern in /send is also redundant — _remember_tz covers all characters including the current one)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration67_tz_backfill.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a"},
+  "test_credentials": "Founder PIN login — identifier=semidiepie@gmail.com, pin=7455",
+  "seed_data_creation": "Temporary TEST_TZ_BACKFILL_PING_{1,2,3} user messages created against the two existing Nova characters; all deleted at end of test module. Pending reply timers were unset immediately after each /send call to prevent the background LLM reply loop from firing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fix for the 'only Hope knows real time' bug is working. Verified via: POST /api/ai-characters/{id}/send with tz backfills (a) users.ai_tz on the admin and (b) ai_char_state.tz on EVERY one of the admin's characters via _remember_tz (ai_characters.py L492). _now_context fallback uses `state.tz or await _admin_tz(admin_id)` at every call site. /voice-turn also calls _remember_tz(body.tz). Static code checks guard against regressions in the wiring. Test file test_iteration67_tz_backfill.py is safe to re-run — it is credit-neutral (immediate cleanup of pending_reply_at).",
+  "rca of the issue": "Original bug: _now_context was built from ai_char_state.tz only, which was written per-character via /send + /voice-turn. Characters the user never actively messaged (while sending tz) kept an empty state.tz and _now_context silently fell back to UTC → stale date/time. Fix: introduce _remember_tz(admin_id, tz) which (1) writes users.ai_tz once, (2) update_many's ai_char_state.tz across ALL characters for that admin; plus a _admin_tz(admin_id) helper that each _now_context call site uses as fallback (`state.tz or await _admin_tz(admin_id)`). /send and /voice-turn both invoke _remember_tz whenever body.tz is present. Verified in prod DB: a single /send with tz=America/New_York propagates to both Nova characters and sets users.ai_tz."
+}

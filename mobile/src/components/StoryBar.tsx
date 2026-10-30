@@ -11,7 +11,7 @@ interface Props {
 }
 
 const FALLBACK_AVATAR =
-  "https://res.cloudinary.com/dpnrol54k/image/upload/v1790317297/postmeplex_icon_v2.png";
+  `${process.env.EXPO_PUBLIC_BACKEND_URL ?? ""}/api/files/postmeplex/branding/default_avatar.png`;
 
 export function StoryBar({ users }: Props) {
   const router = useRouter();

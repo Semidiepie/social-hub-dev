@@ -16,7 +16,7 @@ import httpx
 import jwt
 import secrets
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.security import OAuth2PasswordBearer
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -57,11 +57,12 @@ APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 
 # Default profile picture (PostMePlex lightning logo) shown for any account
 # without a custom avatar. Applied on READ so all existing + new users — and
-# anyone who clears their avatar — automatically get it everywhere.
-DEFAULT_AVATAR_URL = os.environ.get(
-    "DEFAULT_AVATAR_URL",
-    "https://res.cloudinary.com/dpnrol54k/image/upload/v1790110483/postmeplex_default_avatar.png",
-)
+# anyone who clears their avatar — automatically get it everywhere. Hosted on
+# PostMePlex storage (served via /api/files) so it never depends on Cloudinary.
+_BRANDING_AVATAR_URL = f"{(APP_PUBLIC_URL or '').rstrip('/')}/api/files/postmeplex/branding/default_avatar.png"
+DEFAULT_AVATAR_URL = os.environ.get("DEFAULT_AVATAR_URL", "")
+if not DEFAULT_AVATAR_URL or "res.cloudinary.com/dpnrol54k" in DEFAULT_AVATAR_URL:
+    DEFAULT_AVATAR_URL = _BRANDING_AVATAR_URL
 
 
 def avatar_or_default(url: Optional[str]) -> str:
@@ -72,6 +73,9 @@ db = client[db_name]
 
 import settings_store  # noqa: E402
 settings_store.init(db)
+
+import storage as objstorage  # noqa: E402
+import mimetypes as _mimetypes  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("postmeplex")
@@ -3419,3 +3423,87 @@ async def _start_key_health_monitor():
             await asyncio.sleep(6 * 3600)  # every 6 hours
 
     asyncio.create_task(_loop())
+
+
+# ---------------------------------------------------------------------------
+# PostMePlex object storage: uploads + file serving (replaces Cloudinary)
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+async def _init_object_storage():
+    try:
+        await objstorage.init_storage()
+        logger.info("[storage] object storage initialized")
+    except Exception as e:
+        logger.error(f"[storage] init failed: {e}")
+
+
+def _file_base_url(request: Request) -> str:
+    return (APP_PUBLIC_URL or str(request.base_url).rstrip("/")).rstrip("/")
+
+
+@app.post("/api/upload")
+async def upload_file(
+    request: Request,
+    current: Annotated[dict, Depends(get_current_user)],
+    file: UploadFile = File(...),
+):
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > 1024 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 1GB).")
+    filename = file.filename or "upload"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    content_type = file.content_type or _mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    if not (content_type.startswith("image/") or content_type.startswith("video/") or content_type.startswith("audio/")):
+        raise HTTPException(status_code=415, detail="Only image, video, and audio files are allowed.")
+    if not ext or len(ext) > 10:
+        ext = (_mimetypes.guess_extension(content_type) or ".bin").lstrip(".")
+    path = f"{objstorage.APP_NAME}/uploads/{current['id']}/{uuid.uuid4().hex}.{ext}"
+    try:
+        await objstorage.put_object(path, data, content_type)
+    except Exception as e:
+        logger.error(f"[storage] upload failed: {e}")
+        raise HTTPException(status_code=502, detail="Upload failed. Please try again.")
+    url = f"{_file_base_url(request)}/api/files/{path}"
+    return {"url": url, "secure_url": url, "path": path, "bytes": len(data), "content_type": content_type}
+
+
+@app.get("/api/files/{path:path}")
+async def serve_file(path: str, request: Request):
+    range_header = request.headers.get("range")
+    try:
+        resp = await objstorage.get_object(path, range_header)
+    except Exception as e:
+        logger.warning(f"[storage] serve failed for {path}: {e}")
+        raise HTTPException(status_code=404, detail="File not found")
+    if resp.status_code not in (200, 206):
+        raise HTTPException(status_code=404, detail="File not found")
+    content_type = resp.headers.get("content-type", "application/octet-stream")
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=31536000, immutable"}
+
+    if resp.status_code == 206:
+        for h in ("content-range", "content-length"):
+            if resp.headers.get(h):
+                headers[h] = resp.headers[h]
+        return Response(content=resp.content, status_code=206, media_type=content_type, headers=headers)
+
+    body = resp.content
+    # Storage returned the full object but the client asked for a range
+    # (e.g. iOS Safari video). Emulate a 206 so playback/seeking works.
+    if range_header and range_header.startswith("bytes="):
+        total = len(body)
+        try:
+            spec = range_header.split("=", 1)[1].split(",")[0].strip()
+            start_s, _, end_s = spec.partition("-")
+            start = int(start_s) if start_s else 0
+            end = int(end_s) if end_s else total - 1
+            end = min(end, total - 1)
+            if start <= end < total:
+                chunk = body[start:end + 1]
+                headers["content-range"] = f"bytes {start}-{end}/{total}"
+                headers["content-length"] = str(len(chunk))
+                return Response(content=chunk, status_code=206, media_type=content_type, headers=headers)
+        except (ValueError, IndexError):
+            pass
+    return Response(content=body, status_code=200, media_type=content_type, headers=headers)
