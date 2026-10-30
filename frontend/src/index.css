@@ -282,7 +282,7 @@ html, body {
 .pmp-hd-tr { top: 0; right: 0; transform: scaleX(-1); }
 .pmp-hd-bl { bottom: 0; left: 0; }
 .pmp-hd-br { bottom: 0; right: 0; }
-.pmp-hd-top { top: 0; left: 0; right: 0; }
+.pmp-hd-top { top: calc(env(safe-area-inset-top, 0px) + 50px); left: 0; right: 0; }
 /* Keep bottom-anchored pieces clear of the floating action button / nav. */
 .pmp-hd-bl, .pmp-hd-br, .pmp-hd-bottom { bottom: 84px; }
 
@@ -312,7 +312,7 @@ html, body {
 
 .pmp-holiday-banner {
   position: fixed; left: 50%; transform: translateX(-50%);
-  top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: 60; pointer-events: auto;
+  top: calc(env(safe-area-inset-top, 0px) + 50px); z-index: 60; pointer-events: auto;
   display: flex; align-items: center; gap: 10px;
   padding: 7px 10px 7px 16px; border-radius: 9999px;
   background: hsl(var(--card) / .96); border: 1px solid hsl(var(--primary) / .55);
