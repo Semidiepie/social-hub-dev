@@ -990,10 +990,12 @@ def build_router(ctx) -> APIRouter:
             # Generous cap so she's never cut off mid-thought, but the brief keeps most
             # replies short — long only when the moment genuinely calls for it.
             chat = chat.with_params(max_tokens=700)
-        brief = ("\n\nThis is a live phone call — talk like a real person on the phone and VARY your length "
-                 "naturally. MOST of the time reply in just a sentence or two, like normal quick back-and-forth. "
-                 "Only give a longer, flowing answer when the question really calls for it or you genuinely have "
-                 "a lot to share. Don't make every reply long." if fast else "")
+        brief = ("\n\nThis is a live phone call — talk like a real person and let the LENGTH of your reply "
+                 "match the moment. If it's a simple or quick question ('how are you?', 'you there?'), answer "
+                 "in just a word or a sentence. If it's open-ended, emotional, or you're telling a story or "
+                 "explaining something, take as long as you naturally need — a full paragraph is fine. YOU "
+                 "decide based on the question and the flow of the conversation; don't default to always long "
+                 "or always short." if fast else "")
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
             f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.' + brief
         )
