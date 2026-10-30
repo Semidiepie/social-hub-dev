@@ -45,7 +45,7 @@ const VARS = [
   "--background", "--foreground", "--card", "--card-foreground", "--popover",
   "--popover-foreground", "--primary", "--primary-foreground", "--accent",
   "--accent-foreground", "--secondary", "--secondary-foreground", "--muted",
-  "--muted-foreground", "--border", "--input", "--ring",
+  "--muted-foreground", "--border", "--input", "--ring", "--elevated",
 ];
 
 export function applyThemeVars(spec) {
@@ -79,6 +79,10 @@ export function applyThemeVars(spec) {
     "--border": shiftL(bg, light ? -12 : 15),
     "--input": shiftL(bg, light ? -12 : 15),
     "--ring": hexToHslTriplet(spec.primary),
+    // --elevated is consumed as a raw color (not hsl()-wrapped) by .pmp-chip /
+    // .pmp-iconchip (the like/comment/share buttons). Recolor it too, or those
+    // buttons keep the old gray and look like odd light blobs on a themed bg.
+    "--elevated": `hsl(${shiftL(bg, light ? -8 : 12)})`,
   };
   Object.entries(set).forEach(([k, v]) => root.style.setProperty(k, v));
 }

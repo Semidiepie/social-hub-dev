@@ -298,12 +298,15 @@ html, body {
 .pmp-anim-twinkle { animation: pmp-twinkle 2.2s ease-in-out infinite; }
 .pmp-anim-bob   { animation: pmp-bob 3.6s ease-in-out infinite; }
 
-/* On phones the top header + bottom nav + FAB leave no room for corner art, so
-   keep only the top-edge pieces (webs / lights) and drop the bottom + hanging
-   pieces; the recolor + gentle particles + banner still carry the holiday. */
+/* On phones, keep ALL decorations but lift the bottom pieces well above the nav
+   bar + floating action button and shrink them, so nothing ever sits on a button. */
 @media (max-width: 820px) {
-  .pmp-hd-bl, .pmp-hd-br, .pmp-hd-bottom, .pmp-anim-sway { display: none !important; }
-  .pmp-hd-tl, .pmp-hd-tr { width: 120px; height: 120px; opacity: .8; }
+  .pmp-hd-bl, .pmp-hd-br, .pmp-hd-bottom { bottom: 104px; opacity: .8; }
+  .pmp-hd-bl { transform: scale(.62); transform-origin: bottom left; }
+  .pmp-hd-br { transform: scale(.62); transform-origin: bottom right; }
+  .pmp-hd-tl, .pmp-hd-tr { width: 118px; height: 118px; }
+  .pmp-hd-tr { transform: scaleX(-1); }
+  .pmp-anim-sway { opacity: .85; }
   .pmp-particle { opacity: .4; }
 }
 
