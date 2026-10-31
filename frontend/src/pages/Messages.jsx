@@ -125,7 +125,7 @@ export default function MessagesPage() {
 
   return (
     <div className="md:-mx-6 md:-mt-6 md:-mb-24 grid gap-0 grid-cols-1 md:grid-cols-[340px_1fr] grid-rows-1 min-w-0 h-[calc(100dvh_-_env(safe-area-inset-top)_-_10.5rem)] md:h-[100dvh]">
-      <aside className={`min-w-0 overflow-hidden border-border bg-card md:border-r ${convId ? "hidden md:block" : ""}`}>
+      <aside className={`flex min-h-0 min-w-0 flex-col overflow-hidden border-border bg-card md:border-r ${convId ? "hidden md:block" : ""}`}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <h1 className="text-xl font-black">Messages</h1>
           <button
@@ -165,7 +165,7 @@ export default function MessagesPage() {
         {loading ? (
           <div className="flex justify-center p-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : (
-          <ul className="max-h-[calc(100vh-220px)] overflow-y-auto">
+          <ul className="min-h-0 flex-1 overflow-y-auto">
             <li>
               <button
                 onClick={() => navigate("/messages/sage")}

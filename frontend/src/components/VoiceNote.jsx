@@ -141,7 +141,17 @@ export function AudioBubble({ url, duration, mine }) {
   const toggle = () => {
     const a = audioRef.current;
     if (!a) return;
-    if (playing) { a.pause(); } else { a.play().catch(() => {}); }
+    if (!a.paused) { a.pause(); return; }
+    const p = a.play();
+    if (p && p.catch) {
+      p.catch(() => {
+        // Audio wasn't buffered yet (common cause of needing a 2nd tap): load, then
+        // play as soon as it can — so a single tap always starts playback.
+        const onReady = () => { a.removeEventListener("canplay", onReady); a.play().catch(() => {}); };
+        a.addEventListener("canplay", onReady);
+        try { a.load(); } catch { /* no-op */ }
+      });
+    }
   };
 
   const total = dur || duration || 0;
@@ -155,7 +165,7 @@ export function AudioBubble({ url, duration, mine }) {
       <audio
         ref={audioRef}
         src={playableUrl(url)}
-        preload="metadata"
+        preload="auto"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setPos(0); }}
