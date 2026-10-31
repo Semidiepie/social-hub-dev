@@ -3908,7 +3908,7 @@ async def serve_file(path: str, request: Request):
 # ---------------------------------------------------------------------------
 # Admin: Studio dashboard stats + global per-type notification sounds
 # ---------------------------------------------------------------------------
-NOTIF_SOUND_GROUPS = {"message", "posts", "live", "social", "follow", "collab"}
+NOTIF_SOUND_GROUPS = {"message", "posts", "live", "social", "follow", "collab", "post_published"}
 
 
 @app.get("/api/admin/stats")

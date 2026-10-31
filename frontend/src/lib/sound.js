@@ -1,6 +1,8 @@
 // Lightweight in-browser sound effects (no assets, Web Audio API).
 // Used for a satisfying confirmation when a user posts / shares a story.
 
+import { playGroupSound } from "@/lib/sounds";
+
 let _ctx = null;
 function ctx() {
   if (typeof window === "undefined") return null;
@@ -26,7 +28,8 @@ function tone(ac, freq, start, dur, gainPeak = 0.18, type = "sine") {
 }
 
 // Bright, cheerful two-note chime (C6 -> G6) played on a successful post.
-export function playPostChime() {
+// Uses the admin-configured "post_published" sound when one is set.
+function _postChimeSynth() {
   try {
     const ac = ctx();
     if (!ac) return;
@@ -36,6 +39,10 @@ export function playPostChime() {
   } catch {
     /* audio is best-effort; never block posting */
   }
+}
+
+export function playPostChime() {
+  playGroupSound("post_published", _postChimeSynth);
 }
 
 /* ---------- Pet care-room sound effects (mute-respecting) ---------- */

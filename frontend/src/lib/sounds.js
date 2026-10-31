@@ -89,3 +89,11 @@ export function playNotificationForType(type) {
   if (url && playUrl(url)) return;
   playNotificationChime();
 }
+
+// Play a specific admin-configured group sound (e.g. the "post published"
+// confirmation). Falls back to the provided synth sound when none is set.
+export function playGroupSound(group, fallback) {
+  const url = _soundMap[group];
+  if (url && playUrl(url)) return;
+  if (typeof fallback === "function") fallback();
+}

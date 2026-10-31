@@ -26,12 +26,28 @@ self.addEventListener("push", (event) => {
     renotify: false,
   };
   event.waitUntil((async () => {
-    // Don't spam a banner when you're already looking at this exact chat.
-    if (data.suppressIfFocused && data.url) {
-      const wins = await clients.matchAll({ type: "window", includeUncontrolled: true });
-      const focusedHere = wins.some((w) => w.focused && w.url.indexOf(data.url) !== -1);
-      if (focusedHere) return;
+    const wins = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    const anyVisible = wins.some((w) => w.focused || w.visibilityState === "visible");
+
+    // App is OPEN in the foreground: let the page play the admin's custom in-app
+    // sound and show the OS banner SILENTLY, so we don't also play the default
+    // system ("Apple") notification sound on top of it.
+    if (anyVisible) {
+      for (const w of wins) {
+        try {
+          w.postMessage({ type: "pmp-push-sound", kind: data.kind || "activity", notifType: data.notifType || null });
+        } catch (_) { /* ignore */ }
+      }
+      // Don't show a banner at all when already viewing this exact chat/page.
+      if (data.suppressIfFocused && data.url) {
+        const focusedHere = wins.some(
+          (w) => (w.focused || w.visibilityState === "visible") && w.url.indexOf(data.url) !== -1
+        );
+        if (focusedHere) return;
+      }
+      options.silent = true;
     }
+
     await self.registration.showNotification(title, options);
   })());
 });

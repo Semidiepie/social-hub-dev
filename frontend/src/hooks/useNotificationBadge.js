@@ -57,6 +57,7 @@ export function useNotificationBadge() {
   const pushTriedRef = useRef(false);
   const msgLastRef = useRef(0);
   const msgInitRef = useRef(false);
+  const pushEnabledRef = useRef(false);
 
   useEffect(() => {
     if (!user) {
@@ -76,12 +77,34 @@ export function useNotificationBadge() {
     // If the user already granted notifications, silently (re)subscribe to Web
     // Push so closed-tab alerts keep working. No prompt if not already granted.
     (async () => {
-      if (pushTriedRef.current || !pushSupported()) return;
+      if (!pushSupported()) return;
+      try { pushEnabledRef.current = await isBrowserPushEnabled(); } catch { /* ignore */ }
+      if (pushTriedRef.current) return;
       pushTriedRef.current = true;
-      if (Notification.permission === "granted" && !(await isBrowserPushEnabled())) {
-        enableBrowserPush().catch(() => {});
+      if (Notification.permission === "granted" && !pushEnabledRef.current) {
+        const ok = await enableBrowserPush().catch(() => false);
+        if (ok) pushEnabledRef.current = true;
       }
     })();
+
+    // When the app is in the FOREGROUND, Web Push fires a (silent) banner and asks
+    // the page to play the admin's custom sound — handled here so users hear the
+    // custom alert instead of the default system sound.
+    const onSwMessage = async (e) => {
+      const d = e.data || {};
+      if (d.type !== "pmp-push-sound") return;
+      if (d.kind === "message") { playNotificationForType("message"); return; }
+      if (d.notifType) { playNotificationForType(d.notifType); return; }
+      try {
+        const rows = await api.get("/notifications");
+        const newest = Array.isArray(rows) ? rows[0] : null;
+        if (newest?.type) playNotificationForType(newest.type);
+        else playNotificationChime();
+      } catch { playNotificationChime(); }
+    };
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener("message", onSwMessage);
+    }
 
     const tick = async () => {
       try {
@@ -90,9 +113,9 @@ export function useNotificationBadge() {
         document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
         setFaviconBadge(count > 0);
         // Play a distinct notification sound whenever NEW activity arrives (but not on
-        // the first poll after load, so we don't ding for pre-existing unread items).
-        // Pick the sound by the newest notification's TYPE (admin-set custom mp3 or chime).
-        if (initRef.current && count > lastCountRef.current) {
+        // the first poll after load). When Web Push is on, the SW message path above
+        // plays the sound instead — so the poll only plays as a fallback.
+        if (!pushEnabledRef.current && initRef.current && count > lastCountRef.current) {
           try {
             const rows = await api.get("/notifications");
             const newest = Array.isArray(rows) ? rows[0] : null;

@@ -234,6 +234,27 @@ def _strip_actions(text: str) -> str:
     return re.sub(r"\s+([,.!?])", r"\1", cleaned).strip()
 
 
+# Genuine non-verbal SOUND tags eleven performs reliably. Everything else in
+# brackets (mood labels like [excited], [sad], [nervous]) is removed before TTS
+# because some voices read the label out loud literally instead of acting it.
+_SOUND_TAG_ALLOW = {
+    "laughs", "laugh", "laughing", "giggles", "giggle", "chuckles", "chuckle",
+    "sighs", "sigh", "gasps", "gasp", "sniffles", "sniffle", "crying", "sobs",
+    "sob", "exhales", "inhales", "yawns", "coughs", "hums", "clears throat",
+    "gulps", "scoffs", "snorts", "whistles",
+}
+
+
+def _strip_spoken_tags(text: str) -> str:
+    """Keep real sound-effect tags; drop mood/emotion label tags so they are never
+    spoken aloud (e.g. she acts excited instead of saying the word '[excited]')."""
+    def repl(m):
+        inner = m.group(0)[1:-1].strip().lower()
+        return m.group(0) if inner in _SOUND_TAG_ALLOW else ""
+    cleaned = AUDIO_TAG_RE.sub(repl, text or "")
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 def parse_voice_id(raw: str) -> str:
     """Accept a raw ElevenLabs Voice ID or any ElevenLabs URL and extract the id."""
     raw = (raw or "").strip()
@@ -1199,7 +1220,10 @@ def build_router(ctx) -> APIRouter:
 
         # Model chain. v4/v3 support the [expressive] audio tags; the final
         # multilingual_v2 attempt strips tags so a legacy voice stays audible.
-        attempts = [(TTS_MODEL, text), (TTS_FALLBACK_MODEL, text), ("eleven_multilingual_v2", _strip_tags(text))]
+        # Mood-label tags (e.g. [excited]) are removed up front so no voice can read
+        # them aloud; genuine sound tags ([laughs], [sighs]…) are kept for expression.
+        speak = _strip_spoken_tags(text)
+        attempts = [(TTS_MODEL, speak), (TTS_FALLBACK_MODEL, speak), ("eleven_multilingual_v2", _strip_tags(text))]
         last_err = None
         for vid in voice_chain:
             missing_voice = False

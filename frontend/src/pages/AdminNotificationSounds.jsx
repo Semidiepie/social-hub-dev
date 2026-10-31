@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2, BellRing, Play, Upload, Check, RotateCcw, MessageCircle, Image as ImageIcon, Radio, Heart, UserPlus, Users } from "lucide-react";
+import { Loader2, BellRing, Play, Upload, Check, RotateCcw, Send, MessageCircle, Image as ImageIcon, Radio, Heart, UserPlus, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
@@ -11,6 +11,7 @@ import { toast } from "sonner";
 // Each row maps a friendly alert group → the backend sound key. Admin uploads
 // one .mp3 per group; it applies to ALL users in real time (played in-app).
 const GROUPS = [
+  { key: "post_published", label: "Post published (your own)", desc: "The confirmation sound you hear right after you publish a post", icon: Send },
   { key: "message", label: "Messages (DMs)", desc: "When a new direct message arrives", icon: MessageCircle },
   { key: "posts", label: "New posts & reels", desc: "When someone a user follows posts on PostMePlex", icon: ImageIcon },
   { key: "live", label: "Live", desc: "When someone a user follows starts a live stream", icon: Radio },
