@@ -188,6 +188,7 @@ LIVE_MAX_CHARS_PER_LIVE = 3      # at most this many of a user's characters comm
 AUDIO_TAG_RE = re.compile(r"\[[a-zA-Z][a-zA-Z '\-]{0,24}\]")
 
 _WEATHER_CACHE = {}  # (lat2, lon2) -> (context_str, epoch_seconds); 15-min TTL to avoid per-turn latency
+_WARM_AT = {}  # (char_id, admin_id) -> epoch; de-dupes call-start connection warm-ups (60s)
 
 # WMO weather codes → plain words the character can speak naturally.
 WEATHER_CODES = {
@@ -2083,12 +2084,39 @@ def build_router(ctx) -> APIRouter:
             raise HTTPException(502, "Couldn't understand the audio")
         return {"text": (text or "").strip(), "speaker_note": note}
 
+    async def _warm_call(c: dict, admin_id: str) -> None:
+        """Fire-and-forget on call start: warm the fast LLM model + ElevenLabs voice so the
+        FIRST spoken turn is instant instead of paying first-token / first-HTTPS cold start."""
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+        async def _warm_llm():
+            try:
+                chat = LlmChat(
+                    api_key=settings_store.get("EMERGENT_LLM_KEY"),
+                    session_id=f"warm-{c['id']}-{admin_id}",
+                    system_message="Reply with just: ok",
+                ).with_model("anthropic", "claude-haiku-4-5-20251001").with_params(max_tokens=1)
+                await chat.send_message(UserMessage(text="warm"))
+            except Exception:
+                pass
+
+        async def _warm_tts():
+            try:
+                await _tts_bytes(c, ".")
+            except Exception:
+                pass
+
+        try:
+            await asyncio.gather(_warm_llm(), _warm_tts())
+        except Exception:
+            pass
+
     @router.post("/api/ai-characters/{char_id}/call-event")
     async def call_event(char_id: str, body: CallEventBody, current: Annotated[dict, Depends(get_current_user)]):
         """Record a call start/end as a labeled event in the chat thread so the user sees
         '📞 Call started/ended' and the character knows a call just happened/ended."""
         _require_admin(current)
-        await _get_char(char_id)
+        c = await _get_char(char_id)
         if body.event == "end":
             d = max(0, int(body.duration))
             mm, ss = divmod(d, 60)
@@ -2096,6 +2124,13 @@ def build_router(ctx) -> APIRouter:
             text = f"📞 Call ended · {dur}"
         else:
             text = "📞 Call started"
+            # Warm the LLM + ElevenLabs connections the instant the call connects so the
+            # user's FIRST spoken turn doesn't pay the cold-start latency. Deduped to 60s.
+            key = (char_id, current["id"])
+            nowts = _now().timestamp()
+            if nowts - _WARM_AT.get(key, 0) > 60:
+                _WARM_AT[key] = nowts
+                asyncio.create_task(_warm_call(c, current["id"]))
         doc = {"id": str(uuid.uuid4()), "character_id": char_id, "admin_id": current["id"],
                "role": "system", "text": text, "created_at": _now()}
         await db.ai_char_messages.insert_one(doc)
