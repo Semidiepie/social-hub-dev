@@ -32,8 +32,14 @@ class GamePrivacyBody(BaseModel):
 
 
 class GameCommentBody(BaseModel):
-    text: str = Field(min_length=1, max_length=1000)
+    text: str = Field("", max_length=1000)
     parent_id: Optional[str] = None
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
+
+
+class GameCommentReactionBody(BaseModel):
+    emoji: str = Field(min_length=1, max_length=16)
 
 
 def build_router(ctx):
@@ -121,6 +127,9 @@ def build_router(ctx):
             "equipped_frame": a.get("equipped_frame", c.get("equipped_frame")),
             "custom_frame": a.get("custom_frame", c.get("custom_frame")),
             "frame_enabled": a.get("frame_enabled", c.get("frame_enabled", True)),
+            "media_url": c.get("media_url"),
+            "media_type": c.get("media_type"),
+            "reactions": c.get("reactions", []),
         }
 
     # ---------- Member: catalog ----------
@@ -311,6 +320,8 @@ def build_router(ctx):
     async def create_game_comment(game_id: str, body: GameCommentBody, current: Annotated[dict, Depends(get_current_user)]):
         if not await db.games.find_one({"id": game_id}):
             raise HTTPException(404, "Game not found")
+        if not (body.text or "").strip() and not body.media_url:
+            raise HTTPException(400, "Comment cannot be empty")
         parent_id = None
         if body.parent_id:
             parent = await db.game_comments.find_one({"id": body.parent_id, "game_id": game_id})
@@ -327,10 +338,29 @@ def build_router(ctx):
             "remembering": bool(current.get("remembering", False)),
             "equipped_frame": current.get("equipped_frame"), "custom_frame": current.get("custom_frame"),
             "frame_enabled": current.get("frame_enabled", True),
-            "text": body.text.strip(), "created_at": now(),
+            "text": body.text.strip(),
+            "media_url": body.media_url or None,
+            "media_type": body.media_type or None,
+            "reactions": [],
+            "created_at": now(),
         }
         await db.game_comments.insert_one(doc)
         return _serialize_comment(doc)
+
+    @router.post("/api/games/{game_id}/comments/{comment_id}/reactions")
+    async def react_game_comment(game_id: str, comment_id: str, body: GameCommentReactionBody, current: Annotated[dict, Depends(get_current_user)]):
+        c = await db.game_comments.find_one({"id": comment_id, "game_id": game_id}, {"_id": 0, "reactions": 1})
+        if not c:
+            raise HTTPException(404, "Comment not found")
+        existing = next((r for r in (c.get("reactions") or []) if r.get("user_id") == current["id"]), None)
+        await db.game_comments.update_one({"id": comment_id}, {"$pull": {"reactions": {"user_id": current["id"]}}})
+        if not (existing and existing.get("emoji") == body.emoji):
+            await db.game_comments.update_one(
+                {"id": comment_id},
+                {"$push": {"reactions": {"user_id": current["id"], "username": current["username"], "emoji": body.emoji}}},
+            )
+        updated = await db.game_comments.find_one({"id": comment_id}, {"_id": 0, "reactions": 1})
+        return {"reactions": (updated or {}).get("reactions", [])}
 
     @router.delete("/api/games/{game_id}/comments/{comment_id}")
     async def delete_game_comment(game_id: str, comment_id: str, current: Annotated[dict, Depends(get_current_user)]):

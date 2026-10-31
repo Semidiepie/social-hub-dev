@@ -210,8 +210,14 @@ class CreateStoryBody(BaseModel):
 
 
 class CommentBody(BaseModel):
-    text: str = Field(min_length=1, max_length=500)
+    text: str = Field("", max_length=500)
     parent_id: Optional[str] = None
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None  # image | gif | video
+
+
+class CommentReactionBody(BaseModel):
+    emoji: str = Field(min_length=1, max_length=16)
 
 
 class PushRegisterBody(BaseModel):
@@ -2406,6 +2412,8 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
     post = await db.posts.find_one({"id": post_id})
     if not post:
         raise HTTPException(404, "Post not found")
+    if not (body.text or "").strip() and not body.media_url:
+        raise HTTPException(400, "Comment cannot be empty")
     # One-level threading: replies attach to the TOP-LEVEL comment. If replying to
     # a reply, resolve up to its parent so we never nest deeper than one level.
     parent_id = None
@@ -2430,7 +2438,10 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
         "equipped_frame": current.get("equipped_frame"),
         "custom_frame": current.get("custom_frame"),
         "frame_enabled": current.get("frame_enabled", True),
-        "text": body.text,
+        "text": (body.text or "").strip(),
+        "media_url": body.media_url or None,
+        "media_type": body.media_type or None,
+        "reactions": [],
         "created_at": now(),
     }
     await db.comments.insert_one(comment)
@@ -2482,6 +2493,23 @@ async def create_comment(post_id: str, body: CommentBody, current: Annotated[dic
     comment_out = {k: v for k, v in comment.items() if k != "_id"}
     comment_out["created_at"] = comment["created_at"].isoformat()
     return comment_out
+
+
+@app.post("/api/posts/{post_id}/comments/{comment_id}/reactions")
+async def react_comment(post_id: str, comment_id: str, body: CommentReactionBody, current: Annotated[dict, Depends(get_current_user)]):
+    """Toggle the current user's emoji reaction on a comment (one reaction per user)."""
+    c = await db.comments.find_one({"id": comment_id, "post_id": post_id}, {"_id": 0, "reactions": 1})
+    if not c:
+        raise HTTPException(404, "Comment not found")
+    existing = next((r for r in (c.get("reactions") or []) if r.get("user_id") == current["id"]), None)
+    await db.comments.update_one({"id": comment_id}, {"$pull": {"reactions": {"user_id": current["id"]}}})
+    if not (existing and existing.get("emoji") == body.emoji):
+        await db.comments.update_one(
+            {"id": comment_id},
+            {"$push": {"reactions": {"user_id": current["id"], "username": current["username"], "emoji": body.emoji}}},
+        )
+    updated = await db.comments.find_one({"id": comment_id}, {"_id": 0, "reactions": 1})
+    return {"reactions": (updated or {}).get("reactions", [])}
 
 
 @app.delete("/api/posts/{post_id}/comments/{comment_id}")

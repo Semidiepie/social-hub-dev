@@ -78,8 +78,14 @@ class UpdateVideoBody(BaseModel):
 
 
 class VideoCommentBody(BaseModel):
-    text: str = Field(min_length=1, max_length=1000)
+    text: str = Field("", max_length=1000)
     parent_id: Optional[str] = None
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
+
+
+class VideoCommentReactionBody(BaseModel):
+    emoji: str = Field(min_length=1, max_length=16)
 
 
 class StreamUrlBody(BaseModel):
@@ -425,6 +431,9 @@ def build_router(ctx) -> APIRouter:
                 "id": c["id"],
                 "text": c["text"],
                 "parent_id": c.get("parent_id"),
+                "media_url": c.get("media_url"),
+                "media_type": c.get("media_type"),
+                "reactions": c.get("reactions", []),
                 "created_at": c["created_at"].isoformat() if isinstance(c["created_at"], datetime) else c["created_at"],
                 "author": {
                     "id": author["id"],
@@ -448,6 +457,8 @@ def build_router(ctx) -> APIRouter:
         v = await db.videos.find_one({"id": video_id})
         if not v:
             raise HTTPException(404, "Video not found")
+        if not (body.text or "").strip() and not body.media_url:
+            raise HTTPException(400, "Comment cannot be empty")
         # One-level threading: replies attach to the top-level comment.
         parent_id = None
         parent_author_id = None
@@ -464,6 +475,9 @@ def build_router(ctx) -> APIRouter:
             "parent_id": parent_id,
             "user_id": current["id"],
             "text": body.text.strip(),
+            "media_url": body.media_url or None,
+            "media_type": body.media_type or None,
+            "reactions": [],
             "created_at": now(),
         })
         await db.videos.update_one({"id": video_id}, {"$inc": {"comments_count": 1}})
@@ -494,6 +508,9 @@ def build_router(ctx) -> APIRouter:
             "id": comment_id,
             "text": body.text.strip(),
             "parent_id": parent_id,
+            "media_url": body.media_url or None,
+            "media_type": body.media_type or None,
+            "reactions": [],
             "created_at": now().isoformat(),
             "author": {
                 "id": author["id"],
@@ -508,6 +525,21 @@ def build_router(ctx) -> APIRouter:
                 "frame_enabled": author.get("frame_enabled", True),
             } if author else None,
         }
+
+    @router.post("/api/videos/{video_id}/comments/{comment_id}/reactions")
+    async def react_video_comment(video_id: str, comment_id: str, body: VideoCommentReactionBody, current: Annotated[dict, Depends(get_current_user)]):
+        c = await db.video_comments.find_one({"id": comment_id, "video_id": video_id}, {"_id": 0, "reactions": 1})
+        if not c:
+            raise HTTPException(404, "Comment not found")
+        existing = next((r for r in (c.get("reactions") or []) if r.get("user_id") == current["id"]), None)
+        await db.video_comments.update_one({"id": comment_id}, {"$pull": {"reactions": {"user_id": current["id"]}}})
+        if not (existing and existing.get("emoji") == body.emoji):
+            await db.video_comments.update_one(
+                {"id": comment_id},
+                {"$push": {"reactions": {"user_id": current["id"], "username": current["username"], "emoji": body.emoji}}},
+            )
+        updated = await db.video_comments.find_one({"id": comment_id}, {"_id": 0, "reactions": 1})
+        return {"reactions": (updated or {}).get("reactions", [])}
 
     @router.delete("/api/videos/{video_id}/comments/{comment_id}")
     async def delete_video_comment(
