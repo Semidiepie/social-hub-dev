@@ -588,6 +588,7 @@ function CharacterFormDialog({ character, onClose, onSaved, onDeleted }) {
 function ChatPane({ conv, me, onBack, onChanged, onGone }) {
   const { startCall } = useCall();
   const [messages, setMessages] = useState([]);
+  const [bursts, setBursts] = useState({});
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -723,6 +724,10 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
 
   const toggleReaction = async (id, emoji, hasMine) => {
     try {
+      if (!hasMine) {
+        setBursts((s) => ({ ...s, [id]: emoji }));
+        setTimeout(() => setBursts((s) => { const n = { ...s }; delete n[id]; return n; }), 720);
+      }
       const res = hasMine
         ? await api.del(`/messages/${id}/reactions`)
         : await api.post(`/messages/${id}/reactions`, { emoji });
@@ -813,7 +818,10 @@ function ChatPane({ conv, me, onBack, onChanged, onGone }) {
                     </button>
                   </div>
                 )}
-                <div className="flex max-w-[75%] flex-col">
+                <div className="relative flex max-w-[75%] flex-col">
+                  {bursts[m.id] && (
+                    <span className={`pmp-burst pointer-events-none absolute -top-2 z-20 text-2xl ${mine ? "right-2" : "left-2"}`}>{bursts[m.id]}</span>
+                  )}
                   <div className={`rounded-2xl px-3 py-2 text-sm ${mine ? "self-end bg-primary text-primary-foreground" : "self-start bg-secondary text-foreground"}`} data-testid={`msg-${m.id}`}>
                     {!mine && conv.is_group && (
                       <div className="mb-0.5 flex items-center gap-1 text-[11px] font-bold text-primary">
