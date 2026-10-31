@@ -1476,3 +1476,10 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - **Fix (AiCharacterChat.jsx):** scroll-to-bottom effect now guarded by an `atBottomRef` (+ onScroll handler); user-initiated sends set at-bottom. Mirrors the Messages.jsx fix — scrolling up to read history no longer snaps back on the 8s poll.
 - Needs redeploy. After redeploy characters speak with a SUBSTITUTE voice until the ElevenLabs key is pointed back at the account holding the custom voices (secure secrets card).
 - TODO/known: pets.py still uploads to Cloudinary (broken, not urgent); other backend Cloudinary refs (_cloudinary_resized used only for media-analysis input URL transform) left as-is.
+
+## 2026-06 — Reel thumbnails + share cards (web)
+- Root cause: after the Cloudinary→object-storage migration, reels stored a fake `.jpg` thumbnail URL (old Cloudinary trick) that 404s → black poster in feed/reels AND the share OG card fell back to the plain text card.
+- Fix: new `src/lib/videoThumb.js` captures a real poster frame client-side on reel upload (ReelUpload.jsx), uploads it to object storage, stores as `thumbnail_url`. Share card (`routes/share.py` `_render_photo_card`) then renders photo-forward automatically. FeedPostCard `<video>` hardened with `preload="metadata" playsInline`.
+- Verified: browser canvas capture produces JPEG (PASS); share card = full photo card with thumbnail (605KB) vs text card without (35KB).
+- Caveat: EXISTING reels posted before this have no stored thumbnail (no ffmpeg server-side to backfill); they now show first frame via preload but need re-upload for a custom poster/nice share card.
+- Also fixed same session (web): DM reaction picker (quick bar + full picker + burst), comment verified-badge colour, DM conversation-list scroll, voice-note single-tap playback.

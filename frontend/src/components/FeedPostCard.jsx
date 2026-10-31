@@ -185,6 +185,8 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
         <video
           src={post.video_url}
           controls
+          playsInline
+          preload="metadata"
           poster={post.thumbnail_url || undefined}
           className="mx-2 mt-2 max-h-[720px] w-[calc(100%-1rem)] rounded-2xl bg-black"
         />

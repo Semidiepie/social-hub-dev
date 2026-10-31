@@ -12,6 +12,7 @@ import CollaboratorPicker from "@/components/CollaboratorPicker";
 import { toast } from "sonner";
 import { uploadToCloudinary, cloudinaryAvailable, MAX_UPLOAD_BYTES } from "@/lib/cloudinary";
 import { compressVideoToTarget, TARGET_MAX_BYTES } from "@/lib/videoCompress";
+import { captureVideoThumbnail } from "@/lib/videoThumb";
 
 // Dedicated web page to publish a vertical reel (shows in the Reels feed).
 export default function ReelUploadPage() {
@@ -63,9 +64,17 @@ export default function ReelUploadPage() {
       });
       setVideoUrl(result.secure_url);
       if (result.duration) setDuration(result.duration);
-      setThumbnailUrl(
-        result.thumbnail_url || result.secure_url.replace(/\.(mp4|mov|webm|m4v)$/i, ".jpg"),
-      );
+      // Object storage doesn't make a poster frame, so capture one from the
+      // video itself and upload it — otherwise the reel shows a black box.
+      setPhase("thumbnail");
+      try {
+        const { file: thumbFile, duration: capDur } = await captureVideoThumbnail(toUpload);
+        const thumbRes = await uploadToCloudinary(thumbFile);
+        setThumbnailUrl(thumbRes.secure_url);
+        if (!result.duration && capDur) setDuration(Math.round(capDur));
+      } catch {
+        setThumbnailUrl("");
+      }
       toast.success("Video uploaded");
     } catch (err) {
       toast.error(err.message || "Upload failed");
@@ -142,7 +151,7 @@ export default function ReelUploadPage() {
             {uploading ? (
               <>
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                {phase === "compressing" ? "Compressing" : "Uploading"}… {Math.round(progress * 100)}%
+                {phase === "compressing" ? "Compressing" : phase === "thumbnail" ? "Finishing" : "Uploading"}… {Math.round(progress * 100)}%
               </>
             ) : (
               <>
