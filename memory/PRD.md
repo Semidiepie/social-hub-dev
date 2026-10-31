@@ -1,3 +1,10 @@
+## Fixes — AI call: concise replies + smoother voice (production reports), web (2026-06)
+- **Talks too much:** call brief rewritten to force SHORT, 1–2 sentence phone replies (only longer if explicitly asked); fast-call `max_tokens` lowered 700→260. (`_build_reply_chat` in `routes/ai_characters.py`.)
+- **Voice cutting in/out:** root cause was many tiny sentence-segments synthesized serially → client ran out of buffered audio between segments on slower production network. New flush strategy in `_stream_fast_reply`: FIRST segment still flushes at an early clause (fast start), but LATER segments accumulate to ≥160 chars and cut at the LAST sentence end — far fewer, longer audio pieces that mask the next segment's synth/network time. Shorter replies also mean fewer segments overall.
+- **First-turn latency:** pre-warm (prior) stays; shorter replies + lower token cap reduce first-reply generation time. Remaining floor is provider-side cold start.
+- Verified: lint-clean, backend restarts with no errors. NOT live-voice-tested (production + credit-sensitive). Requires redeploy.
+
+
 ## Fixes — AI character calls + DM custom-sound wiring, web (2026-06)
 - **"[excited]" spoken aloud:** added `_strip_spoken_tags` + `_SOUND_TAG_ALLOW` in `routes/ai_characters.py`; `_tts_bytes` now strips mood-label tags ([excited]/[sad]/[nervous]…) from the spoken text while keeping real sound tags ([laughs]/[sighs]). Covers both streaming (live call) and normal reply paths.
 - **Wrong call timing ("you called 2 mins ago"):** `last_call_ended_at` was written but never read. The 1:1 streaming call path now injects a factual "CALL TIMING" line (via `_humanize_gap` + a read of `ai_char_state.last_call_ended_at`) so she grounds the real gap instead of guessing; first-ever call gets a neutral greeting instruction.

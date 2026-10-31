@@ -1056,15 +1056,13 @@ def build_router(ctx) -> APIRouter:
             system_message=_system(c, spoken, context),
         ).with_model("anthropic", "claude-haiku-4-5-20251001" if fast else "claude-sonnet-4-6")
         if fast:
-            # Generous cap so she's never cut off mid-thought, but the brief keeps most
-            # replies short — long only when the moment genuinely calls for it.
-            chat = chat.with_params(max_tokens=700)
-        brief = ("\n\nThis is a live phone call — talk like a real person and let the LENGTH of your reply "
-                 "match the moment. If it's a simple or quick question ('how are you?', 'you there?'), answer "
-                 "in just a word or a sentence. If it's open-ended, emotional, or you're telling a story or "
-                 "explaining something, take as long as you naturally need — a full paragraph is fine. YOU "
-                 "decide based on the question and the flow of the conversation; don't default to always long "
-                 "or always short." if fast else "")
+            # Keep phone replies short and snappy so she doesn't monologue, and so the
+            # streamed audio stays smooth (fewer sentences => fewer segments => fewer gaps).
+            chat = chat.with_params(max_tokens=260)
+        brief = ("\n\nThis is a live phone call — talk like a real person on the phone: keep it SHORT and "
+                 "natural, usually ONE or TWO sentences. Answer, maybe add a quick thought, then stop and let "
+                 "them talk. Only go longer if they explicitly ask you to explain or tell a story. Never "
+                 "monologue, never pad, never give a speech." if fast else "")
         prompt = (f"Recent conversation:\n{transcript}\n\n" if transcript else "") + (
             f'The user just said: "{user_text}"\n\nRespond as {c["name"]}.' + brief
         )
@@ -1114,17 +1112,26 @@ def build_router(ctx) -> APIRouter:
             if not delta:
                 continue
             buf += delta
-            # Flush each completed sentence as soon as it's ready. For the FIRST segment,
-            # flush at an early clause boundary (comma/dash) so she starts talking sooner.
+            # Flush strategy tuned for smooth audio on slower (production) networks:
+            #   - FIRST segment: flush at an early clause boundary so she starts talking fast.
+            #   - LATER segments: wait for a bigger chunk (>= MIN_SEG chars) and cut at the
+            #     LAST sentence end, so each audio piece is long enough to mask the next
+            #     segment's synth+network time instead of cutting in and out.
+            MIN_SEG = 160
             while True:
                 cut = None
-                se = _SENT_END.search(buf)
-                if se:
-                    cut = se.end()
-                elif not clean_parts:
-                    cl = re.search(r'[,;:]|—|–', buf)
-                    if cl and len(buf[:cl.start()].split()) >= 1:
-                        cut = cl.end()
+                if not clean_parts:
+                    se = _SENT_END.search(buf)
+                    if se:
+                        cut = se.end()
+                    else:
+                        cl = re.search(r'[,;:]|—|–', buf)
+                        if cl and len(buf[:cl.start()].split()) >= 1:
+                            cut = cl.end()
+                elif len(buf) >= MIN_SEG:
+                    ends = list(_SENT_END.finditer(buf))
+                    if ends:
+                        cut = ends[-1].end()
                 if cut is None:
                     break
                 seg, buf = buf[:cut], buf[cut:]
