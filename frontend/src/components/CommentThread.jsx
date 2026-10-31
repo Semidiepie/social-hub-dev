@@ -39,6 +39,7 @@ function normalize(type, c) {
       display_name: c.display_name,
       avatar_url: c.avatar_url,
       is_verified: c.is_verified,
+      verified_color: c.verified_color,
       remembering: c.remembering,
       equipped_frame: c.equipped_frame,
       frame_enabled: c.frame_enabled,
