@@ -59,9 +59,9 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
   };
   return (
     <article className="bg-transparent pb-2" data-testid={`post-${post.id}`}>
-      <div className="flex items-center gap-3 px-4 pt-4">
+      <div className="flex items-start gap-3 px-4 pt-4">
         {isCollab ? (
-          <div className="flex items-center" data-testid={`post-collab-avatars-${post.id}`}>
+          <div className="flex flex-shrink-0 items-center" data-testid={`post-collab-avatars-${post.id}`}>
             <Link to={userPath(post.author)} className="relative z-10">
               <Avatar src={post.author?.avatar_url} size={40} ring frame={frameOf(post.author)} live={post.author?.is_live} />
             </Link>
@@ -70,80 +70,82 @@ export function FeedPostCard({ post, onToggleLike, canManage, onDelete, onUpdate
             </Link>
           </div>
         ) : post.author ? (
-          <Link to={userPath(post.author)}>
+          <Link to={userPath(post.author)} className="flex-shrink-0">
             <Avatar src={post.author.avatar_url} size={40} ring frame={frameOf(post.author)} live={post.author?.is_live} />
           </Link>
         ) : (
           <Avatar size={40} ring />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-            <Link to={userPath(post.author)} className="hover:underline"><UsernameLine user={post.author} className="text-sm" /></Link>
-            {isCollab && (
+          <div className="flex items-center gap-x-1.5 overflow-hidden">
+            <Link to={userPath(post.author)} className="min-w-0 truncate hover:underline"><UsernameLine user={post.author} className="text-sm" /></Link>
+            {isCollab ? (
               <>
-                <span className="text-sm text-muted-foreground">and</span>
-                <Link to={userPath(post.collaborator)} className="hover:underline"><UsernameLine user={post.collaborator} className="text-sm" /></Link>
-                <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary" data-testid={`post-collab-pill-${post.id}`}>
-                  <Users size={10} /> Collab
-                </span>
+                <span className="flex-shrink-0 text-sm text-muted-foreground">&amp;</span>
+                <Link to={userPath(post.collaborator)} className="min-w-0 truncate hover:underline"><UsernameLine user={post.collaborator} className="text-sm" /></Link>
               </>
-            )}
-            {!isCollab && post.author?.is_streamer && (
-              <span className="pmp-streamer" data-testid={`post-streamer-${post.id}`}>
+            ) : post.author?.is_streamer ? (
+              <span className="pmp-streamer flex-shrink-0" data-testid={`post-streamer-${post.id}`}>
                 <Gamepad2 size={9} /> Streamer
               </span>
+            ) : null}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+            {isCollab && (
+              <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary" data-testid={`post-collab-pill-${post.id}`}>
+                <Users size={10} /> Collab
+              </span>
+            )}
+            <span className="truncate">@{post.author?.username}{isCollab ? ` · @${post.collaborator?.username}` : ""} · {timeAgo(post.created_at)}</span>
+            {post.game_tag && (
+              <Link
+                to={`/discover?q=${encodeURIComponent("#" + post.game_tag)}`}
+                className="flex-shrink-0 font-semibold text-primary/90 transition-colors hover:text-primary"
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`post-tag-${post.id}`}
+              >
+                #{post.game_tag}
+              </Link>
             )}
             <FeaturedBadge show={featured} />
           </div>
-          <div className="truncate text-xs text-muted-foreground">
-            @{post.author?.username}{isCollab ? ` · @${post.collaborator?.username}` : ""} · {timeAgo(post.created_at)}
-          </div>
         </div>
-        <FeatureToggle type={post.type === "reel" ? "reel" : "post"} id={post.id} featured={featured} onChange={setFeatured} />
-        {post.game_tag && (
-          <Link
-            to={`/discover?q=${encodeURIComponent("#" + post.game_tag)}`}
-            className="pmp-kind transition-colors hover:text-primary"
-            style={{ textTransform: "none" }}
-            onClick={(e) => e.stopPropagation()}
-            data-testid={`post-tag-${post.id}`}
-          >
-            #{post.game_tag}
-          </Link>
-        )}
-        {isCollab && !isPending && (amOwner || amCollaborator) && (
-          <button
-            onClick={detach}
-            title={amOwner ? "Remove collaborator" : "Remove myself from this post"}
-            aria-label="Remove collaboration"
-            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            data-testid={`post-collab-detach-${post.id}`}
-          >
-            <UserMinus size={16} />
-          </button>
-        )}
-        {canManage && (
-          <>
+        <div className="flex flex-shrink-0 items-center gap-0.5">
+          <FeatureToggle type={post.type === "reel" ? "reel" : "post"} id={post.id} featured={featured} onChange={setFeatured} />
+          {isCollab && !isPending && (amOwner || amCollaborator) && (
             <button
-              onClick={() => setEditing(true)}
-              title="Edit post"
-              aria-label="Edit post"
-              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-              data-testid={`post-edit-${post.id}`}
-            >
-              <Pencil size={16} />
-            </button>
-            <button
-              onClick={onDelete}
-              title="Delete post"
-              aria-label="Delete post"
+              onClick={detach}
+              title={amOwner ? "Remove collaborator" : "Remove myself from this post"}
+              aria-label="Remove collaboration"
               className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-              data-testid={`post-delete-${post.id}`}
+              data-testid={`post-collab-detach-${post.id}`}
             >
-              <Trash2 size={16} />
+              <UserMinus size={16} />
             </button>
-          </>
-        )}
+          )}
+          {canManage && (
+            <>
+              <button
+                onClick={() => setEditing(true)}
+                title="Edit post"
+                aria-label="Edit post"
+                className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                data-testid={`post-edit-${post.id}`}
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                onClick={onDelete}
+                title="Delete post"
+                aria-label="Delete post"
+                className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                data-testid={`post-delete-${post.id}`}
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {isPending && amOwner && (
