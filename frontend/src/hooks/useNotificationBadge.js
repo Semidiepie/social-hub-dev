@@ -149,12 +149,12 @@ export function useNotificationBadge() {
         /* ignore transient errors */
       }
 
-      // Direct messages use a separate unread counter — play the "message"
-      // sound when a new DM lands while the app is open.
+      // Direct messages use a separate unread counter. When Web Push is on, the SW
+      // message path plays the "message" sound; this poll is the fallback otherwise.
       try {
         const { count: mcount } = await api.get("/messages/unread-count");
         if (!alive) return;
-        if (msgInitRef.current && mcount > msgLastRef.current) {
+        if (!pushEnabledRef.current && msgInitRef.current && mcount > msgLastRef.current) {
           playNotificationForType("message");
         }
         msgInitRef.current = true;
@@ -175,6 +175,9 @@ export function useNotificationBadge() {
       alive = false;
       if (timer) clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.removeEventListener("message", onSwMessage);
+      }
     };
   }, [user]);
 }

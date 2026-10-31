@@ -272,6 +272,7 @@ def build_router(ctx) -> APIRouter:
                         f"New message from {current['display_name']}",
                         preview[:140],
                         f"/messages/{conv_id}",
+                        extra={"kind": "message", "suppressIfFocused": True},
                     )
         except Exception as e:
             logger.warning(f"DM push failed: {e}")

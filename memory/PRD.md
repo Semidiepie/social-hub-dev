@@ -1,3 +1,11 @@
+## Fixes — AI character calls + DM custom-sound wiring, web (2026-06)
+- **"[excited]" spoken aloud:** added `_strip_spoken_tags` + `_SOUND_TAG_ALLOW` in `routes/ai_characters.py`; `_tts_bytes` now strips mood-label tags ([excited]/[sad]/[nervous]…) from the spoken text while keeping real sound tags ([laughs]/[sighs]). Covers both streaming (live call) and normal reply paths.
+- **Wrong call timing ("you called 2 mins ago"):** `last_call_ended_at` was written but never read. The 1:1 streaming call path now injects a factual "CALL TIMING" line (via `_humanize_gap` + a read of `ai_char_state.last_call_ended_at`) so she grounds the real gap instead of guessing; first-ever call gets a neutral greeting instruction.
+- **First-call latency (#2):** investigated — weather is already fire-and-forget (non-blocking) and the stream already flushes at the first clause/comma. Remaining delay is inherent first-call cold-start (LLM first token + ElevenLabs first HTTPS handshake). No safe code change made; optional pre-warm on call-start was NOT added (costs a little per call).
+- **DM custom notification sound:** finished the service-worker coordination. `routes/messages.py` DM web-push now sends `extra={"kind":"message","suppressIfFocused":True}`; `push-sw.js` (done earlier) plays silent + postMessages the page when foreground; `useNotificationBadge.js` SW listener plays the custom "message" sound, the unread poll is gated behind `!pushEnabledRef` (no double-play), and the SW message listener is cleaned up on unmount.
+- Verified: all changed files lint-clean, backend restarts with no errors, `/api/notification-sounds` 200. NOT live-voice-tested (credit-sensitive) — needs a real call to confirm. Requires redeploy to reach production.
+
+
 ## Feature — PostMePlex Studio admin redesign + per-type notification sounds, web only (2026-06)
 ### Admin "Studio" redesign (YouTube-Studio style, PostMePlex brand)
 - New `AdminLayout` (`/app/frontend/src/components/AdminLayout.jsx`) wraps ALL `/admin/*` routes via a nested layout route in `App.js`: branded top bar (PostMePlex bolt logo + "PostMePlex Studio / ADMIN CONTROL CENTER" + Back-to-app) and a sticky left nav rail (desktop) listing every tool. Gated on `is_super_admin || is_admin`.

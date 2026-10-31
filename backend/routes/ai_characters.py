@@ -255,6 +255,20 @@ def _strip_spoken_tags(text: str) -> str:
     return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
+def _humanize_gap(seconds: int) -> str:
+    """Plain-words elapsed time so the character grounds call timing instead of guessing."""
+    m = max(0, int(seconds)) // 60
+    if m < 1:
+        return "less than a minute ago"
+    if m < 60:
+        return f"about {m} minute{'s' if m != 1 else ''} ago"
+    h = m // 60
+    if h < 24:
+        return f"about {h} hour{'s' if h != 1 else ''} ago"
+    d = h // 24
+    return f"about {d} day{'s' if d != 1 else ''} ago"
+
+
 def parse_voice_id(raw: str) -> str:
     """Accept a raw ElevenLabs Voice ID or any ElevenLabs URL and extract the id."""
     raw = (raw or "").strip()
@@ -2007,6 +2021,22 @@ def build_router(ctx) -> APIRouter:
                     ctx = (ctx + "\n" if ctx else "") + _schedule_now_ctx(host["schedule"], _ln)
                 if body.speakers.strip():
                     ctx = (ctx + "\n" if ctx else "") + body.speakers.strip()
+                # Ground the call's timing with the REAL gap since the last call so she
+                # stops inventing things like "you just called a couple minutes ago".
+                _st_call = await db.ai_char_state.find_one(
+                    {"character_id": host["id"], "admin_id": current["id"]},
+                    {"last_call_ended_at": 1})
+                _lc = (_st_call or {}).get("last_call_ended_at")
+                if _lc is not None:
+                    if getattr(_lc, "tzinfo", None) is None:
+                        _lc = _lc.replace(tzinfo=timezone.utc)
+                    ctx = (ctx + "\n" if ctx else "") + (
+                        f"CALL TIMING (factual): your previous phone call with them ended {_humanize_gap((_now() - _lc).total_seconds())}. "
+                        "Use ONLY this as the time since you last spoke on a call — never invent a different gap.")
+                else:
+                    ctx = (ctx + "\n" if ctx else "") + (
+                        "CALL TIMING (factual): there is no record of a recent call with them — greet "
+                        "them naturally and do NOT claim they called a moment ago.")
                 full_reply = ""
                 async for part in _stream_fast_reply(host, current["id"], body.text, ctx):
                     if part.get("done"):
