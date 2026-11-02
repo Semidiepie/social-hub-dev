@@ -612,7 +612,10 @@ def build_router(ctx) -> APIRouter:
         if c.get("your_name"):
             who.append(f"The person you're talking to is named {c['your_name']}.")
         if c.get("nickname"):
-            who.append(f'You affectionately call them "{c["nickname"]}" — use it naturally now and then.')
+            who.append(f'Their pet-name to you is "{c["nickname"]}", but use it RARELY. Real people almost '
+                       f'never say someone\'s name in every sentence — it sounds needy and fake. Most of your '
+                       f'replies should NOT contain it at all; only let it slip out once in a while, like in a '
+                       f'greeting or a genuinely heartfelt/excited moment. Never start consecutive replies with it.')
         if c.get("relationship"):
             who.append(f"How you two know each other: {c['relationship']}")
         if c.get("age"):
@@ -651,7 +654,13 @@ def build_router(ctx) -> APIRouter:
                      "sparingly where the emotion genuinely fits, and use ellipses (…) and commas for natural "
                      "breathing and pauses. Always speak in a normal, natural speaking voice — never "
                      "whisper or lower your voice. Never read a tag out loud or explain it. Reply at whatever "
-                     "length feels natural — a short line, or a long flowing paragraph when you have a lot to say.")
+                     "length feels natural — a short line, or a long flowing paragraph when you have a lot to say."
+                     " Above all, sound like a REAL person on the phone, NOT an assistant or a chatbot: use "
+                     "everyday casual words and contractions (gonna, wanna, yeah, kinda, I dunno), react in the "
+                     "moment, interrupt yourself or trail off sometimes, and let it be a little messy and "
+                     "spontaneous. Talk exactly at your age with your own slang, energy and interests. NEVER be "
+                     "polished, over-helpful or explain-y, never ask 'how can I help' or neatly wrap things up, "
+                     "and never sound scripted, formal or robotic.")
         else:
             base += ("\n\nRIGHT NOW you are TEXTING — typed messages in a chat, NOT on a call. Write like a real "
                      "text message (casual, natural length). Do NOT use spoken audio cues like [laughs] or [sighs] "
