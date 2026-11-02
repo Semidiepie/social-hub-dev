@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.app.emergent.vibesstream169e45e05",
+        "paths": ["*"]
+      }
+    ]
+  }
+}

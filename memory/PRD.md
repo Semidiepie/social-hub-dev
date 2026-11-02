@@ -1483,3 +1483,11 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Verified: browser canvas capture produces JPEG (PASS); share card = full photo card with thumbnail (605KB) vs text card without (35KB).
 - Caveat: EXISTING reels posted before this have no stored thumbnail (no ffmpeg server-side to backfill); they now show first frame via preload but need re-upload for a custom poster/nice share card.
 - Also fixed same session (web): DM reaction picker (quick bar + full picker + burst), comment verified-badge colour, DM conversation-list scroll, voice-note single-tap playback.
+
+## 2026-06 — Deep linking: notifications open the native app (Universal / App Links)
+- Goal: tapping a notification link opens the installed native app on the right screen, falling back to web if not installed.
+- iOS Universal Links: `ios.associatedDomains` (applinks:www.postmeplex.com, postmeplex.com) in mobile/app.json + hosted `frontend/public/.well-known/apple-app-site-association` (appID uses placeholder `TEAMID` — must be replaced with the Apple Team ID).
+- Android App Links: `android.intentFilters` (autoVerify https on both hosts) + hosted `frontend/public/.well-known/assetlinks.json` (sha256 fingerprint placeholder `REPLACE_WITH_ANDROID_SIGNING_SHA256` — fill from the published build's signing key).
+- `mobile/app/+native-intent.tsx` `redirectSystemPath` maps web notification paths → mobile routes (/posts/:id→/post/:id, /reels/:id→/post/:id; passes through /profile,/messages,/video,/live,/blogs,/notifications,/wallet; unmapped → /notifications).
+- Verified in preview: both .well-known files serve 200 (AASA content-type is octet-stream — iOS tolerates this; may need application/json on prod if verification fails), app.json valid, mobile bundles clean.
+- REQUIRES a published native build + the two IDs; does NOT work in Expo Go / web preview. Web→native handoff from a JS-triggered push click is not 100% guaranteed on iOS (OS limitation).
