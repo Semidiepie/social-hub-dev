@@ -660,7 +660,13 @@ def build_router(ctx) -> APIRouter:
                      "moment, interrupt yourself or trail off sometimes, and let it be a little messy and "
                      "spontaneous. Talk exactly at your age with your own slang, energy and interests. NEVER be "
                      "polished, over-helpful or explain-y, never ask 'how can I help' or neatly wrap things up, "
-                     "and never sound scripted, formal or robotic.")
+                     "and never sound scripted, formal or robotic."
+                     " NEVER ask assistant-style meta or clarifying questions like 'were you asking me or someone "
+                     "else?', 'did you mean…?', 'can you repeat that?' or 'what would you like to do?'. If you only "
+                     "half-catch something, just react in the moment like a real kid would — guess, roll with it, "
+                     "laugh, change the subject, or blurt whatever's on your mind. Use kid grammar: short excited "
+                     "bursts, run-on sentences, 'like', 'omg', 'wait wait', starting over mid-thought. It's totally "
+                     "fine to be a little off-topic, silly or imperfect — that's what makes you feel real.")
         else:
             base += ("\n\nRIGHT NOW you are TEXTING — typed messages in a chat, NOT on a call. Write like a real "
                      "text message (casual, natural length). Do NOT use spoken audio cues like [laughs] or [sighs] "
@@ -1233,12 +1239,12 @@ def build_router(ctx) -> APIRouter:
             from elevenlabs import VoiceSettings
             from elevenlabs.client import ElevenLabs
             client = ElevenLabs(api_key=eleven_key)
-            # Lower stability + higher style = more emotional, spontaneous delivery (laughs/breathing).
-            # Faithful to the pasted voice, NO added accent/theatrical drift:
-            # max similarity to the source voice + zero style keeps delivery neutral.
+            # Lower stability + some style = more emotional, spontaneous, alive delivery
+            # (natural pacing swings, laughs/breathing) instead of flat/robotic. Keep
+            # similarity_boost high so it stays faithful to the character's own voice.
             stream = client.text_to_speech.convert(
                 text=synth_text, voice_id=vid, model_id=model_id, output_format="mp3_44100_128",
-                voice_settings=VoiceSettings(stability=0.5, similarity_boost=1.0, style=0.0, use_speaker_boost=True),
+                voice_settings=VoiceSettings(stability=0.4, similarity_boost=0.9, style=0.35, use_speaker_boost=True),
             )
             return b"".join(stream)
 
