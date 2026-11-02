@@ -1491,3 +1491,9 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - `mobile/app/+native-intent.tsx` `redirectSystemPath` maps web notification paths → mobile routes (/posts/:id→/post/:id, /reels/:id→/post/:id; passes through /profile,/messages,/video,/live,/blogs,/notifications,/wallet; unmapped → /notifications).
 - Verified in preview: both .well-known files serve 200 (AASA content-type is octet-stream — iOS tolerates this; may need application/json on prod if verification fails), app.json valid, mobile bundles clean.
 - REQUIRES a published native build + the two IDs; does NOT work in Expo Go / web preview. Web→native handoff from a JS-triggered push click is not 100% guaranteed on iOS (OS limitation).
+
+## 2026-06 — Mobile verified badge colours in comments + Safari push confirmation
+- Mobile: `CommentSheet.tsx` now colours the verified check via new `verifiedColor()` helper (src/utils/format.ts): "gold" sentinel → premium gold (#F5C542), cyan/red/orange render directly, memorial (remembering) → red, else brand primary. Backend already returns each comment author's live verified_color.
+- Safari web push: confirmed ALREADY working (no code change). VAPID keys configured (all 3). Client handles macOS Safari 16+ (tab) and iOS 16.4+ (must Add to Home Screen first, with in-app guidance). Backend uses pywebpush with VAPID sub claim (aud auto-added) — Safari-compatible.
+- User declined porting DM reactions / comment reactions / comment media to mobile (only picked badge colours). Collab posts + Studio remain web-only by design.
+- Credit-conscious: no AI/TTS/testing-agent used this turn.

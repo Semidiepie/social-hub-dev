@@ -17,7 +17,7 @@ import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { api, Comment } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radii } from "@/src/theme";
-import { timeAgo } from "@/src/utils/format";
+import { timeAgo, verifiedColor } from "@/src/utils/format";
 
 interface Props {
   postId: string | null;
@@ -126,7 +126,7 @@ export function CommentSheet({ postId, visible, onClose, onCountChange }: Props)
         <View style={styles.commentMetaRow}>
           <Text style={styles.commentUser} numberOfLines={1}>{c.username}</Text>
           {c.is_verified && (
-            <Ionicons name="checkmark-circle" size={13} color={c.verified_color || colors.primary} />
+            <Ionicons name="checkmark-circle" size={13} color={verifiedColor(c, colors.primary)} />
           )}
           <Text style={styles.commentDot}>·</Text>
           <Text style={styles.commentAgo}>{timeAgo(c.created_at)}</Text>

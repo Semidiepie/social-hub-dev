@@ -1,4 +1,17 @@
 // Format relative time like "2h", "3d", "now".
+// Verified-badge colour: admin custom colour wins ("gold" sentinel → premium gold),
+// then RED for "Remembering" memorial accounts, else the brand fallback.
+export function verifiedColor(
+  entity: { verified_color?: string | null; remembering?: boolean } | null | undefined,
+  fallback: string,
+): string {
+  const c = entity?.verified_color;
+  if (c === "gold") return "#F5C542";
+  if (c) return c;
+  if (entity?.remembering) return "#ef4444";
+  return fallback;
+}
+
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return "";
   const then = new Date(iso).getTime();
