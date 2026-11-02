@@ -1497,3 +1497,11 @@ NOT live-tested: large video analysis (code path identical to image via Gemini F
 - Safari web push: confirmed ALREADY working (no code change). VAPID keys configured (all 3). Client handles macOS Safari 16+ (tab) and iOS 16.4+ (must Add to Home Screen first, with in-app guidance). Backend uses pywebpush with VAPID sub claim (aud auto-added) — Safari-compatible.
 - User declined porting DM reactions / comment reactions / comment media to mobile (only picked badge colours). Collab posts + Studio remain web-only by design.
 - Credit-conscious: no AI/TTS/testing-agent used this turn.
+
+## 2026-06 — ElevenLabs key editable live from admin panel
+- Request: admin must be able to swap the ElevenLabs API key from the in-app panel and have it work immediately, even without Emergent credits.
+- Added ELEVENLABS_API_KEY to settings_store.MANAGED_KEYS (label "ElevenLabs API Key (AI voice, calls, Sage)", secret). It now appears in Admin → API keys → "Update API keys" with input + Save (live) + Test + Reset (ApiKeyEditor is fully dynamic off /admin/keys/values; test_key already maps elevenlabs → _check_elevenlabs).
+- Removed the startup purge in server.py (_load_api_key_overrides) that deleted the ELEVENLABS_API_KEY DB override on every boot — so an admin-set key now PERSISTS across restarts/redeploys. Resolution order: DB override (admin panel) → env (secure secret) → default; clearing in panel falls back to env.
+- Live effect: settings_store.set_key updates the in-memory cache immediately and the ElevenLabs client is built fresh per TTS call, so a new key works instantly with NO restart/redeploy.
+- Verified via API: /admin/keys/values shows the ElevenLabs row; /admin/keys/ELEVENLABS_API_KEY/test returns OK with quota — which exposed the real outage cause: the current key is quota-exhausted (129380/129412 chars). A quota-healthy key (new account or upgraded plan) is still required; the panel can't add quota.
+- Caveat: deploy this code change to production ONCE; after that the key can be swapped live in the prod admin panel forever without redeploying.

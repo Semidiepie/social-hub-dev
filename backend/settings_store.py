@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 # Keys the admin panel can edit. `secret=True` → value is masked, never
 # returned in full to the browser.
 MANAGED_KEYS = [
+    {"name": "ELEVENLABS_API_KEY", "label": "ElevenLabs API Key (AI voice, calls, Sage)", "service": "elevenlabs", "secret": True},
     {"name": "CLOUDFLARE_ACCOUNT_ID", "label": "Cloudflare Account ID", "service": "cloudflare", "secret": False},
     {"name": "CLOUDFLARE_API_TOKEN", "label": "Cloudflare API Token", "service": "cloudflare", "secret": True},
     {"name": "AGORA_APP_ID", "label": "Agora App ID", "service": "agora", "secret": False},
