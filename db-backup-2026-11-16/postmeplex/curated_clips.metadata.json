@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"d3ff9b10ce364e4d98c596e000b6f563","collectionName":"curated_clips","type":"collection"}
