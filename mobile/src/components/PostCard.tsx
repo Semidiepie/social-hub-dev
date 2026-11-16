@@ -9,6 +9,7 @@ import { api, FeedItem } from "@/src/api/client";
 import { formatCount, timeAgo } from "@/src/utils/format";
 import { useAuth } from "@/src/context/AuthContext";
 import { EditContentSheet } from "@/src/components/EditContentSheet";
+import VerifiedBadge from "./VerifiedBadge";
 
 interface Props {
   post: FeedItem;
@@ -144,7 +145,7 @@ export function PostCard({ post, onChange, onComment, onDeleted }: Props) {
               <Text style={styles.displayName} numberOfLines={1}>
                 {author?.display_name ?? "Unknown"}
               </Text>
-              {author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={author?.verified_color || colors.primary} />}
+              {<VerifiedBadge user={author} size={14} />}
               {featured && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: colors.primary + "33", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999 }} testID="featured-label">
                   <Ionicons name="star" size={9} color={colors.primary} />

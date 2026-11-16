@@ -11,6 +11,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/context/AuthContext";
+import { ThemeProvider, useAppTheme } from "@/src/context/ThemeContext";
 import { colors } from "@/src/theme";
 import { NotificationPermissionPrimer } from "@/src/components/NotificationPermissionPrimer";
 import { GlobalDesktopShell } from "@/src/components/GlobalDesktopShell";
@@ -86,8 +87,8 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <KeyboardProvider>
         <SafeAreaProvider>
-          <AuthProvider>
-            <StatusBar style="light" />
+          <ThemeProvider><AuthProvider>
+            <ThemedStatusBar />
             <MusicPlayerProvider>
               <GlobalDesktopShell>
                 <Stack
@@ -100,9 +101,14 @@ export default function RootLayout() {
               </GlobalDesktopShell>
             </MusicPlayerProvider>
             <NotificationPermissionPrimer />
-          </AuthProvider>
+          </AuthProvider></ThemeProvider>
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
   );
+}
+
+function ThemedStatusBar() {
+  const { isLight } = useAppTheme();
+  return <StatusBar style={isLight ? "dark" : "light"} />;
 }

@@ -24,6 +24,7 @@ import { formatCount } from "@/src/utils/format";
 import { CommentSheet } from "@/src/components/CommentSheet";
 import { useAuth } from "@/src/context/AuthContext";
 import { OwnerContentMenu } from "@/src/components/OwnerContentMenu";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const FALLBACK_THUMB =
   "https://images.pexels.com/photos/6489045/pexels-photo-6489045.jpeg?auto=compress&cs=tinysrgb&w=1080";
@@ -229,9 +230,7 @@ function ReelItem({ reel, active, height, width, tabBarSpace, onChange, onCommen
       <View style={[styles.bottom, { bottom: tabBarSpace + 12 }]}>
         <View style={styles.nameRow}>
           <Text style={styles.authorName}>@{reel.author?.username}</Text>
-          {reel.author?.is_verified && (
-            <Ionicons name="checkmark-circle" size={15} color={reel.author?.verified_color || colors.primary} />
-          )}
+          {<VerifiedBadge user={reel.author} size={15} />}
           {reel.author?.is_streamer && (
             <View style={styles.streamerPill}>
               <Ionicons name="game-controller" size={9} color="#fff" />

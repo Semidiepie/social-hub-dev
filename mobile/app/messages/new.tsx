@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ConversationPreview, UserPublic } from "@/src/api/client";
 import { colors, spacing, radii } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const FALLBACK =
   "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop";
@@ -161,7 +162,7 @@ export default function NewMessage() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.nameRow}>
                     <Text style={styles.displayName}>{item.display_name}</Text>
-                    {item.is_verified && <Ionicons name="checkmark-circle" size={13} color={item.verified_color || colors.primary} />}
+                    {<VerifiedBadge user={item} size={13} />}
                   </View>
                   <Text style={styles.username}>@{item.username}</Text>
                 </View>

@@ -8,6 +8,7 @@ import { api, Story, UserStoriesResponse } from "@/src/api/client";
 import { colors, spacing, radii } from "@/src/theme";
 import { timeAgo } from "@/src/utils/format";
 import { useAuth } from "@/src/context/AuthContext";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const IMAGE_DURATION_MS = 5000;
@@ -198,9 +199,7 @@ export default function StoryViewer() {
             <View>
               <View style={styles.nameRow}>
                 <Text style={styles.username}>{data.user?.username}</Text>
-                {data.user?.is_verified && (
-                  <Ionicons name="checkmark-circle" size={14} color={data.user?.verified_color || colors.primary} />
-                )}
+                {<VerifiedBadge user={data.user} size={14} />}
               </View>
               <Text style={styles.timestamp}>{timeAgo(current.created_at)}</Text>
             </View>

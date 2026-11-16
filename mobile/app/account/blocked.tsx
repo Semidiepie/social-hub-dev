@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api, UserPublic } from "@/src/api/client";
 import { colors, spacing, radii } from "@/src/theme";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const FALLBACK =
   "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop";
@@ -86,7 +87,7 @@ export default function BlockedAccounts() {
               <View style={{ flex: 1 }}>
                 <View style={styles.nameRow}>
                   <Text style={styles.name} numberOfLines={1}>{item.display_name}</Text>
-                  {item.is_verified && <Ionicons name="checkmark-circle" size={14} color={item.verified_color || colors.primary} />}
+                  {<VerifiedBadge user={item} size={14} />}
                 </View>
                 <Text style={styles.username} numberOfLines={1}>@{item.username}</Text>
               </View>

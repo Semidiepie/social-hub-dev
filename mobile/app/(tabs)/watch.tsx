@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, VideoItem } from "@/src/api/client";
 import { colors, spacing, radii } from "@/src/theme";
 import { formatCount } from "@/src/utils/format";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const CATEGORIES = [
   "All",
@@ -85,9 +86,7 @@ function VideoCard({ video, onPress }: { video: VideoItem; onPress: () => void }
             <Text style={styles.channelName} numberOfLines={1}>
               {video.author?.display_name ?? "Unknown"}
             </Text>
-            {video.author?.is_verified && (
-              <Ionicons name="checkmark-circle" size={12} color={video.author?.verified_color || colors.primary} />
-            )}
+            {<VerifiedBadge user={video.author} size={12} />}
           </View>
           <Text style={styles.metaLine} numberOfLines={1}>
             {formatCount(video.views)} views · {timeAgo(video.created_at)}

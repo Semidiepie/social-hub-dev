@@ -19,6 +19,7 @@ import { api, Blog, BlogPermission } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, radii, spacing } from "@/src/theme";
 import { CONTENT_MAX_WIDTH, useResponsive } from "@/src/hooks/useResponsive";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const AVATAR_FALLBACK =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><circle cx='20' cy='20' r='20' fill='%23252936'/></svg>";
@@ -230,9 +231,7 @@ export function BlogCard({ blog, onPress }: { blog: Blog; onPress?: () => void }
           <Text style={styles.cardAuthor} numberOfLines={1}>
             {blog.author?.display_name || "Anonymous"}
           </Text>
-          {blog.author?.is_verified && (
-            <Ionicons name="checkmark-circle" size={12} color={blog.author?.verified_color || colors.primary} />
-          )}
+          {<VerifiedBadge user={blog.author} size={12} />}
           <Text style={styles.cardDot}>·</Text>
           <Text style={styles.cardMetaText}>{blog.reading_time} min</Text>
         </View>

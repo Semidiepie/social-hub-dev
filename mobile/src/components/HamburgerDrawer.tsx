@@ -1,154 +1,184 @@
 import React, { useCallback, useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
-  ScrollView,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Image } from "expo-image";
-import { useRouter } from "expo-router";
+import { Image, Modal, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { api, WalletInfo } from "@/src/api/client";
-import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing } from "@/src/theme";
+import { useRouter } from "expo-router";
+import { useAuth } from "../context/AuthContext";
+import { useAppTheme } from "../context/ThemeContext";
+import { api, type WalletInfo } from "../api/client";
+import { spacing } from "../theme";
 
-const SHORTCUTS: { label: string; route: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { label: "Live", route: "/live", icon: "radio-outline" },
-  { label: "Music", route: "/music", icon: "musical-notes-outline" },
-  { label: "Blogs", route: "/blogs", icon: "library-outline" },
-];
+/**
+ * Side menu, matching the web app's side menu (frontend/src/components/AppShell.jsx
+ * nav items, and HamburgerMenu.jsx on the web): same items, same order, same
+ * destinations, same visibility rules.
+ * Order (top to bottom): Home, Videos, Live, Reels, Music, Pet, Games
+ * (only when games exist, GET /games/count > 0), Market, Wallet, Blogs,
+ * Discover, Messages, Live Chat, Notifications, Post (submenu), Light mode
+ * (theme toggle), Settings, Admin (admin accounts only, shield icon, links to
+ * PostMePlex Studio at /admin), profile link (name + token balance), Log out.
+ * Where the app has no dedicated screen for an item, the entry routes to the
+ * closest existing screen (see mobile/app/pet.tsx, market.tsx, livechat.tsx,
+ * games.tsx and videos.tsx).
+ */
+type MenuItem = { label: string; route: string; icon: keyof typeof Ionicons.glyphMap; testID: string };
 
-const LINKS: { label: string; route: string; icon: keyof typeof Ionicons.glyphMap; testID: string }[] = [
+const MENU: MenuItem[] = [
+  { label: "Home", route: "/(tabs)/home", icon: "home-outline", testID: "drawer-home" },
+  { label: "Videos", route: "/(tabs)/watch", icon: "play-circle-outline", testID: "drawer-videos" },
+  { label: "Live", route: "/live", icon: "radio-outline", testID: "drawer-live" },
+  { label: "Reels", route: "/(tabs)/reels", icon: "film-outline", testID: "drawer-reels" },
+  { label: "Music", route: "/music", icon: "musical-notes-outline", testID: "drawer-music" },
+  { label: "Pet", route: "/pet", icon: "paw-outline", testID: "drawer-pet" },
+  { label: "Games", route: "/games", icon: "game-controller-outline", testID: "drawer-games" },
+  { label: "Market", route: "/market", icon: "bag-outline", testID: "drawer-market" },
   { label: "Wallet", route: "/wallet", icon: "wallet-outline", testID: "drawer-wallet" },
-  { label: "My Profile", route: "/profile", icon: "person-outline", testID: "drawer-profile" },
+  { label: "Blogs", route: "/blogs", icon: "book-outline", testID: "drawer-blogs" },
+  { label: "Discover", route: "/(tabs)/discover", icon: "compass-outline", testID: "drawer-discover" },
   { label: "Messages", route: "/messages", icon: "paper-plane-outline", testID: "drawer-messages" },
+  { label: "Live Chat", route: "/livechat", icon: "chatbubbles-outline", testID: "drawer-livechat" },
   { label: "Notifications", route: "/notifications", icon: "notifications-outline", testID: "drawer-notifications" },
-  { label: "Settings", route: "/settings", icon: "settings-outline", testID: "drawer-settings" },
 ];
 
-export function HamburgerDrawer({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { user, logout, patchUser } = useAuth();
+const POST_ITEMS: MenuItem[] = [
+  { label: "Post a reel", route: "/(tabs)/create", icon: "film-outline", testID: "drawer-post-reel" },
+  { label: "Upload a video", route: "/video/upload", icon: "videocam-outline", testID: "drawer-post-video" },
+  { label: "Write a blog", route: "/blogs/new", icon: "create-outline", testID: "drawer-post-blog" },
+  { label: "Go live", route: "/live/new", icon: "radio-outline", testID: "drawer-post-live" },
+];
+
+function formatTokensLocal(n: number): string {
+  return n.toLocaleString("en-CA");
+}
+
+export default function HamburgerDrawer({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const router = useRouter();
+  const { user, logout, patchUser } = useAuth();
+  const { colors: themeColors, isLight, toggleTheme } = useAppTheme();
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [claiming, setClaiming] = useState(false);
+  const [hasGames, setHasGames] = useState(false);
+  const [postOpen, setPostOpen] = useState(false);
 
   const loadWallet = useCallback(async () => {
     try {
       const w = await api.get<WalletInfo>("/wallet");
       setWallet(w);
-      patchUser({ tokens: w.balance });
-    } catch {
-      /* non-blocking */
-    }
+      if (typeof w.balance === "number") patchUser({ tokens: w.balance });
+    } catch {}
   }, [patchUser]);
 
   useEffect(() => {
-    if (visible) loadWallet();
+    if (!visible) return;
+    loadWallet();
+    api.get<{ count?: number }>("/games/count").then((r) => setHasGames((r?.count || 0) > 0)).catch(() => setHasGames(false));
   }, [visible, loadWallet]);
 
   const go = (route: string) => {
     onClose();
-    router.push(route as any);
+    router.push(route as never);
   };
 
   const claimDaily = async () => {
+    if (claiming || (wallet && !wallet.can_claim_daily)) return;
     setClaiming(true);
     try {
-      const res = await api.post<WalletInfo & { claimed: number }>("/wallet/daily");
-      setWallet((w) => (w ? { ...w, balance: res.balance, can_claim_daily: false } : w));
-      patchUser({ tokens: res.balance });
-    } catch {
-      /* already claimed */
-    } finally {
+      const w = await api.post<WalletInfo & { claimed?: number }>("/wallet/daily");
+      setWallet((prev) => (prev ? { ...prev, balance: w.balance, can_claim_daily: false } : w));
+      if (typeof w.balance === "number") patchUser({ tokens: w.balance });
+    } catch {} finally {
       setClaiming(false);
     }
   };
 
-  if (!user) return null;
-  const balance = wallet?.balance ?? user.tokens ?? 0;
+  const balance = wallet?.balance ?? user?.tokens ?? 0;
+  const isAdmin = !!(user?.is_admin || user?.is_super_admin);
+  const c = themeColors;
+  const items = MENU.filter((item) => item.label !== "Games" || hasGames);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
-        <SafeAreaView edges={["top", "bottom"]} style={styles.panel} testID="hamburger-drawer-panel">
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.md }}>
-            {/* Profile card */}
-            <TouchableOpacity style={styles.profileCard} onPress={() => go("/profile")} testID="drawer-profile-card">
-              <Image source={{ uri: user.avatar_url }} style={styles.avatar} contentFit="cover" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{user.display_name}</Text>
-                <Text style={styles.handle}>@{user.username}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} testID="hamburger-drawer-backdrop" />
+        <SafeAreaView style={[styles.panel, { backgroundColor: c.bg }]}>
+          <View style={[styles.header, { borderBottomColor: c.border }]}>
+            <Text style={[styles.title, { color: c.textPrimary }]}>Menu</Text>
+            <TouchableOpacity onPress={onClose} testID="drawer-close" accessibilityLabel="Close menu">
+              <Ionicons name="close" size={24} color={c.textSecondary} />
             </TouchableOpacity>
-
-            {/* Wallet card */}
-            <LinearGradient colors={[colors.primaryMuted, "rgba(255,107,61,0.04)"]} style={styles.walletCard}>
-              <TouchableOpacity style={styles.walletTop} onPress={() => go("/wallet")}>
-                <View style={styles.coinIcon}>
-                  <Ionicons name="wallet" size={20} color={colors.bg} />
-                </View>
-                <View>
-                  <Text style={styles.walletLabel}>BALANCE</Text>
-                  <Text style={styles.walletValue} testID="drawer-token-balance">{balance} tokens</Text>
-                </View>
+          </View>
+          <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+            {items.map((item) => (
+              <TouchableOpacity key={item.route + item.label} style={styles.link} onPress={() => go(item.route)} testID={item.testID}>
+                <Ionicons name={item.icon} size={22} color={c.textSecondary} />
+                <Text style={[styles.linkText, { color: c.textPrimary }]}>{item.label}</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.claimBtn, (!wallet?.can_claim_daily || claiming) && styles.disabled]}
-                disabled={!wallet?.can_claim_daily || claiming}
-                onPress={claimDaily}
-                testID="drawer-claim-daily"
-              >
-                <Ionicons name="gift-outline" size={15} color={colors.bg} />
-                <Text style={styles.claimText}>
-                  {!wallet?.can_claim_daily ? "Daily claimed" : claiming ? "Claiming…" : `Claim +${wallet?.daily_reward ?? 25}`}
-                </Text>
+            ))}
+            <TouchableOpacity style={styles.link} onPress={() => setPostOpen((v) => !v)} testID="drawer-post" accessibilityLabel="Post">
+              <Ionicons name="add-circle-outline" size={22} color={c.primary} />
+              <Text style={[styles.linkText, { color: c.textPrimary }]}>Post</Text>
+              <Ionicons name={postOpen ? "chevron-up" : "chevron-down"} size={18} color={c.textSecondary} style={styles.chevron} />
+            </TouchableOpacity>
+            {postOpen && POST_ITEMS.map((item) => (
+              <TouchableOpacity key={item.testID} style={[styles.link, styles.subLink]} onPress={() => go(item.route)} testID={item.testID}>
+                <Ionicons name={item.icon} size={20} color={c.textSecondary} />
+                <Text style={[styles.linkText, { color: c.textPrimary }]}>{item.label}</Text>
               </TouchableOpacity>
-            </LinearGradient>
-
-            {/* Shortcuts */}
-            <Text style={styles.shortcutsLabel}>Your shortcuts</Text>
-            <View style={styles.shortcutsRow}>
-              {SHORTCUTS.map((s) => (
-                <TouchableOpacity key={s.route} style={styles.shortcut} onPress={() => go(s.route)} testID={`drawer-shortcut-${s.label.toLowerCase()}`}>
-                  <Ionicons name={s.icon} size={22} color={colors.primary} />
-                  <Text style={styles.shortcutText}>{s.label}</Text>
-                </TouchableOpacity>
-              ))}
+            ))}
+            <View style={[styles.link, { justifyContent: "space-between" }]}>
+              <TouchableOpacity style={styles.linkRow} onPress={toggleTheme} testID="drawer-light-mode" accessibilityLabel="Toggle light mode">
+                <Ionicons name={isLight ? "moon-outline" : "sunny-outline"} size={22} color={c.textSecondary} />
+                <Text style={[styles.linkText, { color: c.textPrimary }]}>{isLight ? "Dark mode" : "Light mode"}</Text>
+              </TouchableOpacity>
+              <Switch value={isLight} onValueChange={toggleTheme} trackColor={{ false: c.border, true: c.primary }} thumbColor="#FFFFFF" testID="drawer-light-mode-switch" />
             </View>
-
-            {/* Links */}
-            <View style={{ marginTop: 10 }}>
-              {LINKS.map((l) => (
-                <TouchableOpacity key={l.route} style={styles.link} onPress={() => go(l.route)} testID={l.testID}>
-                  <Ionicons name={l.icon} size={20} color={colors.textSecondary} />
-                  <Text style={styles.linkText}>{l.label}</Text>
-                </TouchableOpacity>
-              ))}
-              {user.is_super_admin && (
-                <TouchableOpacity style={styles.link} onPress={() => go("/admin")} testID="drawer-admin">
-                  <Ionicons name="shield-outline" size={20} color={colors.textSecondary} />
-                  <Text style={styles.linkText}>Admin</Text>
-                </TouchableOpacity>
+            <TouchableOpacity style={styles.link} onPress={() => go("/settings")} testID="drawer-settings">
+              <Ionicons name="settings-outline" size={22} color={c.textSecondary} />
+              <Text style={[styles.linkText, { color: c.textPrimary }]}>Settings</Text>
+            </TouchableOpacity>
+            {isAdmin && (
+              <TouchableOpacity style={styles.link} onPress={() => go("/admin")} testID="drawer-admin">
+                <Ionicons name="shield-outline" size={22} color={c.primary} />
+                <Text style={[styles.linkText, { color: c.textPrimary }]}>Admin</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[styles.profileCard, { backgroundColor: c.surface, borderColor: c.border }]} onPress={() => go("/profile")} testID="drawer-profile">
+              {user?.avatar_url ? (
+                <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: c.primary }]}>
+                  <Text style={styles.avatarFallbackText}>{(user?.display_name || user?.username || "?").slice(0, 1).toUpperCase()}</Text>
+                </View>
               )}
-            </View>
-
+              <View style={styles.profileText}>
+                <Text style={[styles.profileName, { color: c.textPrimary }]} numberOfLines={1}>{user?.display_name || user?.username || "Profile"}</Text>
+                <Text style={[styles.profileMeta, { color: c.textSecondary }]} numberOfLines={1}>@{user?.username || ""} · {formatTokensLocal(balance)} tokens</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={c.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.walletCard, { backgroundColor: c.surface, borderColor: c.border }]} onPress={() => go("/wallet")} testID="drawer-wallet-balance">
+              <Ionicons name="wallet-outline" size={20} color={c.primary} />
+              <View style={styles.profileText}>
+                <Text style={[styles.profileMeta, { color: c.textSecondary }]}>Token balance</Text>
+                <Text style={[styles.profileName, { color: c.textPrimary }]}>{formatTokensLocal(balance)} tokens</Text>
+              </View>
+            </TouchableOpacity>
             <TouchableOpacity
-              style={styles.logout}
-              onPress={async () => {
-                onClose();
-                await logout();
-                router.replace("/(auth)/welcome" as any);
-              }}
+              style={[styles.claimButton, { backgroundColor: wallet && !wallet.can_claim_daily ? c.surface : c.primary, opacity: claiming ? 0.7 : 1 }]}
+              onPress={claimDaily}
+              disabled={claiming || !!(wallet && !wallet.can_claim_daily)}
+              testID="drawer-claim-daily"
+            >
+              <Text style={[styles.claimText, { color: wallet && !wallet.can_claim_daily ? c.textSecondary : "#FFFFFF" }]}>
+                {wallet && !wallet.can_claim_daily ? "Daily reward claimed" : claiming ? "Claiming..." : `Claim daily +${wallet?.daily_reward ?? 25}`}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.link, styles.logoutLink]}
+              onPress={async () => { onClose(); await logout(); router.replace("/(auth)/welcome" as never); }}
               testID="drawer-logout"
             >
-              <Ionicons name="log-out-outline" size={20} color={colors.danger} />
-              <Text style={styles.logoutText}>Log out</Text>
+              <Ionicons name="log-out-outline" size={22} color={c.danger} />
+              <Text style={[styles.linkText, { color: c.danger }]}>Log out</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
@@ -158,26 +188,27 @@ export function HamburgerDrawer({ visible, onClose }: { visible: boolean; onClos
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", flexDirection: "row" },
-  panel: { width: "86%", maxWidth: 400, backgroundColor: colors.bg, borderRightWidth: 1, borderRightColor: colors.border },
-  profileCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.surface, borderRadius: 18, padding: 12 },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.border },
-  name: { fontSize: 16, fontWeight: "900", color: colors.textPrimary },
-  handle: { fontSize: 13, color: colors.textSecondary },
-  walletCard: { marginTop: 12, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: colors.primaryMuted },
-  walletTop: { flexDirection: "row", alignItems: "center", gap: 10 },
-  coinIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
-  walletLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 1, color: colors.textSecondary },
-  walletValue: { fontSize: 20, fontWeight: "900", color: colors.textPrimary },
-  claimBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 10, marginTop: 12 },
-  claimText: { color: colors.bg, fontWeight: "800", fontSize: 13 },
-  disabled: { opacity: 0.45 },
-  shortcutsLabel: { fontSize: 11, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", color: colors.textSecondary, marginTop: 18, marginBottom: 8 },
-  shortcutsRow: { flexDirection: "row", gap: 8 },
-  shortcut: { flex: 1, alignItems: "center", gap: 6, backgroundColor: colors.surface, borderRadius: 14, paddingVertical: 14 },
-  shortcutText: { fontSize: 12, fontWeight: "700", color: colors.textPrimary },
-  link: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 4 },
-  linkText: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
-  logout: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 16, paddingHorizontal: 4, marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
-  logoutText: { fontSize: 15, fontWeight: "800", color: colors.danger },
+  backdrop: { flex: 1, flexDirection: "row", backgroundColor: "rgba(0,0,0,0.5)" },
+  panel: { width: "88%", maxWidth: 360, height: "100%" },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1 },
+  title: { fontSize: 20, fontWeight: "800" },
+  scroll: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  link: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 11, paddingHorizontal: 6 },
+  linkRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  subLink: { paddingLeft: 28, paddingVertical: 9 },
+  chevron: { marginLeft: "auto" },
+  linkText: { fontSize: 16, fontWeight: "600" },
+  profileCard: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 12, padding: 12, marginTop: 12 },
+  walletCard: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 12, padding: 12, marginTop: 8 },
+  avatar: { width: 44, height: 44, borderRadius: 22 },
+  avatarFallback: { alignItems: "center", justifyContent: "center" },
+  avatarFallbackText: { color: "#FFFFFF", fontSize: 18, fontWeight: "800" },
+  profileText: { flex: 1 },
+  profileName: { fontSize: 16, fontWeight: "700" },
+  profileMeta: { fontSize: 13, marginTop: 2 },
+  claimButton: { borderRadius: 12, paddingVertical: 12, alignItems: "center", marginTop: 8 },
+  claimText: { fontSize: 15, fontWeight: "700" },
+  logoutLink: { marginTop: 8, marginBottom: 24 },
 });
+
+export { HamburgerDrawer };

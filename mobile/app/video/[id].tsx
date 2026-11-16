@@ -23,6 +23,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radii } from "@/src/theme";
 import { formatCount } from "@/src/utils/format";
 import { EditContentSheet } from "@/src/components/EditContentSheet";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 function formatDuration(sec: number | null | undefined): string {
   if (!sec || sec <= 0) return "0:00";
@@ -349,9 +350,7 @@ export default function WatchVideoScreen() {
               <View style={{ flex: 1 }}>
                 <View style={styles.channelNameRow}>
                   <Text style={styles.channelDisplay}>{video.author.display_name}</Text>
-                  {video.author.is_verified && (
-                    <Ionicons name="checkmark-circle" size={14} color={video.author.verified_color || colors.primary} />
-                  )}
+                  {<VerifiedBadge user={video.author} size={14} />}
                 </View>
                 <Text style={styles.channelHandle}>@{video.author.username}</Text>
               </View>

@@ -24,6 +24,7 @@ import {
   CONTENT_MAX_WIDTH,
   useResponsive,
 } from "@/src/hooks/useResponsive";
+import VerifiedBadge from "../components/VerifiedBadge";
 
 const { width: SW } = Dimensions.get("window");
 const GAP = 2;
@@ -226,7 +227,7 @@ export default function ProfileView({ userId, isOwn = false }: Props) {
             <View style={styles.bioBlock}>
               <View style={styles.nameRow}>
                 <Text style={styles.displayName}>{profile.display_name}</Text>
-                {profile.is_verified && <Ionicons name="checkmark-circle" size={16} color={profile.verified_color || (profile.remembering ? "#ef4444" : colors.primary)} />}
+                {<VerifiedBadge user={profile} size={16} />}
                 {profile.remembering && (
                   <View style={styles.rememberingPill} testID="remembering-label">
                     <Text style={styles.rememberingText}>REMEMBERING</Text>

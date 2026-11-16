@@ -9,6 +9,7 @@ import { api } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radii } from "@/src/theme";
 import { CONTENT_MAX_WIDTH, useResponsive } from "@/src/hooks/useResponsive";
+import VerifiedBadge from "../src/components/VerifiedBadge";
 
 const FALLBACK =
   "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop";
@@ -129,7 +130,7 @@ export default function Settings() {
           <View style={{ flex: 1 }}>
             <View style={styles.nameRow}>
               <Text style={styles.displayName}>{user?.display_name}</Text>
-              {user?.is_verified && <Ionicons name="checkmark-circle" size={14} color={user?.verified_color || colors.primary} />}
+              {<VerifiedBadge user={user} size={14} />}
             </View>
             <Text style={styles.username}>@{user?.username}</Text>
           </View>

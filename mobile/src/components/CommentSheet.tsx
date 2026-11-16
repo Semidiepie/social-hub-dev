@@ -18,6 +18,7 @@ import { api, Comment } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, radii } from "@/src/theme";
 import { timeAgo, verifiedColor } from "@/src/utils/format";
+import VerifiedBadge from "./VerifiedBadge";
 
 interface Props {
   postId: string | null;
@@ -125,9 +126,7 @@ export function CommentSheet({ postId, visible, onClose, onCountChange }: Props)
       <View style={{ flex: 1 }}>
         <View style={styles.commentMetaRow}>
           <Text style={styles.commentUser} numberOfLines={1}>{c.username}</Text>
-          {c.is_verified && (
-            <Ionicons name="checkmark-circle" size={13} color={verifiedColor(c, colors.primary)} />
-          )}
+          {<VerifiedBadge user={c} size={13} />}
           <Text style={styles.commentDot}>·</Text>
           <Text style={styles.commentAgo}>{timeAgo(c.created_at)}</Text>
         </View>

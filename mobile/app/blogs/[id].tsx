@@ -19,6 +19,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { renderMarkdownToBlocks } from "@/src/lib/mdRender";
 import { colors, radii, spacing } from "@/src/theme";
 import { CONTENT_MAX_WIDTH, useResponsive } from "@/src/hooks/useResponsive";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const AVATAR_FALLBACK =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><circle cx='20' cy='20' r='20' fill='%23252936'/></svg>";
@@ -176,7 +177,7 @@ export default function BlogReader() {
           <View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <Text style={styles.authorName}>{blog.author?.display_name}</Text>
-              {blog.author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={blog.author?.verified_color || colors.primary} />}
+              {<VerifiedBadge user={blog.author} size={14} />}
             </View>
             <Text style={styles.metaText}>
               @{blog.author?.username} · {blog.reading_time} min read · {blog.views} views

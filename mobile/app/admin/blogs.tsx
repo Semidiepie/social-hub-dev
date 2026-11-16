@@ -18,6 +18,7 @@ import { useRouter } from "expo-router";
 import { api, BlogRequest } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, radii, spacing } from "@/src/theme";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 const AVATAR_FALLBACK =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><circle cx='20' cy='20' r='20' fill='%23252936'/></svg>";
@@ -153,7 +154,7 @@ export default function AdminBlogs() {
               <View style={{ flex: 1 }}>
                 <View style={styles.nameRow}>
                   <Text style={styles.name}>{item.display_name}</Text>
-                  {item.is_verified && <Ionicons name="checkmark-circle" size={14} color={item.verified_color || colors.primary} />}
+                  {<VerifiedBadge user={item} size={14} />}
                 </View>
                 <Text style={styles.username}>@{item.username}</Text>
               </View>

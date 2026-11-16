@@ -15,6 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radii, spacing } from "@/src/theme";
 import type { LiveChatMessage, LiveGift } from "@/src/lib/useLiveSocket";
+import VerifiedBadge from "./VerifiedBadge";
 
 interface Owner {
   id?: string;
@@ -142,9 +143,7 @@ export function LiveOverlay({
                   <View style={styles.chatBubble}>
                     <Text>
                       <Text style={styles.chatName}>{m.display_name || m.username} </Text>
-                      {m.is_verified && (
-                        <Ionicons name="checkmark-circle" size={12} color={m.verified_color || (m.remembering ? colors.live : colors.primary)} />
-                      )}
+                      {<VerifiedBadge user={m} size={12} />}
                       {m.is_verified ? <Text> </Text> : null}
                       {m.kind === "gift" ? (
                         <Text style={styles.giftText}>{m.text} {m.gift?.glyph}</Text>

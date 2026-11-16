@@ -10,6 +10,7 @@ import { FeedItem } from "@/src/api/client";
 import { formatCount, timeAgo } from "@/src/utils/format";
 import { useAuth } from "@/src/context/AuthContext";
 import { OwnerContentMenu } from "@/src/components/OwnerContentMenu";
+import VerifiedBadge from "./VerifiedBadge";
 
 const FALLBACK_AVATAR =
   `${process.env.EXPO_PUBLIC_BACKEND_URL ?? ""}/api/files/postmeplex/branding/default_avatar.png`;
@@ -53,7 +54,7 @@ export function VideoFeedCard({
               <Text style={styles.displayName} numberOfLines={1}>
                 {author?.display_name ?? "Unknown"}
               </Text>
-              {author?.is_verified && <Ionicons name="checkmark-circle" size={14} color={author?.verified_color || colors.primary} />}
+              {<VerifiedBadge user={author} size={14} />}
             </View>
             <Text style={styles.subline} numberOfLines={1}>
               @{author?.username} · {timeAgo(post.created_at)}

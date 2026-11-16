@@ -22,6 +22,7 @@ import {
   CONTENT_MAX_WIDTH,
   useResponsive,
 } from "@/src/hooks/useResponsive";
+import VerifiedBadge from "../../src/components/VerifiedBadge";
 
 type FilterKey = "top" | "accounts" | "tags";
 
@@ -163,7 +164,7 @@ export default function Discover() {
                   <View style={{ flex: 1 }}>
                     <View style={styles.acctNameRow}>
                       <Text style={styles.acctName}>{u.display_name}</Text>
-                      {u.is_verified && <Ionicons name="checkmark-circle" size={14} color={u.verified_color || colors.primary} />}
+                      {<VerifiedBadge user={u} size={14} />}
                     </View>
                     <Text style={styles.acctMeta}>@{u.username} · {formatCount(u.followers)} followers</Text>
                   </View>
@@ -277,7 +278,7 @@ export default function Discover() {
               <View style={{ flex: 1 }}>
                 <View style={styles.acctNameRow}>
                   <Text style={styles.acctName}>{item.display_name}</Text>
-                  {item.is_verified && <Ionicons name="checkmark-circle" size={14} color={item.verified_color || colors.primary} />}
+                  {<VerifiedBadge user={item} size={14} />}
                 </View>
                 <Text style={styles.acctMeta}>
                   @{item.username} · {formatCount(item.followers)} followers

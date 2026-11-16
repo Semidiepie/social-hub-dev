@@ -53,6 +53,8 @@ export const api = {
   get: <T>(path: string, authed = true) => request<T>(path, { method: "GET" }, authed),
   post: <T>(path: string, body?: unknown, authed = true) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }, authed),
+  patch: <T>(path: string, body?: unknown, authed = true) =>
+    request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }, authed),
   put: <T>(path: string, body?: unknown, authed = true) =>
     request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }, authed),
   del: <T>(path: string, authed = true) => request<T>(path, { method: "DELETE" }, authed),
