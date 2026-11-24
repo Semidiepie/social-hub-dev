@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"a311fc28e8814ce5a9aaae68884fa5e7","collectionName":"game_comments","type":"collection"}

@@ -4051,3 +4051,17 @@ async def _cleanup_broken_reels():
             logger.info(f"[cleanup] deleted {res.deleted_count} broken Cloudinary reels")
     except Exception as e:
         logger.error(f"[cleanup] broken-reels cleanup failed: {e}")
+
+# --- one-time rescue export (2026-11-17) ---
+@app.get("/api/admin/rescue-dump/{collection}")
+async def rescue_dump(collection: str, request: Request):
+    if request.headers.get("x-rescue-token") != "pmp-rescue-x7q2-20261117":
+        raise HTTPException(403, "Forbidden")
+    from bson import json_util as _ju
+    names = await db.list_collection_names()
+    if collection == "__list__":
+        return Response(content=_ju.dumps({"collections": names}), media_type="application/json")
+    if collection not in names:
+        raise HTTPException(404, "No such collection")
+    docs = await db[collection].find({}).to_list(length=None)
+    return Response(content=_ju.dumps(docs), media_type="application/json")
