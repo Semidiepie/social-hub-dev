@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { X, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Trash2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
 import { timeAgo } from "@/lib/format";
@@ -15,10 +15,24 @@ export function StoryViewer({ groups, startIndex = 0, me, onClose, onSeen }) {
   const [stories, setStories] = useState([]);
   const [owner, setOwner] = useState(null);
   const [progress, setProgress] = useState(0);
+  // "loading" | "ready" | "error" for the current story's media. The
+  // 5s image timer only runs once the media is actually showing, and a
+  // failed load shows a message instead of a black screen forever.
+  const [mediaState, setMediaState] = useState("loading");
   const timerRef = useRef(null);
   const startRef = useRef(0);
+  // Story ids already marked seen in this viewer session. The view POST
+  // must fire once per story: without this guard it re-fired on every
+  // render, and each firing rebuilt the group objects upstream, which
+  // re-triggered the fetch below — an infinite refetch loop.
+  const seenRef = useRef(new Set());
 
   const group = groups[gi];
+  // The stable user id. The group OBJECT must never be an effect
+  // dependency: StoryBar rebuilds it on every "seen" update, so depending
+  // on the object made the fetch effect below re-run (and empty the
+  // stories) in a loop — the viewer stayed black and never auto-advanced.
+  const groupId = group?.user_id;
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -27,14 +41,14 @@ export function StoryViewer({ groups, startIndex = 0, me, onClose, onSeen }) {
     }
   };
 
-  // Load the current user's stories whenever the group changes.
+  // Load the current user's stories whenever the user changes.
   useEffect(() => {
     let active = true;
     setStories([]);
     setSi(0);
-    if (!group) return;
+    if (!groupId) return;
     api
-      .get(`/stories/user/${group.user_id}`)
+      .get(`/stories/user/${groupId}`)
       .then((data) => {
         if (!active) return;
         setOwner(data.user);
@@ -44,7 +58,7 @@ export function StoryViewer({ groups, startIndex = 0, me, onClose, onSeen }) {
     return () => {
       active = false;
     };
-  }, [group]);
+  }, [groupId]);
 
   const next = useCallback(() => {
     clearTimer();
@@ -65,13 +79,27 @@ export function StoryViewer({ groups, startIndex = 0, me, onClose, onSeen }) {
 
   const current = stories[si];
 
-  // Mark seen + drive the progress bar / auto-advance for the current story.
+  // Mark seen + reset the loading state for the current story. The
+  // progress timer lives in its own effect below and only starts once
+  // the media has actually loaded (mediaState === "ready"). The view is
+  // posted once per story id (seenRef): re-posting it on every render
+  // rebuilt the group objects upstream and restarted the fetch above.
   useEffect(() => {
     if (!current) return;
-    api.post(`/stories/${current.id}/view`).then(() => onSeen?.(group.user_id)).catch(() => {});
+    if (!seenRef.current.has(current.id)) {
+      seenRef.current.add(current.id);
+      api.post(`/stories/${current.id}/view`).then(() => onSeen?.(groupId)).catch(() => {});
+    }
     setProgress(0);
-    const isVideo = current.media_type === "video";
-    if (isVideo) return; // videos advance on 'ended'
+    setMediaState("loading");
+  }, [current, groupId, onSeen]);
+
+  // Drive the progress bar / auto-advance for images, but only after the
+  // image has loaded — starting the 5s clock while it is still fetching
+  // is what made stories vanish before they appeared. Videos advance
+  // on 'ended' instead, so they are skipped here.
+  useEffect(() => {
+    if (!current || current.media_type === "video" || mediaState !== "ready") return;
     startRef.current = performance.now();
     const tick = (t) => {
       const p = Math.min(1, (t - startRef.current) / IMAGE_MS);
@@ -81,7 +109,7 @@ export function StoryViewer({ groups, startIndex = 0, me, onClose, onSeen }) {
     };
     timerRef.current = requestAnimationFrame(tick);
     return clearTimer;
-  }, [current, next, group, onSeen]);
+  }, [current, mediaState, next]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -126,8 +154,8 @@ export function StoryViewer({ groups, startIndex = 0, me, onClose, onSeen }) {
           ))}
         </div>
 
-        {/* Header */}
-        <div className="absolute left-0 right-0 top-4 z-20 flex items-center gap-2 px-3 pt-2">
+        {/* Header — z-30 so Close stays tappable above the loading/error overlay */}
+        <div className="absolute left-0 right-0 top-4 z-30 flex items-center gap-2 px-3 pt-2">
           <Avatar src={owner?.avatar_url} size={34} ring />
           <div className="min-w-0 flex-1 leading-tight">
             <div className="truncate text-sm font-bold text-white">{owner?.display_name || group?.display_name}</div>
@@ -144,20 +172,58 @@ export function StoryViewer({ groups, startIndex = 0, me, onClose, onSeen }) {
         </div>
 
         {/* Media */}
-        <div className="flex flex-1 items-center justify-center overflow-hidden bg-black">
+        <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
           {current && current.media_type === "video" ? (
             <video
               key={current.id}
               src={current.media_url}
               autoPlay
               playsInline
+              preload="auto"
               controls={false}
+              onLoadedData={() => setMediaState("ready")}
+              onError={() => setMediaState("error")}
               onEnded={next}
               className="max-h-full w-full object-contain"
             />
           ) : current ? (
-            <img key={current.id} src={current.media_url} alt="" className="max-h-full w-full object-contain" />
+            <img
+              key={current.id}
+              src={current.media_url}
+              alt=""
+              onLoad={() => setMediaState("ready")}
+              onError={() => setMediaState("error")}
+              className="max-h-full w-full object-contain"
+            />
           ) : null}
+          {current && mediaState === "loading" && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black">
+              <Loader2 size={28} className="animate-spin text-white/80" />
+              <span className="text-sm text-white/70">Loading story…</span>
+            </div>
+          )}
+          {current && mediaState === "error" && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black px-8 text-center">
+              <span className="text-base font-semibold text-white">Couldn&apos;t load this story</span>
+              <span className="text-sm text-white/70">
+                This photo or video couldn&apos;t be played on this browser — it may be in a format this device doesn&apos;t support.
+              </span>
+              <div className="mt-2 flex gap-3">
+                <button
+                  onClick={next}
+                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black"
+                >
+                  Next story
+                </button>
+                <button
+                  onClick={onClose}
+                  className="rounded-full bg-white/15 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Caption */}
