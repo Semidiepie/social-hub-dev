@@ -26,8 +26,14 @@ export function StoryBar() {
     load();
   }, [load]);
 
-  const markSeen = (userId) =>
-    setGroups((rows) => rows.map((r) => (r.user_id === userId ? { ...r, seen: true } : r)));
+  // Memoized: StoryViewer depends on this callback's identity, and a
+  // fresh function every render re-triggered its effects (view POST +
+  // refetch) in a loop that left the viewer black.
+  const markSeen = useCallback(
+    (userId) =>
+      setGroups((rows) => rows.map((r) => (r.user_id === userId ? { ...r, seen: true } : r))),
+    []
+  );
 
   if (!user) return null;
 
